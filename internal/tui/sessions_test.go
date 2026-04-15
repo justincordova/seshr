@@ -1,6 +1,8 @@
 package tui_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -88,4 +90,60 @@ func TestPicker_View_ContainsProjectName(t *testing.T) {
 
 	// Assert
 	assert.Contains(t, out, "proj-a")
+}
+
+func TestPicker_DKey_EntersConfirmState(t *testing.T) {
+	// Arrange
+	m := tui.NewPicker(fixtures())
+
+	// Act
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	// Assert
+	p := next.(tui.Picker)
+	assert.True(t, p.InConfirm())
+}
+
+func TestPicker_ConfirmN_LeavesConfirmNoDelete(t *testing.T) {
+	// Arrange
+	m := tui.NewPicker(fixtures())
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = m2.(tui.Picker)
+
+	// Act
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
+	// Assert
+	p := next.(tui.Picker)
+	assert.False(t, p.InConfirm())
+	assert.Len(t, p.Metas(), 3, "no entries should be removed on cancel")
+}
+
+func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
+	// Arrange — real files in a tmp dir
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	jsonlPath := filepath.Join(proj, "x.jsonl")
+	require.NoError(t, os.WriteFile(jsonlPath, []byte(`{"type":"user"}`+"\n"), 0o644))
+	m := tui.NewPicker([]parser.SessionMeta{{
+		ID:      "x",
+		Path:    jsonlPath,
+		Project: "proj",
+		Source:  parser.SourceClaude,
+	}})
+
+	// Act — press d then y
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = m2.(tui.Picker)
+	m3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	p := m3.(tui.Picker)
+
+	// Assert
+	assert.False(t, p.InConfirm())
+	assert.Empty(t, p.Metas())
+	_, err := os.Stat(jsonlPath)
+	assert.True(t, os.IsNotExist(err), "file should be gone")
+	_, err = os.Stat(proj)
+	assert.True(t, os.IsNotExist(err), "empty project dir should be cleaned up")
 }
