@@ -92,6 +92,8 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				p.cursor++
 			}
 			return p, nil
+		case key.Matches(msg, p.keys.Open):
+			return p, nil
 		case key.Matches(msg, p.keys.Delete):
 			if len(p.metas) == 0 {
 				return p, nil
@@ -132,7 +134,7 @@ func (p Picker) View() string {
 		}
 		line1 := fmt.Sprintf("%s%-32s  %s  %s",
 			marker,
-			truncate(m.Project, 32),
+			Truncate(m.Project, 32),
 			humanizeSize(m.Size),
 			humanize.Time(m.ModifiedAt),
 		)
@@ -176,13 +178,6 @@ func deleteSelected(p *Picker) error {
 		p.cursor--
 	}
 	return nil
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-1] + "…"
 }
 
 func humanizeSize(n int64) string {
