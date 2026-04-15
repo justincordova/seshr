@@ -1,0 +1,43 @@
+# Internal planning docs — do not commit
+docs/plans/
+
+# Go build artifacts
+/agentlens
+/agentlens.exe
+/dist/
+*.exe
+*.test
+*.out
+*.prof
+
+# Coverage
+cover.out
+coverage.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local env / secrets
+.env
+.env.local
+*.local
+
+# Local agentlens data (in case a dev symlinks or runs from repo root)
+.agentlens/
+debug.log
+
+# Backups accidentally created in-tree
+*.bak
+
+# Release tooling
+.goreleaser/

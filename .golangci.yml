@@ -1,0 +1,23 @@
+version: "2"
+
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gocritic
+  exclusions:
+    paths:
+      - testdata
+      - docs
+
+formatters:
+  enable:
+    - gofmt
