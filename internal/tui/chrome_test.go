@@ -30,25 +30,21 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestPadRight(t *testing.T) {
-	tests := []struct {
+	cases := []struct {
 		name  string
 		input string
 		width int
+		want  string
 	}{
-		{"short string padded to width", "hi", 10},
-		{"exact width unchanged", "hello", 5},
-		{"over width unchanged", "hello world", 5},
+		{name: "shorter than width", input: "ab", width: 5, want: "ab   "},
+		{name: "exact width", input: "abc", width: 3, want: "abc"},
+		{name: "longer than width", input: "abcde", width: 3, want: "abcde"},
+		{name: "empty string", input: "", width: 3, want: "   "},
 	}
-	for _, tc := range tests {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Act
 			got := padRight(tc.input, tc.width)
-			// Assert
-			if len(tc.input) < tc.width {
-				assert.Equal(t, tc.width, len(got))
-			} else {
-				assert.Equal(t, tc.input, got)
-			}
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

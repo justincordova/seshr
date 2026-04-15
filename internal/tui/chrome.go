@@ -24,10 +24,11 @@ func truncate(s string, max int) string {
 // padRight pads s with spaces on the right until it reaches width. Strings
 // already at or over width are returned unchanged.
 func padRight(s string, width int) string {
-	if len(s) >= width {
+	runes := []rune(s)
+	if len(runes) >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-len(runes))
 }
 
 // countLabel formats n with the singular label, pluralising with an "s" when
@@ -114,28 +115,3 @@ func mapStyle(in []string, style lipgloss.Style) []string {
 	return out
 }
 
-// Expose package-level style vars for use by chrome consumers that reference
-// the unexported vars indirectly through these sentinel uses.
-var (
-	_ = colBase
-	_ = colCrust
-	_ = colSurface2
-	_ = colOverlay1
-	_ = colSubtext1
-	_ = colMaroon
-	_ = colPeach
-	_ = colTeal
-	_ = colSky
-	_ = colBlue
-	_ = colFlamingo
-	_ = textStyle
-	_ = subtleStyle
-	_ = successStyle
-	_ = warningStyle
-	_ = errorStyle
-	_ = selectedRowStyle
-	_ = padRight
-	_ = countLabel
-	_ = subviewContent
-	_ = panel
-)
