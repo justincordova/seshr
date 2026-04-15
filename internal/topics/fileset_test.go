@@ -68,6 +68,18 @@ func TestExtractFiles_BashCommand_Ignored(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestExtractFiles_BashWithPathKey_Ignored(t *testing.T) {
+	// Arrange — Bash input that contains a "path" key (should still be skipped)
+	tc := parser.ToolCall{
+		Name:  "Bash",
+		Input: []byte(`{"command":"cat /etc/hosts","path":"/etc/hosts"}`),
+	}
+	// Act
+	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	// Assert
+	assert.Empty(t, got)
+}
+
 func TestExtractFiles_MalformedJSON_Skipped(t *testing.T) {
 	// Arrange
 	tc := parser.ToolCall{

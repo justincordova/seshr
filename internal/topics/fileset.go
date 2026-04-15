@@ -12,6 +12,9 @@ import (
 func ExtractFiles(calls []parser.ToolCall) []string {
 	seen := make(map[string]struct{})
 	for _, c := range calls {
+		if c.Name == "Bash" {
+			continue
+		}
 		var m map[string]json.RawMessage
 		if err := json.Unmarshal(c.Input, &m); err != nil {
 			continue
