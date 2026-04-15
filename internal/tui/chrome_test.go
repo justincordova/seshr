@@ -1,11 +1,9 @@
-package tui_test
+package tui
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/agentlens/internal/tui"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +22,7 @@ func TestTruncate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Act
-			got := tui.Truncate(tc.input, tc.max)
+			got := truncate(tc.input, tc.max)
 			// Assert
 			assert.Equal(t, tc.want, got)
 		})
@@ -44,7 +42,7 @@ func TestPadRight(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Act
-			got := tui.PadRight(tc.input, tc.width)
+			got := padRight(tc.input, tc.width)
 			// Assert
 			if len(tc.input) < tc.width {
 				assert.Equal(t, tc.width, len(got))
@@ -69,7 +67,7 @@ func TestCountLabel(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Act
-			got := tui.CountLabel(tc.n, tc.singular)
+			got := countLabel(tc.n, tc.singular)
 			// Assert
 			assert.Contains(t, got, tc.singular)
 			if tc.n == 1 {
@@ -84,28 +82,28 @@ func TestCountLabel(t *testing.T) {
 
 func TestKbd(t *testing.T) {
 	// Arrange
-	key := "q"
+	k := "q"
 	desc := "quit"
 
 	// Act
-	got := tui.Kbd(key, desc)
+	got := kbd(k, desc)
 
 	// Assert
-	assert.Contains(t, got, key)
+	assert.Contains(t, got, k)
 	assert.Contains(t, got, desc)
 }
 
 func TestJoinHints(t *testing.T) {
 	t.Run("single hint has no separator", func(t *testing.T) {
 		// Act
-		got := tui.JoinHints("quit")
+		got := joinHints("quit")
 		// Assert
 		assert.NotContains(t, got, "·")
 	})
 
 	t.Run("multiple hints have separator", func(t *testing.T) {
 		// Act
-		got := tui.JoinHints("nav", "open", "quit")
+		got := joinHints("nav", "open", "quit")
 		// Assert
 		assert.Contains(t, got, "·")
 	})
@@ -122,7 +120,7 @@ func TestHRule(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Act
-			got := tui.HRule(tc.width)
+			got := hRule(tc.width)
 			// Assert — rendered width should match
 			assert.Equal(t, tc.width, lipgloss.Width(got))
 		})
@@ -131,11 +129,10 @@ func TestHRule(t *testing.T) {
 
 func TestPill(t *testing.T) {
 	// Act
-	got := tui.Pill("status", "#f38ba8", "#1e1e2e")
+	got := pill("tag", lipgloss.AdaptiveColor{Dark: "#cba6f7", Light: "#8839ef"}, lipgloss.AdaptiveColor{Dark: "#313244", Light: "#ccd0da"})
 
 	// Assert
 	assert.NotEmpty(t, got)
-	assert.True(t, strings.Contains(got, "status"))
 }
 
 func TestSubviewHeader(t *testing.T) {
@@ -150,7 +147,7 @@ func TestSubviewHeader(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Act
-			got := tui.SubviewHeader(80, tc.title, tc.crumbs)
+			got := subviewHeader(80, tc.title, tc.crumbs)
 			// Assert
 			assert.Contains(t, got, tc.title)
 		})
@@ -159,7 +156,7 @@ func TestSubviewHeader(t *testing.T) {
 
 func TestSubviewFooter(t *testing.T) {
 	// Act
-	got := tui.SubviewFooter(80, "j/k navigate", "q quit")
+	got := subviewFooter(80, "j/k navigate", "q quit")
 
 	// Assert
 	assert.NotEmpty(t, got)

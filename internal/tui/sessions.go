@@ -134,7 +134,7 @@ func (p Picker) View() string {
 		}
 		line1 := fmt.Sprintf("%s%-32s  %s  %s",
 			marker,
-			Truncate(m.Project, 32),
+			truncate(m.Project, 32),
 			humanizeSize(m.Size),
 			humanize.Time(m.ModifiedAt),
 		)
