@@ -1,19 +1,289 @@
 package parser
 
 import (
+	"bufio"
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/justincordova/agentlens/internal/tokenizer"
 )
 
-// Claude parses Claude Code JSONL session files.
-//
-// TODO(phase-2): streaming JSONL parser per SPEC.md §6.
+// Claude parses Claude Code JSONL session files per SPEC §6.2.
 type Claude struct{}
 
 // NewClaude returns a Claude Code JSONL parser.
 func NewClaude() *Claude { return &Claude{} }
 
-// Parse reads the JSONL at path and returns a Session.
-func (c *Claude) Parse(_ context.Context, _ string) (*Session, error) {
-	return nil, errors.New("not implemented")
+// Source returns the human-readable source name.
+func (c *Claude) Source() Source { return SourceClaude }
+
+// Detect returns true for any path ending in .jsonl. Narrow by design —
+// Phase 7 will refine when the OpenCode parser lands.
+func (c *Claude) Detect(path string) bool {
+	return len(path) >= 6 && path[len(path)-6:] == ".jsonl"
 }
+
+// Parse streams the JSONL at path into a Session.
+func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	sess := &Session{
+		Path:       path,
+		Source:     SourceClaude,
+		ModifiedAt: info.ModTime(),
+	}
+
+	scanner := bufio.NewScanner(f)
+	// Claude assistant lines can be large (tool inputs/thinking blobs).
+	// 10MB per line should cover anything reasonable.
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
+	lineNum := -1
+	for scanner.Scan() {
+		lineNum++
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		b := scanner.Bytes()
+		if len(b) == 0 {
+			continue
+		}
+		// Capture session ID from the first parseable line before Turn
+		// filtering (infrastructure records carry sessionId too).
+		if sess.ID == "" {
+			sess.ID = turnSessionID(b)
+		}
+		turn, ok := parseLine(b, lineNum)
+		if !ok {
+			continue
+		}
+		// First timestamp wins as CreatedAt.
+		if sess.CreatedAt.IsZero() && !turn.Timestamp.IsZero() {
+			sess.CreatedAt = turn.Timestamp
+		}
+		// tool_result records attach to the matching assistant turn if found.
+		if turn.Role == RoleToolResult && attachToolResult(sess, turn) {
+			continue
+		}
+		sess.Turns = append(sess.Turns, turn)
+		sess.TokenCount += turn.Tokens
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan %s: %w", path, err)
+	}
+
+	slog.Info("parsed session", "path", path, "turns", len(sess.Turns), "tokens", sess.TokenCount)
+	return sess, nil
+}
+
+// parseLine converts one JSONL line into a Turn. Returns ok=false when the
+// line is malformed, has an unknown type, or is of a type we intentionally
+// drop (file-history-snapshot, progress). Logged at warn for unknown types.
+func parseLine(b []byte, lineNum int) (Turn, bool) {
+	var rec rawRecord
+	if err := json.Unmarshal(b, &rec); err != nil {
+		slog.Warn("skipping malformed jsonl line", "line", lineNum, "err", err)
+		return Turn{}, false
+	}
+	switch rec.Type {
+	case "user":
+		return userTurn(rec, lineNum), true
+	case "assistant":
+		return assistantTurn(rec, lineNum), true
+	case "tool_result":
+		return toolResultTurn(rec, lineNum), true
+	case "system", "summary":
+		return Turn{Role: Role(rec.Type), Timestamp: rec.Timestamp, RawIndex: lineNum}, true
+	case "", "file-history-snapshot", "progress", "hook":
+		// Infrastructure records, silently ignored.
+		return Turn{}, false
+	default:
+		slog.Warn("unknown record type", "type", rec.Type, "line", lineNum)
+		return Turn{}, false
+	}
+}
+
+// userTurn builds a Turn from a user JSONL record. Content may be a plain
+// string or an array of content blocks (some versions wrap tool_result
+// responses under type=user).
+func userTurn(rec rawRecord, lineNum int) Turn {
+	msg, _ := decodeMessage(rec.Message)
+	content := flattenContent(msg.Content)
+	return Turn{
+		Role:      RoleUser,
+		Timestamp: rec.Timestamp,
+		Content:   content,
+		RawIndex:  lineNum,
+		Tokens:    tokenizer.Estimate(content),
+	}
+}
+
+// assistantTurn builds a Turn from an assistant record, extracting text,
+// thinking, and tool_use blocks from the content array.
+func assistantTurn(rec rawRecord, lineNum int) Turn {
+	msg, _ := decodeMessage(rec.Message)
+	blocks, _ := decodeBlocks(msg.Content)
+
+	turn := Turn{
+		Role:      RoleAssistant,
+		Timestamp: rec.Timestamp,
+		RawIndex:  lineNum,
+	}
+
+	var text string
+	for _, bl := range blocks {
+		switch bl.Type {
+		case "text":
+			if text != "" {
+				text += "\n\n"
+			}
+			text += bl.Text
+		case "thinking":
+			if turn.Thinking != "" {
+				turn.Thinking += "\n\n"
+			}
+			turn.Thinking += bl.Thinking
+		case "tool_use":
+			turn.ToolCalls = append(turn.ToolCalls, ToolCall{
+				ID:    bl.ID,
+				Name:  bl.Name,
+				Input: bl.Input,
+			})
+		}
+	}
+	turn.Content = text
+
+	usage := tokenizer.Usage{
+		InputTokens:              msg.Usage.InputTokens,
+		OutputTokens:             msg.Usage.OutputTokens,
+		CacheCreationInputTokens: msg.Usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
+	}
+	if u := tokenizer.FromUsage(usage); u > 0 {
+		turn.Tokens = u
+	} else {
+		turn.Tokens = tokenizer.Estimate(text + turn.Thinking)
+	}
+	return turn
+}
+
+// toolResultTurn builds a standalone tool-result turn. If attachToolResult
+// finds a matching assistant turn it is merged there instead.
+func toolResultTurn(rec rawRecord, lineNum int) Turn {
+	msg, _ := decodeMessage(rec.Message)
+	content := flattenContent(msg.Content)
+	return Turn{
+		Role:      RoleToolResult,
+		Timestamp: rec.Timestamp,
+		Content:   content,
+		ToolResults: []ToolResult{{
+			ID:      rec.ToolUseID,
+			Content: content,
+			IsError: msg.IsError,
+		}},
+		RawIndex: lineNum,
+		Tokens:   tokenizer.Estimate(content),
+	}
+}
+
+// attachToolResult walks backwards through sess.Turns looking for an
+// assistant turn that issued rec.ToolUseID. Returns true if attached.
+func attachToolResult(sess *Session, turn Turn) bool {
+	if len(turn.ToolResults) == 0 {
+		return false
+	}
+	id := turn.ToolResults[0].ID
+	for i := len(sess.Turns) - 1; i >= 0; i-- {
+		for _, tc := range sess.Turns[i].ToolCalls {
+			if tc.ID == id {
+				sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, turn.ToolResults[0])
+				sess.Turns[i].Tokens += turn.Tokens
+				sess.TokenCount += turn.Tokens
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func decodeMessage(raw []byte) (rawMessage, error) {
+	var msg rawMessage
+	if len(raw) == 0 {
+		return msg, nil
+	}
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return msg, err
+	}
+	return msg, nil
+}
+
+func decodeBlocks(raw []byte) ([]rawBlock, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var blocks []rawBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return nil, err
+	}
+	return blocks, nil
+}
+
+// flattenContent handles either a plain string or an array of blocks.
+func flattenContent(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	blocks, err := decodeBlocks(raw)
+	if err != nil {
+		return ""
+	}
+	var out string
+	for _, bl := range blocks {
+		switch bl.Type {
+		case "text":
+			if out != "" {
+				out += "\n\n"
+			}
+			out += bl.Text
+		case "tool_result":
+			if out != "" {
+				out += "\n\n"
+			}
+			out += bl.Text
+		}
+	}
+	return out
+}
+
+// turnSessionID extracts just the sessionId field without reparsing the
+// whole record. Cheap enough to call once per line until we find one.
+func turnSessionID(b []byte) string {
+	var probe struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(b, &probe); err != nil {
+		return ""
+	}
+	return probe.SessionID
+}
+
+// Compile-time guard so refactors that remove Parse don't silently break.
+var _ interface {
+	Parse(context.Context, string) (*Session, error)
+} = (*Claude)(nil)
