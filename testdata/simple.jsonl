@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"hi, can you help me build a REST API?"},"uuid":"u1","parentUuid":null,"timestamp":"2026-03-20T10:00:00.000Z","sessionId":"sess-simple","cwd":"/tmp/api"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Sure — what framework?"}],"usage":{"input_tokens":12,"output_tokens":7}},"uuid":"a1","parentUuid":"u1","timestamp":"2026-03-20T10:00:05.000Z","sessionId":"sess-simple","cwd":"/tmp/api"}
+{"type":"user","message":{"role":"user","content":"Express, please."},"uuid":"u2","parentUuid":"a1","timestamp":"2026-03-20T10:00:20.000Z","sessionId":"sess-simple","cwd":"/tmp/api"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Got it. Starting with Express."}],"usage":{"input_tokens":22,"output_tokens":9}},"uuid":"a2","parentUuid":"u2","timestamp":"2026-03-20T10:00:25.000Z","sessionId":"sess-simple","cwd":"/tmp/api"}

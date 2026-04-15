@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"first"},"uuid":"u1","timestamp":"2026-03-20T10:00:00.000Z","sessionId":"sess-bad"}
+THIS IS NOT JSON {{
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":5,"output_tokens":2}},"uuid":"a1","timestamp":"2026-03-20T10:00:01.000Z","sessionId":"sess-bad"}
