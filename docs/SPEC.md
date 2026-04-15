@@ -53,6 +53,8 @@ agentlens/
 │   │   └── estimate.go        # Token count estimation
 │   ├── config/
 │   │   └── config.go          # Settings management (~/.agentlens/config.json)
+│   ├── logging/
+│   │   └── logging.go         # slog setup → ~/.agentlens/debug.log
 │   ├── version/
 │   │   └── version.go         # const Version, injected via ldflags on release
 │   └── tui/
@@ -67,7 +69,8 @@ agentlens/
 │       ├── logviewer.go       # Log viewer (L key)
 │       ├── theme.go           # Color scheme definitions
 │       ├── keys.go            # Keybinding definitions per screen
-│       └── styles.go          # Lipgloss style constants
+│       ├── styles.go          # Lipgloss style constants
+│       └── chrome.go          # Shared layout primitives: header/footer bars, pill, panel, kbd, hRule
 ├── testdata/
 │   ├── simple.jsonl           # Simple Claude Code session fixture
 │   ├── multi_topic.jsonl      # Multi-topic session with tool calls
@@ -603,6 +606,7 @@ AgentLens targets **Go 1.26** (latest stable, released February 2026). The `go.m
 | `github.com/alecthomas/chroma/v2` | Syntax highlighting for code blocks in replay                       |
 | `github.com/dustin/go-humanize`   | Human-friendly formatting: "2h ago", "47k", "1.2 MB"                |
 | `github.com/fsnotify/fsnotify v1` | OS-native filesystem notifications (future live watching)           |
+| `github.com/gofrs/flock`          | Advisory file locking during prune (SPEC §3.4 concurrent access)    |
 
 **Shared with dotcor:** bubbletea, bubbles, lipgloss, termenv, reflow, sahilm/fuzzy, testify, go-humanize — reuse versions/patterns from there where applicable.
 
@@ -675,6 +679,8 @@ func TestClaudeParser_ParseUserMessage(t *testing.T) {
 ## 12. Implementation Roadmap
 
 Phases are executed sequentially by AI agents. Each phase must be fully complete (including tests) before moving to the next.
+
+> **Note on phase numbering:** The SPEC roadmap below groups work into six logical phases. The concrete plan files under `docs/plans/` split SPEC Phase 1 (Foundation) into two plan files — `PHASE_1_SCAFFOLDING.md` (project skeleton, tooling, empty stubs) and `PHASE_2_PARSER_AND_PICKER.md` (real parser + picker). So SPEC Phase N maps to plan file `PHASE_(N+1)_*.md` for all subsequent phases. See `docs/plans/README.md` for the explicit mapping.
 
 ### Phase 1: Foundation
 
