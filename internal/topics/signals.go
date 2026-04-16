@@ -110,8 +110,8 @@ func topKeywords(text string, n int) []string {
 
 func tokenize(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '_')
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '_'
 	})
 }
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 	"github.com/stretchr/testify/assert"
 )
@@ -40,4 +41,103 @@ func TestDefaultOptions_MatchesSpecDefaults(t *testing.T) {
 	assert.InDelta(t, 0.2, opts.KeywordOverlapThreshold, 0.001)
 	// Boundary score threshold: empirical
 	assert.Greater(t, opts.BoundaryThreshold, 0.0)
+}
+
+func session(turns ...parser.Turn) *parser.Session {
+	s := &parser.Session{Turns: turns}
+	for _, t := range turns {
+		s.TokenCount += t.Tokens
+	}
+	return s
+}
+
+func userTurn(ts time.Time, content string, tokens int) parser.Turn {
+	return parser.Turn{Role: parser.RoleUser, Timestamp: ts, Content: content, Tokens: tokens}
+}
+
+func asstTurn(ts time.Time, content string, tokens int) parser.Turn {
+	return parser.Turn{Role: parser.RoleAssistant, Timestamp: ts, Content: content, Tokens: tokens}
+}
+
+func TestCluster_EmptySession_ReturnsNoTopics(t *testing.T) {
+	got := topics.Cluster(&parser.Session{}, topics.DefaultOptions())
+	assert.Empty(t, got)
+}
+
+func TestCluster_NoBoundaries_ReturnsSingleTopic(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "set up express server", 10),
+		asstTurn(base.Add(2*time.Second), "express server set up", 15),
+		userTurn(base.Add(5*time.Second), "add a health route to the express server", 10),
+		asstTurn(base.Add(8*time.Second), "added health route to express", 12),
+	)
+	got := topics.Cluster(s, topics.DefaultOptions())
+	assert.Len(t, got, 1)
+	assert.Equal(t, []int{0, 1, 2, 3}, got[0].TurnIndices)
+	assert.Equal(t, 47, got[0].TokenCount)
+}
+
+func TestCluster_TimeGap_SplitsAtGap(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "hi", 5),
+		asstTurn(base.Add(10*time.Second), "hello", 3),
+		userTurn(base.Add(5*time.Minute), "new question", 4),
+		asstTurn(base.Add(5*time.Minute+5*time.Second), "answer", 6),
+	)
+	got := topics.Cluster(s, topics.DefaultOptions())
+	assert.Len(t, got, 2)
+	assert.Equal(t, []int{0, 1}, got[0].TurnIndices)
+	assert.Equal(t, []int{2, 3}, got[1].TurnIndices)
+}
+
+func TestCluster_ExplicitMarker_SplitsOnMarker(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "set up express", 10),
+		asstTurn(base.Add(2*time.Second), "done", 3),
+		userTurn(base.Add(4*time.Second), "actually, can you write a recipe instead", 10),
+		asstTurn(base.Add(6*time.Second), "recipe coming up", 5),
+	)
+	got := topics.Cluster(s, topics.DefaultOptions())
+	assert.Len(t, got, 2)
+	assert.Equal(t, []int{0, 1}, got[0].TurnIndices)
+	assert.Equal(t, []int{2, 3}, got[1].TurnIndices)
+}
+
+func TestCluster_TopicFieldsPopulated(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "add jwt auth middleware", 20),
+		parser.Turn{
+			Role:      parser.RoleAssistant,
+			Timestamp: base.Add(5 * time.Minute),
+			Content:   "adding jwt middleware",
+			ToolCalls: []parser.ToolCall{
+				{Name: "Write", Input: []byte(`{"file_path":"/src/auth.go","content":"..."}`)},
+				{Name: "Read", Input: []byte(`{"file_path":"/src/auth.go"}`)},
+			},
+			Tokens: 30,
+		},
+	)
+	got := topics.Cluster(s, topics.DefaultOptions())
+	assert.Len(t, got, 2)
+	assert.Equal(t, 2, got[1].ToolCallCount)
+	assert.ElementsMatch(t, []string{"/src/auth.go"}, got[1].FileSet)
+	assert.Equal(t, time.Duration(0), got[1].Duration)
+	assert.NotEmpty(t, got[0].Label)
+	assert.NotEmpty(t, got[1].Label)
+}
+
+func TestCluster_SystemAndSummaryTurns_Excluded(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "work item", 10),
+		parser.Turn{Role: parser.RoleSystem, Timestamp: base.Add(1 * time.Second), Content: "sys"},
+		asstTurn(base.Add(2*time.Second), "ok", 5),
+	)
+	got := topics.Cluster(s, topics.DefaultOptions())
+	assert.Len(t, got, 1)
+	assert.Equal(t, []int{0, 2}, got[0].TurnIndices)
 }
