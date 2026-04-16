@@ -17,6 +17,8 @@ var stopwords = map[string]struct{}{
 	"about": {}, "also": {}, "been": {}, "because": {}, "only": {}, "than": {},
 	"very": {}, "all": {}, "any": {}, "each": {}, "more": {}, "most": {},
 	"other": {}, "over": {}, "same": {}, "few": {}, "how": {}, "why": {},
+	"add": {}, "one": {}, "get": {}, "set": {}, "use": {}, "new": {},
+	"via": {}, "per": {},
 }
 
 // IsStopword reports whether w (case-insensitive) is a common English function word.
