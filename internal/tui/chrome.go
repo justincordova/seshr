@@ -88,24 +88,6 @@ func subviewFooter(width int, hints ...string) string {
 	return lipgloss.NewStyle().Width(width).Padding(0, 1).Background(colMantle).Render(joinHints(hints...))
 }
 
-// subviewContent renders a padded content area with given dimensions.
-func subviewContent(width, height int, body string) string {
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(body)
-}
-
-// panel renders a bordered box. When active is true, uses the active border color.
-func panel(title, body string, width, height int, active bool) string {
-	style := boxStyle
-	if active {
-		style = activeBoxStyle
-	}
-	content := body
-	if title != "" {
-		content = accentStyle.Render(title) + "\n" + body
-	}
-	return style.Width(width).Height(height).Render(content)
-}
-
 // mapStyle applies style to each string in the slice and returns the results.
 func mapStyle(in []string, style lipgloss.Style) []string {
 	out := make([]string, len(in))
@@ -114,4 +96,3 @@ func mapStyle(in []string, style lipgloss.Style) []string {
 	}
 	return out
 }
-
