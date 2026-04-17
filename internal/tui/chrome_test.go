@@ -29,7 +29,7 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-func TestPadRight(t *testing.T) {
+func TestPadRightRaw(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
@@ -43,7 +43,7 @@ func TestPadRight(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := padRight(tc.input, tc.width)
+			got := padRightRaw(tc.input, tc.width)
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -105,54 +105,9 @@ func TestJoinHints(t *testing.T) {
 	})
 }
 
-func TestHRule(t *testing.T) {
-	tests := []struct {
-		name  string
-		width int
-	}{
-		{"width 10", 10},
-		{"width 80", 80},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// Act
-			got := hRule(tc.width)
-			// Assert — rendered width should match
-			assert.Equal(t, tc.width, lipgloss.Width(got))
-		})
-	}
-}
-
 func TestPill(t *testing.T) {
 	// Act
 	got := pill("tag", lipgloss.AdaptiveColor{Dark: "#cba6f7", Light: "#8839ef"}, lipgloss.AdaptiveColor{Dark: "#313244", Light: "#ccd0da"})
-
-	// Assert
-	assert.NotEmpty(t, got)
-}
-
-func TestSubviewHeader(t *testing.T) {
-	tests := []struct {
-		name   string
-		title  string
-		crumbs []string
-	}{
-		{"title only", "Overview", nil},
-		{"title with crumbs", "Overview", []string{"proj-a", "session-1"}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// Act
-			got := subviewHeader(80, tc.title, tc.crumbs)
-			// Assert
-			assert.Contains(t, got, tc.title)
-		})
-	}
-}
-
-func TestSubviewFooter(t *testing.T) {
-	// Act
-	got := subviewFooter(80, "j/k navigate", "q quit")
 
 	// Assert
 	assert.NotEmpty(t, got)

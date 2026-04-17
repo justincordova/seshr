@@ -27,6 +27,7 @@ func TestLoadSession_ValidFile_ReturnsLoadedMsg(t *testing.T) {
 	loaded, ok := msg.(tui.SessionLoadedMsg)
 	require.True(t, ok, "expected SessionLoadedMsg, got %T", msg)
 	assert.NotNil(t, loaded.Session)
+	assert.Len(t, loaded.Session.Turns, 2)
 	assert.NotEmpty(t, loaded.Topics)
 }
 
@@ -39,4 +40,5 @@ func TestLoadSession_InvalidFile_ReturnsErrMsg(t *testing.T) {
 	errMsg, ok := msg.(tui.SessionLoadErrMsg)
 	require.True(t, ok, "expected SessionLoadErrMsg, got %T", msg)
 	assert.Error(t, errMsg.Err)
+	assert.Equal(t, "/nonexistent/path.jsonl", errMsg.Path)
 }

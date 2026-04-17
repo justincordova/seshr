@@ -26,6 +26,8 @@ type App struct {
 	loading  string
 	lastErr  string
 	styles   Styles
+	width    int
+	height   int
 }
 
 // NewApp returns the root model with a pre-populated session list.
@@ -43,6 +45,11 @@ func NewApp(metas []parser.SessionMeta) App {
 func (a App) Init() tea.Cmd { return a.picker.Init() }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		a.width = wsm.Width
+		a.height = wsm.Height
+	}
+
 	switch m := msg.(type) {
 	case OpenSessionMsg:
 		a.state = stateLoading
@@ -50,6 +57,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
 	case SessionLoadedMsg:
 		a.overview = NewOverview(m.Session, m.Topics)
+		if a.width > 0 {
+			om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+			a.overview = om.(Overview)
+		}
 		a.state = stateOverview
 		return a, nil
 	case SessionLoadErrMsg:
@@ -78,9 +89,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.overview = om.(Overview)
 		return a, cmd
 	case stateError:
-		if km, ok := msg.(tea.KeyMsg); ok && km.String() == "esc" {
-			a.state = stateList
-			return a, nil
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
+			case "esc":
+				a.state = stateList
+				return a, nil
+			case "q":
+				return a, tea.Quit
+			}
 		}
 	}
 	return a, nil

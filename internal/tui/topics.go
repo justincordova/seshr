@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
@@ -17,6 +19,7 @@ type Overview struct {
 	sess     *parser.Session
 	topics   []topics.Topic
 	cursor   int
+	offset   int
 	expanded map[int]bool
 	stats    bool
 	width    int
@@ -26,14 +29,31 @@ type Overview struct {
 }
 
 // NewOverview constructs the screen from a parsed session and its topics.
+// Topics are displayed latest-first (by first-turn timestamp descending).
 func NewOverview(sess *parser.Session, tops []topics.Topic) Overview {
+	sorted := make([]topics.Topic, len(tops))
+	copy(sorted, tops)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return topicStartTime(sess, sorted[i]).After(topicStartTime(sess, sorted[j]))
+	})
 	return Overview{
 		sess:     sess,
-		topics:   tops,
+		topics:   sorted,
 		expanded: map[int]bool{},
 		keys:     DefaultOverviewKeys(),
 		styles:   NewStyles(CatppuccinMocha()),
 	}
+}
+
+func topicStartTime(sess *parser.Session, top topics.Topic) time.Time {
+	if sess == nil || len(top.TurnIndices) == 0 {
+		return time.Time{}
+	}
+	ix := top.TurnIndices[0]
+	if ix < 0 || ix >= len(sess.Turns) {
+		return time.Time{}
+	}
+	return sess.Turns[ix].Timestamp
 }
 
 func (o Overview) Cursor() int         { return o.cursor }
@@ -54,11 +74,13 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, o.keys.Up):
 			if o.cursor > 0 {
 				o.cursor--
+				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
 			}
 			return o, nil
 		case key.Matches(msg, o.keys.Down):
 			if o.cursor < len(o.topics)-1 {
 				o.cursor++
+				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
 			}
 			return o, nil
 		case key.Matches(msg, o.keys.Expand):
@@ -78,43 +100,76 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return o, nil
 }
 
-func (o Overview) View() string {
-	var b strings.Builder
-	title := fmt.Sprintf("%s · %s", o.sess.Source, shortID(o.sess.ID))
-	b.WriteString(o.styles.Title.Render(title))
-	b.WriteString("\n")
-	b.WriteString(o.styles.Hint.Render(sessionHeader(o.sess)))
-	b.WriteString("\n\n")
-
-	for i, top := range o.topics {
-		renderTopicLine(&b, o.styles, top, i, i == o.cursor, o.sess.TokenCount)
-		if o.expanded[i] {
-			renderExpanded(&b, o.styles, o.sess, top)
-		}
+// topicVisibleCount returns the number of topic cards that fit in the main
+// panel body. Shared between cursor-scroll clamping and list rendering.
+func (o Overview) topicVisibleCount() int {
+	// Derive from the same mainH used in View() so clamp and render agree.
+	// Fallback of 8 when height is unknown (pre-first WindowSizeMsg).
+	if o.height <= 0 {
+		return 8
 	}
-
-	if o.stats {
-		b.WriteString("\n")
-		b.WriteString(renderStats(o.styles, o.sess, o.topics))
-		b.WriteString("\n")
+	// View uses: mainH = height - (header+stats+footer = 3), min 6.
+	mainH := o.height - 3
+	if mainH < 6 {
+		mainH = 6
 	}
-
-	b.WriteString("\n")
-	b.WriteString(o.styles.Hint.Render(joinHints(
-		kbd("j/k", "navigate"),
-		kbd("enter", "expand"),
-		kbd("tab", "stats"),
-		kbd("esc", "back"),
-		kbd("q", "quit"),
-	)))
-	b.WriteString("\n")
-	return o.styles.App.Render(b.String())
+	// renderTopicPanel passes height-4 to the list (2 borders + 1 title + 1 pad).
+	bodyH := mainH - 4
+	cards := bodyH / 2 // each card renders as 2 tight lines
+	if cards < 1 {
+		return 1
+	}
+	return cards
 }
 
-// ReturnToPickerMsg tells the root app to swap back to the session picker.
-type ReturnToPickerMsg struct{}
+func (o Overview) View() string {
+	if o.sess == nil {
+		return lipgloss.NewStyle().Width(o.width).Padding(1, 2).Render(
+			dimStyle.Render("no session loaded"),
+		)
+	}
 
-func sessionHeader(s *parser.Session) string {
+	header := o.renderHeader()
+	statsStrip := o.renderStatsStrip()
+	footer := o.renderFooter()
+
+	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) + lipgloss.Height(footer)
+	mainH := o.height - fixedH
+	if mainH < 6 {
+		mainH = 6
+	}
+	var main string
+	if o.stats {
+		main = o.renderStatsPanel(mainH)
+	} else {
+		main = o.renderTopicPanel(mainH)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, statsStrip, main, footer)
+}
+
+func (o Overview) renderStatsPanel(height int) string {
+	title := fmt.Sprintf(" Stats %s", dimStyle.Render("(tab to return)"))
+	body := renderStats(o.styles, o.sess, o.topics)
+	return panel(title, body, o.width, height)
+}
+
+func (o Overview) renderHeader() string {
+	logo := renderLogo()
+
+	right := dimStyle.Render("esc ") + keyStyle.Render("back")
+
+	gap := o.width - lipgloss.Width(logo) - lipgloss.Width(right) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	row := logo + strings.Repeat(" ", gap) + right
+	return lipgloss.NewStyle().Width(o.width).Padding(0, 1).Render(row)
+}
+
+func (o Overview) renderStatsStrip() string {
+	s := o.sess
+
 	dur := s.ModifiedAt.Sub(s.CreatedAt).Round(time.Minute)
 	if dur == 0 {
 		dur = s.ModifiedAt.Sub(s.CreatedAt).Round(time.Second)
@@ -122,12 +177,135 @@ func sessionHeader(s *parser.Session) string {
 			dur = time.Second
 		}
 	}
-	return fmt.Sprintf("%d turns · ~%s tokens · %s session",
-		len(s.Turns),
-		humanize.Comma(int64(s.TokenCount)),
-		dur,
-	)
+
+	pct := 0.0
+	if defaultContextWindow > 0 {
+		pct = 100.0 * float64(s.TokenCount) / float64(defaultContextWindow)
+	}
+
+	tokenColor := colGreen
+	if pct > 80 {
+		tokenColor = colRed
+	} else if pct > 50 {
+		tokenColor = colLavender
+	}
+
+	items := []string{
+		statInline("TURNS", fmt.Sprintf("%d", len(s.Turns)), colGreen),
+		statInline("TOKENS", fmt.Sprintf("~%s (%.0f%%)", humanize.Comma(int64(s.TokenCount)), pct), tokenColor),
+		statInline("TOPICS", fmt.Sprintf("%d", len(o.topics)), colMauve),
+		statInline("DURATION", dur.String(), colLavender),
+	}
+
+	sep := dimStyle.Render("  │  ")
+	row := strings.Join(items, sep)
+	return lipgloss.NewStyle().Width(o.width).Padding(0, 2).Render(row)
 }
+
+func (o Overview) renderTopicPanel(height int) string {
+	title := fmt.Sprintf(" %s %s %s",
+		lipgloss.NewStyle().Foreground(colText).Bold(true).Render(string(o.sess.Source)),
+		dimStyle.Render("·"),
+		dimStyle.Render(shortID(o.sess.ID)),
+	)
+	body := o.renderTopicList(o.width - 4)
+	return panel(title, body, o.width, height)
+}
+
+func (o Overview) renderTopicList(width int) string {
+	var b strings.Builder
+	visible := o.topicVisibleCount()
+
+	end := o.offset + visible
+	if end > len(o.topics) {
+		end = len(o.topics)
+	}
+	for i := o.offset; i < end; i++ {
+		top := o.topics[i]
+		b.WriteString(o.renderTopicCard(i, top, width))
+		if o.expanded[i] {
+			renderExpanded(&b, o.styles, o.sess, top)
+		}
+		if i < end-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
+	selected := i == o.cursor
+
+	barStyle := lipgloss.NewStyle().Foreground(colSurface1)
+	if selected {
+		barStyle = lipgloss.NewStyle().Foreground(colMauve).Bold(true)
+	}
+	bar := barStyle.Render("▌")
+
+	// Pad raw label to a fixed rune width *before* applying lipgloss styling —
+	// fmt %-Ns counts ANSI escape bytes, which misaligns styled strings.
+	rawLabel := padRightRaw(truncate(top.Label, 40), 40)
+	var label string
+	if selected {
+		label = lipgloss.NewStyle().Foreground(colText).Bold(true).Render(rawLabel)
+	} else {
+		label = textStyle.Render(rawLabel)
+	}
+
+	num := dimStyle.Render(fmt.Sprintf("%2d.", i+1))
+	tokenBar := TokenBar(top.TokenCount, o.sess.TokenCount, 8)
+	tokens := dimStyle.Render(fmt.Sprintf("~%s", humanize.Comma(int64(top.TokenCount))))
+
+	line1 := fmt.Sprintf("%s %s %s  %s  %s", bar, num, label, tokenBar, tokens)
+
+	turnRange := dimStyle.Render(fmt.Sprintf("turns %d–%d",
+		firstTurnIdx(top.TurnIndices)+1,
+		lastTurnIdx(top.TurnIndices)+1))
+	toolCalls := dimStyle.Render(fmt.Sprintf("%d tool calls", top.ToolCallCount))
+	duration := dimStyle.Render(formatTopicDuration(top.Duration))
+	parts := []string{turnRange, toolCalls, duration}
+	if ts := topicStartTime(o.sess, top); !ts.IsZero() {
+		parts = append(parts, dimStyle.Render(humanize.Time(ts)))
+	}
+	line2 := "       " + strings.Join(parts, dimStyle.Render(" · "))
+
+	return lipgloss.JoinVertical(lipgloss.Left, line1, line2)
+}
+
+// formatTopicDuration renders a compact human duration, falling back to
+// seconds for sub-minute topics so they don't all read "0 min".
+func formatTopicDuration(d time.Duration) string {
+	if d <= 0 {
+		return "—"
+	}
+	if d < time.Minute {
+		secs := int(d.Seconds())
+		if secs < 1 {
+			secs = 1
+		}
+		return fmt.Sprintf("%ds", secs)
+	}
+	return fmt.Sprintf("%d min", int(d.Minutes()))
+}
+
+func (o Overview) renderFooter() string {
+	hints := joinHints(
+		kbd("↑↓/jk", "nav"),
+		kbd("enter", "expand"),
+		kbd("tab", "stats"),
+		kbd("esc", "back"),
+		kbd("q", "quit"),
+	)
+	hintsW := lipgloss.Width(hints)
+	gap := (o.width - hintsW) / 2
+	if gap < 2 {
+		gap = 2
+	}
+	return lipgloss.NewStyle().Width(o.width).Render(strings.Repeat(" ", gap) + hints)
+}
+
+// ReturnToPickerMsg tells the root app to swap back to the session picker.
+type ReturnToPickerMsg struct{}
 
 func shortID(id string) string {
 	if len(id) > 12 {
@@ -137,7 +315,6 @@ func shortID(id string) string {
 }
 
 // TokenBar renders an 8-cell block-char progress bar: █ filled, ░ empty.
-// A zero total returns all-empty rather than dividing by zero.
 func TokenBar(tokens, total, width int) string {
 	if width <= 0 {
 		return ""
@@ -150,36 +327,6 @@ func TokenBar(tokens, total, width int) string {
 		}
 	}
 	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-}
-
-func renderTopicLine(b *strings.Builder, st Styles, top topics.Topic, i int, selected bool, sessionTokens int) {
-	marker := "  "
-	if selected {
-		marker = "▸ "
-	}
-	bar := TokenBar(top.TokenCount, sessionTokens, 8)
-	line1 := fmt.Sprintf("%s%d. %-40s  %s  ~%s",
-		marker,
-		i+1,
-		truncate(top.Label, 40),
-		bar,
-		humanize.Comma(int64(top.TokenCount)),
-	)
-	durMin := int(top.Duration.Minutes())
-	line2 := fmt.Sprintf("     turns %d–%d · %d tool calls · %d min",
-		firstTurnIdx(top.TurnIndices)+1,
-		lastTurnIdx(top.TurnIndices)+1,
-		top.ToolCallCount,
-		durMin,
-	)
-	if selected {
-		b.WriteString(st.Title.Render(line1))
-	} else {
-		b.WriteString(line1)
-	}
-	b.WriteString("\n")
-	b.WriteString(st.Hint.Render(line2))
-	b.WriteString("\n\n")
 }
 
 func firstTurnIdx(ix []int) int {
@@ -196,17 +343,30 @@ func lastTurnIdx(ix []int) int {
 	return ix[len(ix)-1]
 }
 
+const maxExpandedPreviews = 8
+
 func renderExpanded(b *strings.Builder, st Styles, sess *parser.Session, top topics.Topic) {
+	if sess == nil {
+		return
+	}
+	shown := 0
 	for _, ix := range top.TurnIndices {
 		if ix < 0 || ix >= len(sess.Turns) {
 			continue
 		}
+		if shown >= maxExpandedPreviews {
+			more := len(top.TurnIndices) - shown
+			b.WriteString(st.Hint.Render(fmt.Sprintf("       … %d more turns", more)))
+			b.WriteString("\n")
+			break
+		}
 		tn := sess.Turns[ix]
 		badge := roleBadge(tn.Role)
-		preview := truncate(firstLine(tn.Content), 60)
-		line := fmt.Sprintf("     %s  %-60s  ~%d", badge, preview, tn.Tokens)
+		preview := padRightRaw(truncate(firstLine(tn.Content), 60), 60)
+		line := fmt.Sprintf("       %s  %s  ~%d", badge, preview, tn.Tokens)
 		b.WriteString(st.Hint.Render(line))
 		b.WriteString("\n")
+		shown++
 	}
 	b.WriteString("\n")
 }
@@ -214,14 +374,13 @@ func renderExpanded(b *strings.Builder, st Styles, sess *parser.Session, top top
 func roleBadge(r parser.Role) string {
 	switch r {
 	case parser.RoleUser:
-		return "USER "
+		return pill("USER", colBase, colGreen)
 	case parser.RoleAssistant:
-		return "ASST "
+		return pill("ASST", colBase, colBlue)
 	case parser.RoleToolResult:
-		return "TOOL "
+		return pill("TOOL", colBase, colLavender)
 	default:
-		s := strings.ToUpper(string(r)) + "     "
-		return s[:5]
+		return pill(strings.ToUpper(string(r)), colBase, colOverlay0)
 	}
 }
 

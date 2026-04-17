@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -42,10 +43,11 @@ func TestOverview_New_InitialState(t *testing.T) {
 }
 
 func TestOverview_View_ContainsTopicLabel(t *testing.T) {
+	// Topics are sorted latest-first, so the last clustered topic renders first.
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops)
 	out := o.View()
-	assert.Contains(t, out, tops[0].Label)
+	assert.Contains(t, out, tops[len(tops)-1].Label)
 }
 
 func TestOverview_DownKey_MovesCursor(t *testing.T) {
@@ -106,12 +108,13 @@ func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 }
 
 func TestOverview_ExpandedView_ShowsPreviews(t *testing.T) {
+	// Topics are sorted latest-first, so cursor=0 is the later topic.
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	o = next.(tui.Overview)
 	out := o.View()
-	assert.Contains(t, out, "set up express")
+	assert.Contains(t, out, "switching to database setup now")
 }
 
 func TestOverview_TabKey_TogglesStats(t *testing.T) {
@@ -161,6 +164,65 @@ func TestOverview_UpKey_AtTopStays(t *testing.T) {
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 
 	assert.Equal(t, 0, next.(tui.Overview).Cursor())
+}
+
+func TestOverview_Topics_SortedLatestFirst(t *testing.T) {
+	// Arrange — two topics: earlier (turns 1–2), later (turns 3–4).
+	s, tops := demoSessionAndTopics()
+	require.Len(t, tops, 2)
+	o := tui.NewOverview(s, tops)
+
+	// Act
+	out := o.View()
+
+	// Assert — the later topic's turn range appears before the earlier one's.
+	laterRange := "turns 3–4"
+	earlierRange := "turns 1–2"
+	laterIdx := strings.Index(out, laterRange)
+	earlierIdx := strings.Index(out, earlierRange)
+	require.Greater(t, laterIdx, -1, "later turn range should be rendered")
+	require.Greater(t, earlierIdx, -1, "earlier turn range should be rendered")
+	assert.Less(t, laterIdx, earlierIdx, "latest topic must render before earlier one")
+}
+
+func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
+	// Arrange
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops)
+
+	// Act — tab on to stats view
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyTab})
+	oo := next.(tui.Overview)
+	out := oo.View()
+
+	// Assert — stats breakdown shown, and topic-panel cards are hidden.
+	assert.Contains(t, out, "user")
+	assert.Contains(t, out, "assistant")
+	assert.NotContains(t, out, "turns 1–2", "topic cards should be hidden while stats are toggled on")
+	assert.NotContains(t, out, "turns 3–4", "topic cards should be hidden while stats are toggled on")
+}
+
+func TestOverview_ZeroTimestamp_OmitsRelativeTime(t *testing.T) {
+	// Arrange — session with zero-valued turn timestamps.
+	s := &parser.Session{
+		Path:       "/tmp/zero.jsonl",
+		Source:     parser.SourceClaude,
+		ID:         "zero",
+		TokenCount: 5,
+		Turns: []parser.Turn{
+			{Role: parser.RoleUser, Content: "hi", Tokens: 3},
+			{Role: parser.RoleAssistant, Content: "yo", Tokens: 2},
+		},
+	}
+	tops := topics.Cluster(s, topics.DefaultOptions())
+	require.NotEmpty(t, tops)
+	o := tui.NewOverview(s, tops)
+
+	// Act
+	out := o.View()
+
+	// Assert — humanize.Time is not appended; no "ago" suffix leaks in.
+	assert.NotContains(t, out, " ago")
 }
 
 func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {

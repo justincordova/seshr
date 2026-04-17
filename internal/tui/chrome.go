@@ -21,9 +21,11 @@ func truncate(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
-// padRight pads s with spaces on the right until it reaches width. Strings
-// already at or over width are returned unchanged.
-func padRight(s string, width int) string {
+// padRightRaw pads s with spaces on the right until it reaches width runes.
+// Strings already at or over width are returned unchanged. Intended for
+// padding raw (unstyled) text before applying lipgloss styles — padding a
+// pre-rendered string with %-Ns would count ANSI escape bytes.
+func padRightRaw(s string, width int) string {
 	runes := []rune(s)
 	if len(runes) >= width {
 		return s
@@ -51,11 +53,6 @@ func joinHints(hints ...string) string {
 	return strings.Join(hints, sep)
 }
 
-// hRule returns a full-width horizontal rule of the given width.
-func hRule(width int) string {
-	return dimStyle.Render(strings.Repeat("─", width))
-}
-
 // pill renders a small label badge with given foreground and background colors.
 func pill(label string, fg, bg lipgloss.TerminalColor) string {
 	return lipgloss.NewStyle().
@@ -63,36 +60,4 @@ func pill(label string, fg, bg lipgloss.TerminalColor) string {
 		Background(bg).
 		Padding(0, 1).
 		Render(label)
-}
-
-// subviewHeader renders a chrome header row with title, optional breadcrumbs,
-// and a right-aligned "esc back" hint, all on a mantle background.
-func subviewHeader(width int, title string, crumbs []string) string {
-	left := lipgloss.NewStyle().Foreground(colMauve).Bold(true).Render("◆ " + title)
-	if len(crumbs) > 0 {
-		sep := dimStyle.Render(" › ")
-		crumbText := strings.Join(mapStyle(crumbs, subtitleStyle), sep)
-		left = left + "  " + crumbText
-	}
-	right := dimStyle.Render("esc ") + keyStyle.Render("back")
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	row := left + strings.Repeat(" ", gap) + right
-	return lipgloss.NewStyle().Width(width).Padding(0, 1).Background(colMantle).Render(row)
-}
-
-// subviewFooter renders a chrome footer row with joined hints on a mantle background.
-func subviewFooter(width int, hints ...string) string {
-	return lipgloss.NewStyle().Width(width).Padding(0, 1).Background(colMantle).Render(joinHints(hints...))
-}
-
-// mapStyle applies style to each string in the slice and returns the results.
-func mapStyle(in []string, style lipgloss.Style) []string {
-	out := make([]string, len(in))
-	for i, s := range in {
-		out[i] = style.Render(s)
-	}
-	return out
 }

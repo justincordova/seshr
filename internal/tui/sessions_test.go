@@ -134,6 +134,26 @@ func TestPicker_EnterKey_EmitsOpenSessionMsg(t *testing.T) {
 	assert.Equal(t, "a", open.Meta.ID)
 }
 
+func TestPicker_DeleteFailure_SurfacedInView(t *testing.T) {
+	// Arrange — meta points at a path that does not exist, so os.Remove fails.
+	m := tui.NewPicker([]parser.SessionMeta{{
+		ID:      "ghost",
+		Path:    "/nonexistent/dir/ghost.jsonl",
+		Project: "proj-ghost",
+		Source:  parser.SourceClaude,
+	}})
+
+	// Act — press d then y to trigger a delete that fails.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = m2.(tui.Picker)
+	m3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	p := m3.(tui.Picker)
+
+	// Assert — confirm modal closed and the error surface is rendered in the view.
+	assert.False(t, p.InConfirm())
+	assert.Contains(t, p.View(), "delete failed")
+}
+
 func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 	// Arrange — real files in a tmp dir
 	root := t.TempDir()

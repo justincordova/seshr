@@ -65,7 +65,23 @@ func TestApp_SessionLoadErrMsg_ShowsErrorState(t *testing.T) {
 	assert.Contains(t, out, "press esc")
 }
 
+func TestApp_QuitKey_QuitsInErrorState(t *testing.T) {
+	// Arrange
+	app := tui.NewApp(nil)
+	next, _ := app.Update(tui.SessionLoadErrMsg{Path: "/x", Err: errTest})
+	errApp := next.(tui.App)
+
+	// Act
+	_, cmd := errApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	// Assert
+	require.NotNil(t, cmd)
+	_, ok := cmd().(tea.QuitMsg)
+	assert.True(t, ok)
+}
+
 var errBoom = appTestErr("boom")
+var errTest = appTestErr("test")
 
 type appTestErr string
 
