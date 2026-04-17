@@ -32,9 +32,9 @@ func LabelFor(turns []parser.Turn, idx int) string {
 }
 
 func truncateLabel(s string) string {
-	if len(s) <= labelMaxLen {
+	runes := []rune(s)
+	if len(runes) <= labelMaxLen {
 		return s
 	}
-	// "…" is 3 bytes; keep prefix so total byte length stays <= labelMaxLen.
-	return s[:labelMaxLen-3] + "…"
+	return string(runes[:labelMaxLen-1]) + "…"
 }

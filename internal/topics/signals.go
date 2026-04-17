@@ -88,6 +88,8 @@ func topKeywords(text string, n int) []string {
 	for w, c := range freq {
 		items = append(items, kv{w, c})
 	}
+	// Partial selection sort: settles only the top-N positions. Items at
+	// positions 0..n-1 are correct; the remainder is unsorted.
 	for i := 0; i < len(items) && i < n; i++ {
 		best := i
 		for j := i + 1; j < len(items); j++ {

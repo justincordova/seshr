@@ -1,6 +1,7 @@
 package topics
 
 import (
+	"sort"
 	"time"
 
 	"github.com/justincordova/agentlens/internal/parser"
@@ -82,6 +83,7 @@ func buildTopic(sess *parser.Session, group []int, idx int) Topic {
 		tn := sess.Turns[ti]
 		turns = append(turns, tn)
 		tokens += tn.Tokens
+		// ToolCalls holds tool_use invocations only; tool results are in Turn.ToolResults.
 		tools += len(tn.ToolCalls)
 		for _, f := range ExtractFiles(tn.ToolCalls) {
 			fileSet[f] = struct{}{}
@@ -95,6 +97,7 @@ func buildTopic(sess *parser.Session, group []int, idx int) Topic {
 	for f := range fileSet {
 		files = append(files, f)
 	}
+	sort.Strings(files)
 	var dur time.Duration
 	if !first.Timestamp.IsZero() && !last.Timestamp.IsZero() {
 		dur = last.Timestamp.Sub(first.Timestamp)

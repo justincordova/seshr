@@ -33,7 +33,7 @@ func TestLabelFor_LongUserMessage_Truncates(t *testing.T) {
 		{Role: parser.RoleUser, Content: "the the the the the the the the the the the the the the the the the the the the"},
 	}
 	got := topics.LabelFor(turns, 0)
-	assert.LessOrEqual(t, len(got), 40)
+	assert.LessOrEqual(t, len([]rune(got)), 40)
 }
 
 func TestLabelFor_EmptyTurns_UsesIndexFallback(t *testing.T) {
