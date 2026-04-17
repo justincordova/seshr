@@ -93,6 +93,9 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Open):
+			if sel, ok := p.Selected(); ok {
+				return p, func() tea.Msg { return OpenSessionMsg{Meta: sel} }
+			}
 			return p, nil
 		case key.Matches(msg, p.keys.Delete):
 			if len(p.metas) == 0 {
@@ -152,6 +155,11 @@ func (p Picker) View() string {
 	b.WriteString(p.styles.Hint.Render("j/k navigate · enter open · d delete · q quit"))
 	b.WriteString("\n")
 	return p.styles.App.Render(b.String())
+}
+
+// OpenSessionMsg is emitted by the picker when enter is pressed on a session.
+type OpenSessionMsg struct {
+	Meta parser.SessionMeta
 }
 
 // deleteSelected removes the currently-highlighted session's file and

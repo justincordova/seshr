@@ -119,6 +119,21 @@ func TestPicker_ConfirmN_LeavesConfirmNoDelete(t *testing.T) {
 	assert.Len(t, p.Metas(), 3, "no entries should be removed on cancel")
 }
 
+func TestPicker_EnterKey_EmitsOpenSessionMsg(t *testing.T) {
+	// Arrange
+	m := tui.NewPicker(fixtures())
+
+	// Act
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Assert
+	require.NotNil(t, cmd)
+	msg := cmd()
+	open, ok := msg.(tui.OpenSessionMsg)
+	require.True(t, ok, "expected OpenSessionMsg, got %T", msg)
+	assert.Equal(t, "a", open.Meta.ID)
+}
+
 func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 	// Arrange — real files in a tmp dir
 	root := t.TempDir()
