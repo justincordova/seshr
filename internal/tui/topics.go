@@ -116,6 +116,12 @@ type ReturnToPickerMsg struct{}
 
 func sessionHeader(s *parser.Session) string {
 	dur := s.ModifiedAt.Sub(s.CreatedAt).Round(time.Minute)
+	if dur == 0 {
+		dur = s.ModifiedAt.Sub(s.CreatedAt).Round(time.Second)
+		if dur == 0 {
+			dur = time.Second
+		}
+	}
 	return fmt.Sprintf("%d turns · ~%s tokens · %s session",
 		len(s.Turns),
 		humanize.Comma(int64(s.TokenCount)),
@@ -192,6 +198,9 @@ func lastTurnIdx(ix []int) int {
 
 func renderExpanded(b *strings.Builder, st Styles, sess *parser.Session, top topics.Topic) {
 	for _, ix := range top.TurnIndices {
+		if ix < 0 || ix >= len(sess.Turns) {
+			continue
+		}
 		tn := sess.Turns[ix]
 		badge := roleBadge(tn.Role)
 		preview := truncate(firstLine(tn.Content), 60)
@@ -243,6 +252,12 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		}
 	}
 	dur := sess.ModifiedAt.Sub(sess.CreatedAt).Round(time.Minute)
+	if dur == 0 {
+		dur = sess.ModifiedAt.Sub(sess.CreatedAt).Round(time.Second)
+		if dur == 0 {
+			dur = time.Second
+		}
+	}
 	pct := 0.0
 	if defaultContextWindow > 0 {
 		pct = 100.0 * float64(sess.TokenCount) / float64(defaultContextWindow)
@@ -256,7 +271,7 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		fmt.Sprintf("assistant: %d turns / ~%s tok",
 			roleCounts[parser.RoleAssistant], humanize.Comma(int64(roleTokens[parser.RoleAssistant]))),
 		fmt.Sprintf("tool calls: %d · tool results: %d", tools, roleCounts[parser.RoleToolResult]),
-		fmt.Sprintf("%s · %s session · %d files",
+		fmt.Sprintf("%s · %s session · %d topic files",
 			countLabel(len(tops), "topic"), dur, len(fileSet)),
 	}
 	return st.Hint.Render(strings.Join(lines, "\n"))

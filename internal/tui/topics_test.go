@@ -138,3 +138,39 @@ func TestOverview_Stats_ContainsBreakdownNumbers(t *testing.T) {
 	assert.Contains(t, out, "assistant")
 	assert.Contains(t, out, "2 topics")
 }
+
+func TestOverview_UpKey_MovesCursorUp(t *testing.T) {
+	// Arrange — start at bottom
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops)
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	o = next.(tui.Overview)
+	require.Equal(t, 1, o.Cursor())
+
+	// Act
+	next2, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+
+	// Assert
+	assert.Equal(t, 0, next2.(tui.Overview).Cursor())
+}
+
+func TestOverview_UpKey_AtTopStays(t *testing.T) {
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops)
+
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+
+	assert.Equal(t, 0, next.(tui.Overview).Cursor())
+}
+
+func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops)
+
+	_, cmd := o.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(tui.ReturnToPickerMsg)
+	assert.True(t, ok, "expected ReturnToPickerMsg, got %T", msg)
+}
