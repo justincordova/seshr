@@ -1,12 +1,14 @@
 package topics_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCluster_NilSession_ReturnsNil(t *testing.T) {
@@ -140,4 +142,22 @@ func TestCluster_SystemAndSummaryTurns_Excluded(t *testing.T) {
 	got := topics.Cluster(s, topics.DefaultOptions())
 	assert.Len(t, got, 1)
 	assert.Equal(t, []int{0, 2}, got[0].TurnIndices)
+}
+
+func TestCluster_MultiTopicFixture_ThreeBoundaries(t *testing.T) {
+	// Arrange
+	p := parser.NewClaude()
+	sess, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
+	require.NoError(t, err)
+	require.NotNil(t, sess)
+
+	// Act
+	got := topics.Cluster(sess, topics.DefaultOptions())
+
+	// Assert
+	assert.Len(t, got, 3, "expected Express / house / Express-health topics")
+	for _, top := range got {
+		assert.NotEmpty(t, top.Label)
+		assert.NotEmpty(t, top.TurnIndices)
+	}
 }
