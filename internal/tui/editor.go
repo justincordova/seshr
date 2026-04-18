@@ -15,20 +15,19 @@ import (
 )
 
 type Editor struct {
-	sess      *parser.Session
-	topics    []topics.Topic
-	cursor    int
-	offset    int
-	expanded  map[int]bool
-	selected  map[int]bool
-	width     int
-	height    int
-	keys      EditorKeys
-	styles    Styles
-	status    string
-	pruning   bool
-	confirm   *Confirm
-	prevState string
+	sess     *parser.Session
+	topics   []topics.Topic
+	cursor   int
+	offset   int
+	expanded map[int]bool
+	selected map[int]bool
+	width    int
+	height   int
+	keys     EditorKeys
+	styles   Styles
+	status   string
+	pruning  bool
+	confirm  *Confirm
 }
 
 func NewEditor(sess *parser.Session, ts []topics.Topic) Editor {

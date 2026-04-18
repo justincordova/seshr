@@ -484,7 +484,6 @@ func renderExpandedCapped(b *strings.Builder, st Styles, sess *parser.Session, t
 			b.WriteString(st.Hint.Render(fmt.Sprintf("       … %d more turns", more)))
 			b.WriteString("\n")
 			written++
-			shown++
 			break
 		}
 		tn := sess.Turns[ix]

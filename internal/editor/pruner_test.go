@@ -93,7 +93,7 @@ func TestPruneSession_LockedReturnsErrLocked(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("{}\n"), 0o644))
 	l, err := editor.TryLock(path)
 	require.NoError(t, err)
-	defer l.Release()
+	t.Cleanup(func() { _ = l.Release() })
 	sess := &parser.Session{Path: path}
 
 	err = editor.PruneSession(sess, editor.Selection{})

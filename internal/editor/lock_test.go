@@ -25,7 +25,7 @@ func TestTryLock_SecondAcquireFails(t *testing.T) {
 	path := filepath.Join(dir, "session.jsonl")
 	first, err := editor.TryLock(path)
 	require.NoError(t, err)
-	defer first.Release()
+	t.Cleanup(func() { _ = first.Release() })
 
 	second, err := editor.TryLock(path)
 

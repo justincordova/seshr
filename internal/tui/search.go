@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -134,8 +133,4 @@ func (s SearchBar) View(width int) string {
 		Padding(0, 1).
 		Background(colMantle).
 		Render(bar + strings.Repeat(" ", gap) + count)
-}
-
-func searchKeyBinding() key.Binding {
-	return key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search"))
 }

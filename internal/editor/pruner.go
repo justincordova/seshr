@@ -26,13 +26,13 @@ func Prune(sess *parser.Session, selection Selection, dstPath string) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dstPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	src, err := os.Open(sess.Path)
 	if err != nil {
 		return fmt.Errorf("open source %s: %w", sess.Path, err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
@@ -65,7 +65,7 @@ func PruneSession(sess *parser.Session, selection Selection) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 
 	if err := CreateBackup(path); err != nil {
 		return fmt.Errorf("backup: %w", err)

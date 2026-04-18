@@ -36,17 +36,25 @@ func Restore(path string) error {
 	return copyFile(bak, path)
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (retErr error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() {
+		if err := in.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("close src: %w", err)
+		}
+	}()
 	out, err := os.Create(dst)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dst, err)
 	}
-	defer out.Close()
+	defer func() {
+		if err := out.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("close dst: %w", err)
+		}
+	}()
 	if _, err := io.Copy(out, in); err != nil {
 		return fmt.Errorf("copy: %w", err)
 	}

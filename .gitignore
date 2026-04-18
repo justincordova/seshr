@@ -36,6 +36,10 @@ Thumbs.db
 .agentlens/
 debug.log
 
+# Sandbox working copy — wiped and rebuilt by `make sandbox`
+# sandbox/sessions/ is committed; sandbox/run/ is ephemeral
+sandbox/run/
+
 # Backups accidentally created in-tree
 *.bak
 

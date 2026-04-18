@@ -39,7 +39,6 @@ type Replay struct {
 	searchHasQuery bool
 	sidebarFocus   bool
 	sidebarCursor  int
-	sidebarOffset  int
 }
 
 // NewReplay constructs a Replay model with sensible defaults.

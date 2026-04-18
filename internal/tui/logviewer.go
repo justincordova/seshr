@@ -39,8 +39,7 @@ func (lv LogViewer) SetSize(width, height int) LogViewer {
 
 // Update handles scroll keys. Returns done=true when user presses esc/q.
 func (lv LogViewer) Update(msg tea.Msg) (LogViewer, bool) {
-	switch m := msg.(type) {
-	case tea.KeyMsg:
+	if m, ok := msg.(tea.KeyMsg); ok {
 		switch m.String() {
 		case "esc", "q":
 			return lv, true
