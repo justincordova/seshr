@@ -5,8 +5,8 @@ import (
 	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshly/internal/parser"
-	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/topics"
 )
 
 // SessionLoadedMsg is emitted when a session has been parsed and clustered.

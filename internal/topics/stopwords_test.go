@@ -3,7 +3,7 @@ package topics_test
 import (
 	"testing"
 
-	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
 )
 

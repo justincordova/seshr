@@ -7,8 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshly/internal/parser"
-	"github.com/justincordova/seshly/internal/tui"
+	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

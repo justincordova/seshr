@@ -1,4 +1,4 @@
-module github.com/justincordova/seshly
+module github.com/justincordova/seshr
 
 go 1.26.1
 

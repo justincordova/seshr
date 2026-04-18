@@ -1,13 +1,13 @@
-# Seshly Logging Guide
+# Seshr Logging Guide
 
 ## Overview
 
-Seshly uses stdlib `log/slog` for structured file-based logging. The TUI owns the terminal, so **all log output goes to a file — never stdout or stderr**. No third-party logging library is used.
+Seshr uses stdlib `log/slog` for structured file-based logging. The TUI owns the terminal, so **all log output goes to a file — never stdout or stderr**. No third-party logging library is used.
 
 ## Default Log File
 
 ```
-~/.seshly/debug.log
+~/.seshr/debug.log
 ```
 
 Auto-created on first run. Parent directory is created if missing.
@@ -40,7 +40,7 @@ Press `L` in the TUI to open the built-in log viewer. Reads from the same file.
 Create the logger once at startup in `main.go` and install via `slog.SetDefault`. Packages call `slog.Info/Debug/Warn/Error` directly — no per-struct logger fields unless a package genuinely needs scoped attrs.
 
 ```go
-logPath := filepath.Join(home, ".seshly", "debug.log")
+logPath := filepath.Join(home, ".seshr", "debug.log")
 logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 if err != nil {
     return fmt.Errorf("open log: %w", err)

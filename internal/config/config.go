@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-// Config holds user preferences loaded from ~/.seshly/config.json.
+// Config holds user preferences loaded from ~/.seshr/config.json.
 // See SPEC §4.3. Unknown fields are ignored on load and dropped on save.
 type Config struct {
 	Theme                string   `json:"theme"`
@@ -30,16 +30,16 @@ func Default() Config {
 	}
 }
 
-// Dir returns the path to the seshly data directory (~/.seshly).
+// Dir returns the path to the seshr data directory (~/.seshr).
 func Dir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("user home: %w", err)
 	}
-	return filepath.Join(home, ".seshly"), nil
+	return filepath.Join(home, ".seshr"), nil
 }
 
-// EnsureDir creates ~/.seshly with 0755 perms if it does not exist.
+// EnsureDir creates ~/.seshr with 0755 perms if it does not exist.
 func EnsureDir() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -51,7 +51,7 @@ func EnsureDir() (string, error) {
 	return dir, nil
 }
 
-// Path returns the absolute path to ~/.seshly/config.json.
+// Path returns the absolute path to ~/.seshr/config.json.
 func Path() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -96,7 +96,7 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-// Save writes cfg to ~/.seshly/config.json, creating the directory if
+// Save writes cfg to ~/.seshr/config.json, creating the directory if
 // needed. Writes via tmpfile+rename for atomicity.
 func Save(cfg Config) error {
 	if _, err := EnsureDir(); err != nil {

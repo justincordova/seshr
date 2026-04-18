@@ -1,15 +1,15 @@
-# seshly Makefile
+# seshr Makefile
 # ─────────────────────────────────────────────────────────────────────────────
 #
 #   make build       — compile the binary
 #   make test        — go test ./...
 #   make lint        — golangci-lint run
 #   make check       — build + test + lint (pre-commit gate)
-#   make sandbox     — reset run/, copy canonical sessions, launch seshly
+#   make sandbox     — reset run/, copy canonical sessions, launch seshr
 #   make reset       — wipe run/ only (no launch)
 #   make clean       — remove binary and run/
 
-BINARY     := ./seshly
+BINARY     := ./seshr
 SESSIONS   := sandbox/sessions
 RUN        := sandbox/run
 
@@ -17,7 +17,7 @@ RUN        := sandbox/run
 
 # ── build ─────────────────────────────────────────────────────────────────────
 build:
-	go build -o $(BINARY) ./cmd/seshly
+	go build -o $(BINARY) ./cmd/seshr
 
 # ── test ──────────────────────────────────────────────────────────────────────
 test:
@@ -42,7 +42,7 @@ reset:
 #   sandbox/sessions/   — committed source-of-truth; never modified by the app
 #   sandbox/run/        — fresh working copy; wiped and rebuilt on each `make sandbox`
 #
-# seshly points at sandbox/run/ via --dir, so edits/backups happen there.
+# seshr points at sandbox/run/ via --dir, so edits/backups happen there.
 # The originals in sandbox/sessions/ are untouched.
 sandbox: build reset
 	@echo "→ copying canonical sessions → $(RUN)/"
@@ -54,7 +54,7 @@ sandbox: build reset
 		echo "   $$size  $$proj/$$(basename $$f)"; \
 	done
 	@echo ""
-	@echo "→ launching seshly (--dir $(RUN)) ..."
+	@echo "→ launching seshr (--dir $(RUN)) ..."
 	@$(BINARY) --dir $(RUN)
 
 # ── clean ─────────────────────────────────────────────────────────────────────

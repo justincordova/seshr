@@ -3,7 +3,7 @@ package parser_test
 import (
 	"testing"
 
-	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshr/internal/parser"
 	"github.com/stretchr/testify/assert"
 )
 

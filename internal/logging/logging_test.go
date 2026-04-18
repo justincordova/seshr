@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/seshly/internal/logging"
+	"github.com/justincordova/seshr/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,5 +19,5 @@ func TestInit_HomeOverridden_CreatesLogFile(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	assert.FileExists(t, filepath.Join(tmp, ".seshly", "debug.log"))
+	assert.FileExists(t, filepath.Join(tmp, ".seshr", "debug.log"))
 }

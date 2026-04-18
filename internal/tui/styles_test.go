@@ -3,7 +3,7 @@ package tui_test
 import (
 	"testing"
 
-	"github.com/justincordova/seshly/internal/tui"
+	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 )
 

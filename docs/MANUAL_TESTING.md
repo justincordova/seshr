@@ -1,4 +1,4 @@
-# Seshly Manual Testing Guide
+# Seshr Manual Testing Guide
 
 Automated tests (`go test ./...`) cover parser, clustering, pruner, and TUI `Update` logic. They do **not** catch rendering bugs, flicker, color regressions, or keybinding ergonomics. Manual verification is required before declaring any phase complete.
 
@@ -11,22 +11,22 @@ Run these checks on a real terminal (iTerm2, Alacritty, or kitty) at normal size
 - macOS or Linux
 - Terminal ≥ 80 cols × 24 rows
 - A real `~/.claude/projects/` with at least one multi-topic session
-- Fresh build: `go build -o seshly ./ && ./seshly`
+- Fresh build: `go build -o seshr ./ && ./seshr`
 
 Tail the log file in a second pane while testing:
 
 ```bash
-tail -f ~/.seshly/debug.log
+tail -f ~/.seshr/debug.log
 ```
 
 ---
 
 ## Phase 1 — Scaffolding
 
-- [ ] `./seshly --version` prints a version and exits 0
-- [ ] `./seshly --debug` launches the placeholder TUI
+- [ ] `./seshr --version` prints a version and exits 0
+- [ ] `./seshr --debug` launches the placeholder TUI
 - [ ] `q` quits cleanly, exit code 0, terminal is restored (no garbled state)
-- [ ] Log file exists at `~/.seshly/debug.log` and contains a structured `seshly starting` line
+- [ ] Log file exists at `~/.seshr/debug.log` and contains a structured `seshr starting` line
 - [ ] Resizing the terminal during runtime does not crash
 
 ## Phase 2 — Parser & Session Picker
@@ -79,7 +79,7 @@ tail -f ~/.seshly/debug.log
 
 - [ ] `?` on each screen shows the correct context-sensitive keybindings
 - [ ] `/` search filters in real time; `esc` clears; `enter` selects
-- [ ] `,` settings popup reads current config and writes changes to `~/.seshly/config.json`
+- [ ] `,` settings popup reads current config and writes changes to `~/.seshr/config.json`
 - [ ] `L` log viewer shows tail of debug.log; `j/k`, `g/G` work
 - [ ] Theme switch (`--theme nord` / `--theme dracula`) changes all colors
 - [ ] Narrow terminal (60×15): sidebar collapses, layout still legible

@@ -2,8 +2,8 @@
 docs/plans/
 
 # Go build artifacts
-/seshly
-/seshly.exe
+/seshr
+/seshr.exe
 /dist/
 *.exe
 *.test
@@ -32,8 +32,8 @@ Thumbs.db
 .env.local
 *.local
 
-# Local seshly data (in case a dev symlinks or runs from repo root)
-.seshly/
+# Local seshr data (in case a dev symlinks or runs from repo root)
+.seshr/
 debug.log
 
 # Sandbox working copy — wiped and rebuilt by `make sandbox`

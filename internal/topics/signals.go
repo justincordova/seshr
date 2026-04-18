@@ -3,7 +3,7 @@ package topics
 import (
 	"strings"
 
-	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshr/internal/parser"
 )
 
 const (

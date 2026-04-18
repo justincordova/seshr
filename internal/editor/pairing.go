@@ -1,8 +1,8 @@
 package editor
 
 import (
-	"github.com/justincordova/seshly/internal/parser"
-	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/topics"
 )
 
 type Selection struct {

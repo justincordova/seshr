@@ -3,7 +3,7 @@ package topics
 import (
 	"encoding/json"
 
-	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshr/internal/parser"
 )
 
 // ExtractFiles pulls unique file paths from tool-call Input JSON blobs.

@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/seshly/internal/parser"
-	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/topics"
 )
 
 const (

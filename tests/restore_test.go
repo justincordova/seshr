@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/seshly/internal/editor"
-	"github.com/justincordova/seshly/internal/parser"
-	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshr/internal/editor"
+	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

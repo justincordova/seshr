@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// LogViewer displays the last N lines of ~/.seshly/debug.log in a viewport.
+// LogViewer displays the last N lines of ~/.seshr/debug.log in a viewport.
 type LogViewer struct {
 	vp     viewport.Model
 	width  int
@@ -60,7 +60,7 @@ func (lv LogViewer) Update(msg tea.Msg) (LogViewer, bool) {
 // View renders the log viewer full-screen.
 func (lv LogViewer) View() string {
 	title := textStyle.Bold(true).Render("Debug Log") +
-		"  " + dimStyle.Render("~/.seshly/debug.log")
+		"  " + dimStyle.Render("~/.seshr/debug.log")
 	hint := dimStyle.Render("j/k scroll · g/G top/bottom · esc close")
 
 	header := lipgloss.NewStyle().
@@ -87,7 +87,7 @@ func (lv LogViewer) loadLog() string {
 	if err != nil {
 		return dimStyle.Render("(could not determine home directory)")
 	}
-	path := filepath.Join(home, ".seshly", "debug.log")
+	path := filepath.Join(home, ".seshr", "debug.log")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return dimStyle.Render("(no log file found at " + path + ")")

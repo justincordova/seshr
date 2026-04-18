@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshr/internal/parser"
 )
 
 // Topic is a contiguous run of turns grouped by a shared subject.

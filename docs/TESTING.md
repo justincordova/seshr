@@ -1,4 +1,4 @@
-# Seshly Testing Guide
+# Seshr Testing Guide
 
 ## Overview
 
@@ -24,7 +24,7 @@ TUI coverage is lower by design — view rendering is validated manually. Focus 
 ## Project Layout
 
 ```
-seshly/
+seshr/
 ├── main.go
 ├── internal/
 │   ├── parser/
