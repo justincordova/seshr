@@ -16,16 +16,18 @@ import (
 
 // Overview is the Topic Overview Bubbletea model per SPEC §3.2.
 type Overview struct {
-	sess     *parser.Session
-	topics   []topics.Topic
-	cursor   int
-	offset   int
-	expanded map[int]bool
-	stats    bool
-	width    int
-	height   int
-	keys     OverviewKeys
-	styles   Styles
+	sess      *parser.Session
+	topics    []topics.Topic
+	allTopics []topics.Topic
+	cursor    int
+	offset    int
+	expanded  map[int]bool
+	stats     bool
+	width     int
+	height    int
+	keys      OverviewKeys
+	styles    Styles
+	search    SearchBar
 }
 
 // NewOverview constructs the screen from a parsed session and its topics.
@@ -34,14 +36,16 @@ func NewOverview(sess *parser.Session, tops []topics.Topic) Overview {
 	sorted := make([]topics.Topic, len(tops))
 	copy(sorted, tops)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return topicStartTime(sess, sorted[i]).After(topicStartTime(sess, sorted[j]))
+		return topicStartTime(sess, sorted[i]).Before(topicStartTime(sess, sorted[j]))
 	})
 	return Overview{
-		sess:     sess,
-		topics:   sorted,
-		expanded: map[int]bool{},
-		keys:     DefaultOverviewKeys(),
-		styles:   NewStyles(CatppuccinMocha()),
+		sess:      sess,
+		topics:    sorted,
+		allTopics: sorted,
+		expanded:  map[int]bool{},
+		keys:      DefaultOverviewKeys(),
+		styles:    NewStyles(CatppuccinMocha()),
+		search:    NewSearchBar(),
 	}
 }
 
@@ -68,9 +72,43 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o.height = msg.Height
 		return o, nil
 	case tea.KeyMsg:
+		if o.search.Active() {
+			switch msg.String() {
+			case "esc":
+				o.search.Close()
+				o.topics = o.allTopics
+				o.expanded = map[int]bool{}
+				if o.cursor >= len(o.topics) {
+					o.cursor = len(o.topics) - 1
+				}
+				if o.cursor < 0 {
+					o.cursor = 0
+				}
+				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
+				return o, nil
+			case "enter":
+				o.search.Commit()
+				o.applyTopicSearchFilter()
+				return o, nil
+			case "up", "ctrl+p":
+				if o.cursor > 0 {
+					o.cursor--
+				}
+				return o, nil
+			case "down", "ctrl+n":
+				if o.cursor < len(o.topics)-1 {
+					o.cursor++
+				}
+				return o, nil
+			default:
+				o.search.Update(msg)
+				o.applyTopicSearchFilter()
+				return o, nil
+			}
+		}
 		switch {
 		case key.Matches(msg, o.keys.Quit):
-			return o, tea.Quit
+			return o, func() tea.Msg { return ReturnToPickerMsg{} }
 		case key.Matches(msg, o.keys.Up):
 			if o.cursor > 0 {
 				o.cursor--
@@ -91,10 +129,17 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return o, nil
 		case key.Matches(msg, o.keys.Back):
 			return o, func() tea.Msg { return ReturnToPickerMsg{} }
+		case key.Matches(msg, o.keys.Search):
+			o.search.Open()
+			return o, nil
 		case key.Matches(msg, o.keys.Replay):
 			return o, func() tea.Msg { return OpenReplayMsg{} }
 		case key.Matches(msg, o.keys.Edit):
 			return o, func() tea.Msg { return OpenEditorMsg{} }
+		default:
+			if msg.String() == "q" {
+				return o, func() tea.Msg { return ReturnToPickerMsg{} }
+			}
 		}
 	}
 	return o, nil
@@ -103,16 +148,19 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // topicVisibleCount returns the number of topic cards that fit in the main
 // panel body. Shared between cursor-scroll clamping and list rendering.
 func (o Overview) topicVisibleCount() int {
-	if o.height <= 0 {
-		return 8
+	if o.height <= 0 || o.width <= 0 {
+		return len(o.topics)
 	}
-	mainH := o.height - 3
+	header := o.renderHeader()
+	statsStrip := o.renderStatsStrip()
+	footer := o.renderFooter()
+	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) + lipgloss.Height(footer)
+	mainH := o.height - fixedH
 	if mainH < 6 {
 		mainH = 6
 	}
 	bodyH := mainH - 4
-	maxPerCard := 2 + maxExpandedPreviews + 1
-	cards := bodyH / maxPerCard
+	cards := bodyH / 3
 	if cards < 1 {
 		cards = 1
 	}
@@ -120,6 +168,39 @@ func (o Overview) topicVisibleCount() int {
 		cards = len(o.topics)
 	}
 	return cards
+}
+
+func (o *Overview) applyTopicSearchFilter() {
+	if o.search.Query() == "" {
+		o.topics = o.allTopics
+	} else {
+		haystack := make([]string, len(o.allTopics))
+		for i, t := range o.allTopics {
+			var b strings.Builder
+			b.WriteString(t.Label)
+			b.WriteString(" ")
+			for _, idx := range t.TurnIndices {
+				if idx >= 0 && idx < len(o.sess.Turns) {
+					b.WriteString(o.sess.Turns[idx].Content)
+					b.WriteString(" ")
+				}
+			}
+			haystack[i] = b.String()
+		}
+		o.search.Filter(haystack)
+		o.topics = make([]topics.Topic, 0, len(o.search.Matches()))
+		for _, m := range o.search.Matches() {
+			o.topics = append(o.topics, o.allTopics[m.Index])
+		}
+	}
+	o.expanded = map[int]bool{}
+	if o.cursor >= len(o.topics) {
+		o.cursor = len(o.topics) - 1
+	}
+	if o.cursor < 0 {
+		o.cursor = 0
+	}
+	o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
 }
 
 func (o Overview) View() string {
@@ -131,12 +212,14 @@ func (o Overview) View() string {
 
 	header := o.renderHeader()
 	statsStrip := o.renderStatsStrip()
+	searchBar := o.search.View(o.width)
 	footer := o.renderFooter()
 
-	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) + lipgloss.Height(footer)
+	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
+		lipgloss.Height(searchBar) + lipgloss.Height(footer)
 	mainH := o.height - fixedH
-	if mainH < 6 {
-		mainH = 6
+	if o.height == 0 || mainH < 6 {
+		mainH = len(o.topics)*3 + 20
 	}
 	var main string
 	if o.stats {
@@ -145,7 +228,12 @@ func (o Overview) View() string {
 		main = o.renderTopicPanel(mainH)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, statsStrip, main, footer)
+	parts := []string{header, statsStrip, main}
+	if searchBar != "" {
+		parts = append(parts, searchBar)
+	}
+	parts = append(parts, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (o Overview) renderStatsPanel(height int) string {
@@ -214,9 +302,9 @@ func (o Overview) renderTopicPanel(height int) string {
 		dimStyle.Render("·"),
 		dimStyle.Render(shortID(o.sess.ID)),
 	)
-	bodyH := height - 4 // 2 borders + 1 title + 1 blank pad
-	if bodyH < 16 {
-		bodyH = 16 // minimum content budget; panel clips visual excess
+	bodyH := height - 4
+	if bodyH < 2 {
+		bodyH = len(o.topics)*3 + 10
 	}
 	body := o.renderTopicList(o.width-4, bodyH)
 	return panel(title, body, o.width, height)
@@ -313,9 +401,11 @@ func (o Overview) renderFooter() string {
 	hints := joinHints(
 		kbd("↑↓/jk", "nav"),
 		kbd("enter", "expand"),
+		kbd("r", "replay"),
+		kbd("e", "edit"),
 		kbd("tab", "stats"),
-		kbd("esc", "back"),
-		kbd("q", "quit"),
+		kbd("/", "search"),
+		kbd("esc/q", "back"),
 	)
 	hintsW := lipgloss.Width(hints)
 	gap := (o.width - hintsW) / 2
@@ -352,7 +442,9 @@ func TokenBar(tokens, total, width int) string {
 			filled = width
 		}
 	}
-	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	barFill := lipgloss.NewStyle().Foreground(colGreen).Render(strings.Repeat("█", filled))
+	barEmpty := lipgloss.NewStyle().Foreground(colSurface0).Render(strings.Repeat("░", width-filled))
+	return barFill + barEmpty
 }
 
 func firstTurnIdx(ix []int) int {

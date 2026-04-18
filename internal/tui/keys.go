@@ -8,8 +8,11 @@ type PickerKeys struct {
 	Up      key.Binding
 	Down    key.Binding
 	Open    key.Binding
+	Replay  key.Binding
+	Edit    key.Binding
 	Delete  key.Binding
 	Restore key.Binding
+	Search  key.Binding
 	Quit    key.Binding
 }
 
@@ -19,8 +22,11 @@ func DefaultPickerKeys() PickerKeys {
 		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
 		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 		Open:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
+		Replay:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
+		Edit:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		Delete:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		Restore: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restore")),
+		Search:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}
 }
@@ -33,6 +39,7 @@ type OverviewKeys struct {
 	Replay key.Binding
 	Edit   key.Binding
 	Stats  key.Binding
+	Search key.Binding
 	Back   key.Binding
 	Quit   key.Binding
 }
@@ -46,8 +53,9 @@ func DefaultOverviewKeys() OverviewKeys {
 		Replay: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
 		Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		Stats:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "stats")),
+		Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		Back:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:   key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
 
@@ -62,6 +70,8 @@ type ReplayKeys struct {
 	ToggleThinking key.Binding
 	ToggleWrap     key.Binding
 	Expand         key.Binding
+	SidebarFocus   key.Binding
+	Search         key.Binding
 	Back           key.Binding
 	Quit           key.Binding
 }
@@ -71,13 +81,15 @@ func DefaultReplayKeys() ReplayKeys {
 		Next:           key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next turn")),
 		Prev:           key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev turn")),
 		AutoPlay:       key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "auto-play")),
-		NextTopic:      key.NewBinding(key.WithKeys("]", "n"), key.WithHelp("]/n", "next topic")),
-		PrevTopic:      key.NewBinding(key.WithKeys("[", "p"), key.WithHelp("[/p", "prev topic")),
+		NextTopic:      key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next topic")),
+		PrevTopic:      key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev topic")),
 		ToggleThinking: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "thinking")),
 		ToggleWrap:     key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wrap")),
 		Expand:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand tool")),
+		SidebarFocus:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "sidebar")),
+		Search:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:           key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
 
@@ -103,6 +115,6 @@ func DefaultEditorKeys() EditorKeys {
 		Prune:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prune")),
 		Expand:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand")),
 		Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }

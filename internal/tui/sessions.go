@@ -17,6 +17,7 @@ import (
 // Picker is the Session Picker Bubbletea model. See SPEC §3.1.
 type Picker struct {
 	metas     []parser.SessionMeta
+	allMetas  []parser.SessionMeta
 	cursor    int
 	offset    int
 	width     int
@@ -25,14 +26,17 @@ type Picker struct {
 	styles    Styles
 	confirm   *Confirm
 	deleteErr error
+	search    SearchBar
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
 func NewPicker(metas []parser.SessionMeta) Picker {
 	return Picker{
-		metas:  metas,
-		keys:   DefaultPickerKeys(),
-		styles: NewStyles(CatppuccinMocha()),
+		metas:    metas,
+		allMetas: metas,
+		keys:     DefaultPickerKeys(),
+		styles:   NewStyles(CatppuccinMocha()),
+		search:   NewSearchBar(),
 	}
 }
 
@@ -81,9 +85,45 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.height = msg.Height
 		return p, nil
 	case tea.KeyMsg:
+		if p.search.Active() {
+			switch msg.String() {
+			case "esc":
+				p.search.Close()
+				p.metas = p.allMetas
+				if p.cursor >= len(p.metas) {
+					p.cursor = len(p.metas) - 1
+				}
+				if p.cursor < 0 {
+					p.cursor = 0
+				}
+				p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
+				return p, nil
+			case "enter":
+				p.search.Commit()
+				p.applySearchFilter()
+				return p, nil
+			case "up", "ctrl+p":
+				if len(p.metas) > 0 && p.cursor > 0 {
+					p.cursor--
+				}
+				return p, nil
+			case "down", "ctrl+n":
+				if p.cursor < len(p.metas)-1 {
+					p.cursor++
+				}
+				return p, nil
+			default:
+				p.search.Update(msg)
+				p.applySearchFilter()
+				return p, nil
+			}
+		}
 		switch {
 		case key.Matches(msg, p.keys.Quit):
 			return p, tea.Quit
+		case key.Matches(msg, p.keys.Search):
+			p.search.Open()
+			return p, nil
 		case key.Matches(msg, p.keys.Up):
 			if p.cursor > 0 {
 				p.cursor--
@@ -99,6 +139,16 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, p.keys.Open):
 			if sel, ok := p.Selected(); ok {
 				return p, func() tea.Msg { return OpenSessionMsg{Meta: sel} }
+			}
+			return p, nil
+		case key.Matches(msg, p.keys.Replay):
+			if sel, ok := p.Selected(); ok {
+				return p, func() tea.Msg { return OpenSessionAndReplayMsg{Meta: sel} }
+			}
+			return p, nil
+		case key.Matches(msg, p.keys.Edit):
+			if sel, ok := p.Selected(); ok {
+				return p, func() tea.Msg { return OpenSessionAndEditMsg{Meta: sel} }
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Delete):
@@ -135,20 +185,26 @@ func (p Picker) View() string {
 	header := p.renderHeader()
 	statsStrip := p.renderStats()
 	errLine := p.renderDeleteErr()
+	searchBar := p.search.View(p.width)
 	footer := p.renderFooter()
 
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(errLine) + lipgloss.Height(footer)
+		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
 	mainH := p.height - fixedH
 	if mainH < 6 {
 		mainH = 6
 	}
 	main := p.renderSessionPanel(mainH)
 
-	if errLine == "" {
-		return lipgloss.JoinVertical(lipgloss.Left, header, statsStrip, main, footer)
+	parts := []string{header, statsStrip, main}
+	if errLine != "" {
+		parts = append(parts, errLine)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, statsStrip, main, errLine, footer)
+	if searchBar != "" {
+		parts = append(parts, searchBar)
+	}
+	parts = append(parts, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (p Picker) renderDeleteErr() string {
@@ -175,9 +231,7 @@ func (p Picker) renderHeader() string {
 	ver := dimStyle.Render("v0.1")
 	left := logo + " " + ver
 
-	right := joinHints(
-		kbd("?", "help"),
-	)
+	right := dimStyle.Render("ctrl+c quit")
 
 	gap := p.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 1 {
@@ -264,30 +318,60 @@ func (p Picker) renderSessionCard(i, width int) string {
 		name = lipgloss.NewStyle().Foreground(colText).Bold(true).Render(truncate(m.Project, 40))
 	}
 
-	size := dimStyle.Render(humanizeSize(m.Size))
+	tokens := dimStyle.Render("~" + humanize.Comma(int64(m.TokenCount)) + " tok")
 	age := dimStyle.Render(humanize.Time(m.ModifiedAt))
 
-	line1Gap := width - lipgloss.Width(name) - lipgloss.Width(size) - lipgloss.Width(age) - 6
+	line1Gap := width - lipgloss.Width(name) - lipgloss.Width(tokens) - lipgloss.Width(age) - 6
 	if line1Gap < 1 {
 		line1Gap = 1
 	}
-	line1 := bar + " " + name + strings.Repeat(" ", line1Gap) + size + "  " + age
+	line1 := bar + " " + name + strings.Repeat(" ", line1Gap) + tokens + "  " + age
 
 	src := dimStyle.Render(string(m.Source))
+	parts := []string{src}
+	if m.TurnCount > 0 {
+		parts = append(parts, dimStyle.Render(fmt.Sprintf("%d turns", m.TurnCount)))
+	}
 	backup := ""
 	if m.HasBackup {
 		backup = dimStyle.Render(" · ") + successStyle.Render("↶ backup")
 	}
-	line2 := bar + "  " + src + backup
+	line2 := bar + "  " + strings.Join(parts, dimStyle.Render(" · ")) + backup
 
 	return lipgloss.JoinVertical(lipgloss.Left, line1, line2)
+}
+
+func (p *Picker) applySearchFilter() {
+	if p.search.Query() == "" {
+		p.metas = p.allMetas
+	} else {
+		haystack := make([]string, len(p.allMetas))
+		for i, m := range p.allMetas {
+			haystack[i] = m.Project + " " + m.ID
+		}
+		p.search.Filter(haystack)
+		p.metas = make([]parser.SessionMeta, 0, len(p.search.Matches()))
+		for _, m := range p.search.Matches() {
+			p.metas = append(p.metas, p.allMetas[m.Index])
+		}
+	}
+	if p.cursor >= len(p.metas) {
+		p.cursor = len(p.metas) - 1
+	}
+	if p.cursor < 0 {
+		p.cursor = 0
+	}
+	p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
 }
 
 func (p Picker) renderFooter() string {
 	hints := joinHints(
 		kbd("↑↓/jk", "nav"),
 		kbd("enter", "open"),
+		kbd("r", "replay"),
+		kbd("e", "edit"),
 		kbd("d", "delete"),
+		kbd("/", "search"),
 		kbd("q", "quit"),
 	)
 	hintsW := lipgloss.Width(hints)
@@ -348,6 +432,14 @@ type OpenSessionMsg struct {
 	Meta parser.SessionMeta
 }
 
+type OpenSessionAndReplayMsg struct {
+	Meta parser.SessionMeta
+}
+
+type OpenSessionAndEditMsg struct {
+	Meta parser.SessionMeta
+}
+
 type RestoreRequestedMsg struct{ Path string }
 
 // deleteSelected removes the currently-highlighted session's file and
@@ -373,11 +465,21 @@ func deleteSelected(p *Picker) error {
 			slog.Warn("could not remove empty project dir", "path", dir, "err", rmErr)
 		}
 	}
-	p.metas = append(p.metas[:p.cursor], p.metas[p.cursor+1:]...)
+	p.allMetas = removeMeta(p.allMetas, sel.Path)
+	p.metas = removeMeta(p.metas, sel.Path)
 	if p.cursor >= len(p.metas) && p.cursor > 0 {
 		p.cursor--
 	}
 	return nil
+}
+
+func removeMeta(metas []parser.SessionMeta, path string) []parser.SessionMeta {
+	for i, m := range metas {
+		if m.Path == path {
+			return append(metas[:i], metas[i+1:]...)
+		}
+	}
+	return metas
 }
 
 func humanizeSize(n int64) string {
