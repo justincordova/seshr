@@ -678,20 +678,22 @@ func TestClaudeParser_ParseUserMessage(t *testing.T) {
 
 ## 12. Implementation Roadmap
 
-Phases are executed sequentially by AI agents. Each phase must be fully complete (including tests) before moving to the next.
+Phases are executed sequentially by AI agents. Each phase must be fully complete (including tests) before moving to the next. Plan files in `docs/plans/` use the same numbering — `PHASE_1_SCAFFOLDING.md` through `PHASE_7_LAUNCH.md`.
 
-> **Note on phase numbering:** The SPEC roadmap below groups work into six logical phases. The concrete plan files under `docs/plans/` split SPEC Phase 1 (Foundation) into two plan files — `PHASE_1_SCAFFOLDING.md` (project skeleton, tooling, empty stubs) and `PHASE_2_PARSER_AND_PICKER.md` (real parser + picker). So SPEC Phase N maps to plan file `PHASE_(N+1)_*.md` for all subsequent phases. See `docs/plans/README.md` for the explicit mapping.
-
-### Phase 1: Foundation
+### Phase 1: Scaffolding
 
 - Set up Go project with Bubbletea boilerplate
+- Set up slog logging and config file
+- Project skeleton, tooling, empty stub packages
+
+### Phase 2: Foundation (Parser & Picker)
+
 - Implement Claude Code JSONL parser (`types.go`, `claude.go`)
 - Implement token estimation (`estimate.go`) — prefer `usage` fields when present, fall back to char heuristic
 - Build Session Picker screen with session scanning
 - Session deletion with confirmation dialog
-- Set up slog logging and config file
 
-### Phase 2: Topic Clustering
+### Phase 3: Topic Clustering
 
 - Implement time-gap based clustering
 - Add file-context shift detection
@@ -700,7 +702,7 @@ Phases are executed sequentially by AI agents. Each phase must be fully complete
 - Build Topic Overview screen
 - Add loading spinner for large sessions
 
-### Phase 3: Replay Mode
+### Phase 4: Replay Mode
 
 - Build split-pane replay view with topic sidebar
 - Add syntax highlighting via chroma
@@ -709,7 +711,7 @@ Phases are executed sequentially by AI agents. Each phase must be fully complete
 - Add topic jumping and thinking block toggle
 - Add expandable tool results viewport
 
-### Phase 4: Edit Mode
+### Phase 5: Edit Mode
 
 - Add selection checkboxes to Topic Overview
 - Implement safe message pairing logic
@@ -718,7 +720,7 @@ Phases are executed sequentially by AI agents. Each phase must be fully complete
 - Add confirmation dialog with token savings
 - Add backup restore flow (see §4.5)
 
-### Phase 5: Polish & Global Features
+### Phase 6: Polish & Global Features
 
 - Implement `?` help overlay component
 - Implement `/` fuzzy search with sahilm/fuzzy
@@ -727,7 +729,7 @@ Phases are executed sequentially by AI agents. Each phase must be fully complete
 - Add Catppuccin, Nord, Dracula themes
 - Add responsive layout handling
 
-### Phase 6: Launch
+### Phase 7: Launch
 
 - Write README with screenshots and GIF demos
 - Create goreleaser config and Homebrew formula
