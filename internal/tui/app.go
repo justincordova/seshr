@@ -149,7 +149,7 @@ func NewApp(metas []parser.SessionMeta, cfg config.Config) App {
 	sp.Spinner = spinner.Dot
 	return App{
 		state:   stateList,
-		picker:  NewPicker(metas),
+		picker:  NewPicker(metas, th),
 		spinner: sp,
 		styles:  NewStyles(th),
 		theme:   th,
@@ -306,7 +306,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case RescanDoneMsg:
 		if m.Metas != nil {
-			a.picker = NewPicker(m.Metas)
+			a.picker = NewPicker(m.Metas, a.theme)
 		}
 		return a, nil
 	case spinner.TickMsg:

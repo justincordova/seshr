@@ -21,9 +21,17 @@ func fixtures() []parser.SessionMeta {
 	}
 }
 
+func pressDown(m tui.Picker, n int) tui.Picker {
+	for i := 0; i < n; i++ {
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = m2.(tui.Picker)
+	}
+	return m
+}
+
 func TestPicker_DownKey_MovesCursor(t *testing.T) {
 	// Arrange
-	m := tui.NewPicker(fixtures())
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
 
 	// Act
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -35,7 +43,7 @@ func TestPicker_DownKey_MovesCursor(t *testing.T) {
 
 func TestPicker_UpKey_AtTopStays(t *testing.T) {
 	// Arrange
-	m := tui.NewPicker(fixtures())
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
 
 	// Act
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
@@ -46,20 +54,17 @@ func TestPicker_UpKey_AtTopStays(t *testing.T) {
 }
 
 func TestPicker_DownKey_AtBottomStays(t *testing.T) {
-	// Arrange
-	m := tui.NewPicker(fixtures())
-	for i := 0; i < 5; i++ {
-		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-		m = m2.(tui.Picker)
-	}
+	// Arrange — 3 projects × (header + session) = 6 flat rows, index 0..5
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+	m = pressDown(m, 10)
 
-	// Assert — clamped at len-1
-	assert.Equal(t, 2, m.Cursor())
+	// Assert — clamped at last row (index 5)
+	assert.Equal(t, 5, m.Cursor())
 }
 
 func TestPicker_QuitKey_EmitsQuitCmd(t *testing.T) {
 	// Arrange
-	m := tui.NewPicker(fixtures())
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
 
 	// Act
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -72,7 +77,7 @@ func TestPicker_QuitKey_EmitsQuitCmd(t *testing.T) {
 
 func TestPicker_Empty_ShowsEmptyMessage(t *testing.T) {
 	// Arrange
-	m := tui.NewPicker(nil)
+	m := tui.NewPicker(nil, tui.CatppuccinMocha())
 
 	// Act
 	out := m.View()
@@ -83,7 +88,7 @@ func TestPicker_Empty_ShowsEmptyMessage(t *testing.T) {
 
 func TestPicker_View_ContainsProjectName(t *testing.T) {
 	// Arrange
-	m := tui.NewPicker(fixtures())
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
 
 	// Act
 	out := m.View()
@@ -92,9 +97,10 @@ func TestPicker_View_ContainsProjectName(t *testing.T) {
 	assert.Contains(t, out, "proj-a")
 }
 
-func TestPicker_DKey_EntersConfirmState(t *testing.T) {
-	// Arrange
-	m := tui.NewPicker(fixtures())
+func TestPicker_DKey_OnSession_EntersConfirmState(t *testing.T) {
+	// Arrange — cursor starts on group header; move down to the session row
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+	m = pressDown(m, 1)
 
 	// Act
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -104,9 +110,22 @@ func TestPicker_DKey_EntersConfirmState(t *testing.T) {
 	assert.True(t, p.InConfirm())
 }
 
+func TestPicker_DKey_OnGroupHeader_NoOp(t *testing.T) {
+	// Arrange — cursor is on group header
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+
+	// Act
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	// Assert — delete is no-op on group header
+	p := next.(tui.Picker)
+	assert.False(t, p.InConfirm())
+}
+
 func TestPicker_ConfirmN_LeavesConfirmNoDelete(t *testing.T) {
-	// Arrange
-	m := tui.NewPicker(fixtures())
+	// Arrange — navigate to a session row
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+	m = pressDown(m, 1)
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	m = m2.(tui.Picker)
 
@@ -119,9 +138,10 @@ func TestPicker_ConfirmN_LeavesConfirmNoDelete(t *testing.T) {
 	assert.Len(t, p.Metas(), 3, "no entries should be removed on cancel")
 }
 
-func TestPicker_EnterKey_EmitsOpenSessionMsg(t *testing.T) {
-	// Arrange
-	m := tui.NewPicker(fixtures())
+func TestPicker_EnterKey_OnSession_EmitsOpenSessionMsg(t *testing.T) {
+	// Arrange — navigate to the first session row (index 1)
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+	m = pressDown(m, 1)
 
 	// Act
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -134,14 +154,43 @@ func TestPicker_EnterKey_EmitsOpenSessionMsg(t *testing.T) {
 	assert.Equal(t, "a", open.Meta.ID)
 }
 
+func TestPicker_EnterKey_OnGroupHeader_TogglesCollapse(t *testing.T) {
+	// Arrange — cursor on group header (row 0)
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+
+	// Act — enter toggles collapse
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	p := next.(tui.Picker)
+
+	// Assert — group header is now collapsed, session row hidden
+	// Flat rows: [group-header(proj-a,collapsed)] + [group-header(proj-b), session-b, group-header(proj-c), session-c]
+	row, ok := p.Selected()
+	assert.False(t, ok, "cursor on group header should not return a session")
+	_ = row
+}
+
+func TestPicker_SpaceKey_OnGroupHeader_TogglesCollapse(t *testing.T) {
+	// Arrange
+	m := tui.NewPicker(fixtures(), tui.CatppuccinMocha())
+
+	// Act — space toggles collapse
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	p := next.(tui.Picker)
+
+	// Assert — group collapsed, view still renders without error
+	assert.Contains(t, p.View(), "proj-a")
+}
+
 func TestPicker_DeleteFailure_SurfacedInView(t *testing.T) {
-	// Arrange — meta points at a path that does not exist, so os.Remove fails.
+	// Arrange — single project with one session, cursor starts on group header
 	m := tui.NewPicker([]parser.SessionMeta{{
 		ID:      "ghost",
 		Path:    "/nonexistent/dir/ghost.jsonl",
 		Project: "proj-ghost",
 		Source:  parser.SourceClaude,
-	}})
+	}}, tui.CatppuccinMocha())
+	// Navigate to the session row
+	m = pressDown(m, 1)
 
 	// Act — press d then y to trigger a delete that fails.
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -166,7 +215,9 @@ func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 		Path:    jsonlPath,
 		Project: "proj",
 		Source:  parser.SourceClaude,
-	}})
+	}}, tui.CatppuccinMocha())
+	// Navigate to the session row
+	m = pressDown(m, 1)
 
 	// Act — press d then y
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -187,7 +238,9 @@ func TestPicker_RKeyOnBackupRowEmitsRestoreMsg(t *testing.T) {
 	metas := []parser.SessionMeta{
 		{ID: "a", Path: "/x/a.jsonl", HasBackup: true},
 	}
-	p := tui.NewPicker(metas)
+	p := tui.NewPicker(metas, tui.CatppuccinMocha())
+	// Navigate to the session row
+	p = pressDown(p, 1)
 	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	require.NotNil(t, cmd)
 	msg, ok := cmd().(tui.RestoreRequestedMsg)
@@ -197,7 +250,9 @@ func TestPicker_RKeyOnBackupRowEmitsRestoreMsg(t *testing.T) {
 
 func TestPicker_RKeyOnNonBackupRowNoOp(t *testing.T) {
 	metas := []parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: false}}
-	p := tui.NewPicker(metas)
+	p := tui.NewPicker(metas, tui.CatppuccinMocha())
+	// Navigate to the session row
+	p = pressDown(p, 1)
 	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	assert.Nil(t, cmd)
 }

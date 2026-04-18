@@ -68,3 +68,10 @@ func TestNewStyles_ProducesValidStylesForAllThemes(t *testing.T) {
 		assert.NotEmpty(t, s.Error.Render("x"), "theme %s Error style must render", th.Name)
 	}
 }
+
+func TestAllThemes_HaveProjectPalette(t *testing.T) {
+	themes := []tui.Theme{tui.CatppuccinMocha(), tui.Nord(), tui.Dracula()}
+	for _, th := range themes {
+		assert.GreaterOrEqual(t, len(th.ProjectPalette), 6, "theme %s should have >= 6 palette entries", th.Name)
+	}
+}

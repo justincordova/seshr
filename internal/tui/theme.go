@@ -21,6 +21,8 @@ type Theme struct {
 	Subtext0 lipgloss.AdaptiveColor
 	Surface0 lipgloss.AdaptiveColor
 
+	ProjectPalette []lipgloss.AdaptiveColor
+
 	// Role badge colors for replay message headers.
 	UserColor       lipgloss.AdaptiveColor
 	AssistantColor  lipgloss.AdaptiveColor
@@ -57,6 +59,12 @@ func CatppuccinMocha() Theme {
 		Subtext0: colSubtext0,
 		Surface0: colSurface0,
 
+		ProjectPalette: []lipgloss.AdaptiveColor{
+			colMauve, colBlue, colGreen, colLavender, colPink, colFlamingo,
+			{Dark: "#fab387", Light: "#fe640b"},
+			{Dark: "#94e2d5", Light: "#179299"},
+		},
+
 		UserColor:       lipgloss.AdaptiveColor{Light: "#40a02b", Dark: "#a6e3a1"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#89b4fa"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#df8e1d", Dark: "#f9e2af"},
@@ -76,6 +84,13 @@ func Nord() Theme {
 	overlay1 := lipgloss.AdaptiveColor{Dark: "#616E88", Light: "#7B88A1"}
 	subtext := lipgloss.AdaptiveColor{Dark: "#A0AABB", Light: "#4C566A"}
 	errCol := lipgloss.AdaptiveColor{Dark: "#BF616A", Light: "#BF616A"}
+	frost2 := lipgloss.AdaptiveColor{Dark: "#81A1C1", Light: "#81A1C1"}
+	frost3 := lipgloss.AdaptiveColor{Dark: "#5E81AC", Light: "#5E81AC"}
+	auroraGreen := lipgloss.AdaptiveColor{Dark: "#A3BE8C", Light: "#A3BE8C"}
+	auroraYellow := lipgloss.AdaptiveColor{Dark: "#EBCB8B", Light: "#EBCB8B"}
+	auroraPurple := lipgloss.AdaptiveColor{Dark: "#B48EAD", Light: "#B48EAD"}
+	auroraRed := lipgloss.AdaptiveColor{Dark: "#BF616A", Light: "#D08770"}
+
 	return Theme{
 		Name:       "nord",
 		Background: bg,
@@ -89,6 +104,11 @@ func Nord() Theme {
 		Overlay1: overlay1,
 		Subtext0: subtext,
 		Surface0: surface1,
+
+		ProjectPalette: []lipgloss.AdaptiveColor{
+			frost3, frost2, accent, auroraGreen, auroraYellow, auroraPurple,
+			auroraRed, lipgloss.AdaptiveColor{Dark: "#88C0D0", Light: "#88C0D0"},
+		},
 
 		UserColor:       lipgloss.AdaptiveColor{Light: "#A3BE8C", Dark: "#A3BE8C"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#5E81AC", Dark: "#88C0D0"},
@@ -122,6 +142,17 @@ func Dracula() Theme {
 		Overlay1: overlay1,
 		Subtext0: subtext,
 		Surface0: surface1,
+
+		ProjectPalette: []lipgloss.AdaptiveColor{
+			{Dark: "#BD93F9", Light: "#BD93F9"},
+			{Dark: "#FF79C6", Light: "#FF79C6"},
+			{Dark: "#8BE9FD", Light: "#8BE9FD"},
+			{Dark: "#50FA7B", Light: "#50FA7B"},
+			{Dark: "#FFB86C", Light: "#FFB86C"},
+			{Dark: "#F1FA8C", Light: "#F1FA8C"},
+			{Dark: "#FF5555", Light: "#FF5555"},
+			{Dark: "#6272A4", Light: "#6272A4"},
+		},
 
 		UserColor:       lipgloss.AdaptiveColor{Light: "#50FA7B", Dark: "#50FA7B"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#6272A4", Dark: "#8BE9FD"},

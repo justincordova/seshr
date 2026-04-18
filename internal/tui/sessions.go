@@ -24,20 +24,29 @@ type Picker struct {
 	height    int
 	keys      PickerKeys
 	styles    Styles
+	theme     Theme
 	confirm   *Confirm
 	deleteErr error
 	search    SearchBar
+
+	groups    []ProjectGroup
+	collapsed map[string]bool
+	flatRows  []PickerRow
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
-func NewPicker(metas []parser.SessionMeta) Picker {
-	return Picker{
-		metas:    metas,
-		allMetas: metas,
-		keys:     DefaultPickerKeys(),
-		styles:   NewStyles(CatppuccinMocha()),
-		search:   NewSearchBar(),
+func NewPicker(metas []parser.SessionMeta, th Theme) Picker {
+	p := Picker{
+		metas:     metas,
+		allMetas:  metas,
+		keys:      DefaultPickerKeys(),
+		styles:    NewStyles(th),
+		theme:     th,
+		search:    NewSearchBar(),
+		collapsed: make(map[string]bool),
 	}
+	p.rebuildGroups()
+	return p
 }
 
 // Cursor returns the current selection index.
@@ -49,13 +58,43 @@ func (p Picker) InConfirm() bool { return p.confirm != nil }
 // Metas returns the current session list (post-delete).
 func (p Picker) Metas() []parser.SessionMeta { return p.metas }
 
-// Selected returns the currently highlighted SessionMeta, or the zero value
-// when the list is empty.
-func (p Picker) Selected() (parser.SessionMeta, bool) {
-	if len(p.metas) == 0 {
+// rebuildGroups recomputes the project groups and flat row index from p.metas.
+func (p *Picker) rebuildGroups() {
+	p.groups = GroupByProject(p.metas, p.theme)
+	p.flatRows = BuildFlatRows(p.groups, p.collapsed)
+}
+
+func (p *Picker) toggleCollapse(row PickerRow) {
+	g := p.groups[row.GroupIdx]
+	p.collapsed[g.Name] = !p.collapsed[g.Name]
+	p.rebuildGroups()
+	if p.cursor >= len(p.flatRows) {
+		p.cursor = len(p.flatRows) - 1
+	}
+}
+
+// selectedRow returns the flat row at the cursor, or false if no rows.
+func (p Picker) selectedRow() (PickerRow, bool) {
+	if len(p.flatRows) == 0 || p.cursor >= len(p.flatRows) {
+		return PickerRow{}, false
+	}
+	return p.flatRows[p.cursor], true
+}
+
+// selectedSession returns the session meta at the cursor, or false if the
+// cursor is on a group header or there are no rows.
+func (p Picker) selectedSession() (parser.SessionMeta, bool) {
+	row, ok := p.selectedRow()
+	if !ok || row.Kind != RowSession {
 		return parser.SessionMeta{}, false
 	}
-	return p.metas[p.cursor], true
+	return p.groups[row.GroupIdx].Sessions[row.SessionIdx], true
+}
+
+// Selected returns the currently highlighted SessionMeta, or the zero value
+// when the list is empty or cursor is on a group header.
+func (p Picker) Selected() (parser.SessionMeta, bool) {
+	return p.selectedSession()
 }
 
 // Init satisfies tea.Model.
@@ -90,25 +129,26 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				p.search.Close()
 				p.metas = p.allMetas
-				if p.cursor >= len(p.metas) {
-					p.cursor = len(p.metas) - 1
+				p.rebuildGroups()
+				if p.cursor >= len(p.flatRows) {
+					p.cursor = len(p.flatRows) - 1
 				}
 				if p.cursor < 0 {
 					p.cursor = 0
 				}
-				p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
+				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 				return p, nil
 			case "enter":
 				p.search.Commit()
 				p.applySearchFilter()
 				return p, nil
 			case "up", "ctrl+p":
-				if len(p.metas) > 0 && p.cursor > 0 {
+				if len(p.flatRows) > 0 && p.cursor > 0 {
 					p.cursor--
 				}
 				return p, nil
 			case "down", "ctrl+n":
-				if p.cursor < len(p.metas)-1 {
+				if p.cursor < len(p.flatRows)-1 {
 					p.cursor++
 				}
 				return p, nil
@@ -127,35 +167,38 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, p.keys.Up):
 			if p.cursor > 0 {
 				p.cursor--
-				p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
+				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Down):
-			if p.cursor < len(p.metas)-1 {
+			if p.cursor < len(p.flatRows)-1 {
 				p.cursor++
-				p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
+				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Open):
-			if sel, ok := p.Selected(); ok {
+			if sel, ok := p.selectedSession(); ok {
 				return p, func() tea.Msg { return OpenSessionMsg{Meta: sel} }
+			}
+			if row, ok := p.selectedRow(); ok && row.Kind == RowGroup {
+				p.toggleCollapse(row)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Replay):
-			if sel, ok := p.Selected(); ok {
+			if sel, ok := p.selectedSession(); ok {
 				return p, func() tea.Msg { return OpenSessionAndReplayMsg{Meta: sel} }
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Edit):
-			if sel, ok := p.Selected(); ok {
+			if sel, ok := p.selectedSession(); ok {
 				return p, func() tea.Msg { return OpenSessionAndEditMsg{Meta: sel} }
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Delete):
-			if len(p.metas) == 0 {
+			sel, ok := p.selectedSession()
+			if !ok {
 				return p, nil
 			}
-			sel := p.metas[p.cursor]
 			c := NewConfirm(
 				"Delete session?",
 				fmt.Sprintf("%s · %s\nThis cannot be undone.", sel.Project, sel.ID),
@@ -163,14 +206,17 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.confirm = &c
 			return p, nil
 		case key.Matches(msg, p.keys.Restore):
-			if len(p.metas) == 0 {
+			sel, ok := p.selectedSession()
+			if !ok || !sel.HasBackup {
 				return p, nil
 			}
-			meta := p.metas[p.cursor]
-			if !meta.HasBackup {
+			return p, func() tea.Msg { return RestoreRequestedMsg{Path: sel.Path} }
+		}
+		if msg.String() == " " {
+			if row, ok := p.selectedRow(); ok && row.Kind == RowGroup {
+				p.toggleCollapse(row)
 				return p, nil
 			}
-			return p, func() tea.Msg { return RestoreRequestedMsg{Path: meta.Path} }
 		}
 	}
 	return p, nil
@@ -190,13 +236,22 @@ func (p Picker) View() string {
 
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
 		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
-	mainH := p.height - fixedH
+
+	detailH := 0
+	if len(p.flatRows) > 0 {
+		detailH = 5
+	}
+
+	mainH := p.height - fixedH - detailH
 	if mainH < 6 {
 		mainH = 6
 	}
 	main := p.renderSessionPanel(mainH)
 
 	parts := []string{header, statsStrip, main}
+	if detailH > 0 {
+		parts = append(parts, p.renderDetailPanel())
+	}
 	if errLine != "" {
 		parts = append(parts, errLine)
 	}
@@ -205,6 +260,60 @@ func (p Picker) View() string {
 	}
 	parts = append(parts, footer)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+const detailPanelHeight = 5
+
+func (p Picker) renderDetailPanel() string {
+	row, ok := p.selectedRow()
+	if !ok {
+		return ""
+	}
+
+	var body string
+	switch row.Kind {
+	case RowGroup:
+		g := p.groups[row.GroupIdx]
+		body = p.renderGroupDetail(g)
+	case RowSession:
+		m := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
+		g := p.groups[row.GroupIdx]
+		body = p.renderSessionDetail(m, g.Name)
+	}
+
+	return panel(" Detail", body, p.width, detailPanelHeight)
+}
+
+func (p Picker) renderGroupDetail(g ProjectGroup) string {
+	title := lipgloss.NewStyle().Foreground(g.Color).Bold(true).Render(truncate(g.Name, 50))
+	count := dimStyle.Render(countLabel(len(g.Sessions), "session"))
+	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tokens total")
+
+	return "\n" + title + dimStyle.Render(" · ") + count + dimStyle.Render(" · ") + tokens + "\n"
+}
+
+func (p Picker) renderSessionDetail(m parser.SessionMeta, projectName string) string {
+	title := lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true).Render(
+		truncate(projectName, 20) + dimStyle.Render("/") + truncate(m.ID, 30),
+	)
+
+	pct := ContextPct(m.TokenCount, contextWindow)
+	bar := ContextBar(pct, 20, p.theme)
+	pctStr := fmt.Sprintf("%.0f%% of 200k", pct*100)
+	tokenLine := humanize.Comma(int64(m.TokenCount)) + " tokens  " + bar + "  " + pctStr
+
+	backup := ""
+	if m.HasBackup {
+		backup = dimStyle.Render(" · ") + successStyle.Render("backup available")
+	}
+	metaLine := dimStyle.Render("modified "+humanize.Time(m.ModifiedAt)) +
+		dimStyle.Render(" · ") + dimStyle.Render(humanizeSize(m.Size)) + backup
+
+	if m.TurnCount > 0 {
+		metaLine += dimStyle.Render(" · ") + dimStyle.Render(fmt.Sprintf("%d turns", m.TurnCount))
+	}
+
+	return "\n" + title + "\n" + dimStyle.Render(tokenLine) + "\n" + metaLine + "\n"
 }
 
 func (p Picker) renderDeleteErr() string {
@@ -231,7 +340,7 @@ func (p Picker) renderHeader() string {
 	ver := dimStyle.Render("v0.1")
 	left := logo + " " + ver
 
-	right := dimStyle.Render("ctrl+c quit")
+	right := dimStyle.Render("↑↓ select · enter open · q quit")
 
 	gap := p.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 1 {
@@ -242,19 +351,32 @@ func (p Picker) renderHeader() string {
 }
 
 func (p Picker) renderStats() string {
-	var totalSize int64
-	for _, m := range p.metas {
-		totalSize += m.Size
+	sum := ComputeSummary(p.metas)
+	accents := p.theme.ProjectPalette
+	if len(accents) == 0 {
+		accents = []lipgloss.AdaptiveColor{colMauve, colBlue, colGreen, colLavender, colPink}
 	}
 
-	items := []string{
-		statInline("SESSIONS", fmt.Sprintf("%d", len(p.metas)), colGreen),
-		statInline("TOTAL SIZE", humanizeSize(totalSize), colLavender),
-		statInline("SOURCE", "Claude Code", colMauve),
+	type statItem struct {
+		label string
+		value string
+	}
+	items := []statItem{
+		{"SESSIONS", fmt.Sprintf("%d", sum.TotalSessions)},
+		{"PROJECTS", fmt.Sprintf("%d", sum.Projects)},
+		{"TOKENS", humanize.Comma(sum.TotalTokens)},
+		{"SIZE", humanizeSize(sum.TotalBytes)},
+		{"LATEST", humanize.Time(sum.MostRecent)},
 	}
 
-	sep := dimStyle.Render("  │  ")
-	row := strings.Join(items, sep)
+	var parts []string
+	for i, it := range items {
+		color := accents[i%len(accents)]
+		parts = append(parts, pill(it.label+" "+it.value, p.theme.Foreground, color))
+	}
+
+	sep := dimStyle.Render("  ")
+	row := strings.Join(parts, sep)
 	return lipgloss.NewStyle().Width(p.width).Padding(0, 2).Render(row)
 }
 
@@ -273,8 +395,33 @@ func (p Picker) renderSessionPanel(height int) string {
 	}
 
 	title := fmt.Sprintf(" Sessions %s", dimStyle.Render(fmt.Sprintf("(%d)", len(p.metas))))
-	body := p.renderSessionList(p.width - 4)
+	body := p.renderGroupedList(p.width - 4)
 	return panel(title, body, p.width, height)
+}
+
+func (p Picker) renderGroupedList(width int) string {
+	var b strings.Builder
+	visible := p.visibleCount()
+
+	end := p.offset + visible
+	if end > len(p.flatRows) {
+		end = len(p.flatRows)
+	}
+	for i := p.offset; i < end; i++ {
+		row := p.flatRows[i]
+		switch row.Kind {
+		case RowGroup:
+			b.WriteString(p.renderGroupHeader(row, i == p.cursor, width))
+		case RowSession:
+			meta := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
+			g := p.groups[row.GroupIdx]
+			b.WriteString(p.renderSessionRow(meta, g.Color, i == p.cursor, width))
+		}
+		if i < end-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 func panel(title, body string, width, height int) string {
@@ -286,59 +433,66 @@ func panel(title, body string, width, height int) string {
 	return style.Render(titleBar + body)
 }
 
-func (p Picker) renderSessionList(width int) string {
-	var b strings.Builder
-	visible := p.visibleCount()
+func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) string {
+	g := p.groups[row.GroupIdx]
+	isCollapsed := p.collapsed[g.Name]
 
-	end := p.offset + visible
-	if end > len(p.metas) {
-		end = len(p.metas)
+	glyph := "▾"
+	if isCollapsed {
+		glyph = "▸"
 	}
-	for i := p.offset; i < end; i++ {
-		b.WriteString(p.renderSessionCard(i, width))
-		if i < end-1 {
-			b.WriteString("\n")
-		}
+
+	gutterStyle := lipgloss.NewStyle().Foreground(g.Color)
+	if !selected {
+		gutterStyle = lipgloss.NewStyle().Foreground(g.Color).Faint(true)
 	}
-	return b.String()
+	gutter := gutterStyle.Render("▌")
+
+	nameStyle := lipgloss.NewStyle().Foreground(p.theme.Foreground).Bold(true)
+	if !selected {
+		nameStyle = lipgloss.NewStyle().Foreground(colOverlay1)
+	}
+	name := nameStyle.Render(truncate(g.Name, 30))
+
+	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
+	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tok")
+
+	gap := width - lipgloss.Width(gutter) - lipgloss.Width(name) - lipgloss.Width(count) - lipgloss.Width(tokens) - 4
+	if gap < 1 {
+		gap = 1
+	}
+	return gutter + " " + name + strings.Repeat(" ", gap) + count + "  " + tokens
 }
 
-func (p Picker) renderSessionCard(i, width int) string {
-	m := p.metas[i]
-	selected := i == p.cursor
+func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
+	indent := "  "
 
-	barStyle := lipgloss.NewStyle().Foreground(colSurface1)
+	glyphStyle := lipgloss.NewStyle().Foreground(colOverlay1)
 	if selected {
-		barStyle = lipgloss.NewStyle().Foreground(colMauve).Bold(true)
+		glyphStyle = lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true)
 	}
-	bar := barStyle.Render("▌")
+	glyph := glyphStyle.Render("▸")
 
-	name := textStyle.Render(truncate(m.Project, 40))
+	idStyle := lipgloss.NewStyle().Foreground(colOverlay1)
 	if selected {
-		name = lipgloss.NewStyle().Foreground(colText).Bold(true).Render(truncate(m.Project, 40))
+		idStyle = lipgloss.NewStyle().Foreground(p.theme.Foreground)
 	}
+	id := idStyle.Render(truncate(m.ID, 20))
 
-	tokens := dimStyle.Render("~" + humanize.Comma(int64(m.TokenCount)) + " tok")
+	pct := ContextPct(m.TokenCount, contextWindow)
+	bar := ContextBar(pct, 8, p.theme)
+	pctStr := dimStyle.Render(fmt.Sprintf("%.0f%%", pct*100))
+
+	tokStr := dimStyle.Render(humanize.Comma(int64(m.TokenCount)) + " tok")
 	age := dimStyle.Render(humanize.Time(m.ModifiedAt))
 
-	line1Gap := width - lipgloss.Width(name) - lipgloss.Width(tokens) - lipgloss.Width(age) - 6
-	if line1Gap < 1 {
-		line1Gap = 1
-	}
-	line1 := bar + " " + name + strings.Repeat(" ", line1Gap) + tokens + "  " + age
-
-	src := dimStyle.Render(string(m.Source))
-	parts := []string{src}
-	if m.TurnCount > 0 {
-		parts = append(parts, dimStyle.Render(fmt.Sprintf("%d turns", m.TurnCount)))
-	}
 	backup := ""
 	if m.HasBackup {
-		backup = dimStyle.Render(" · ") + successStyle.Render("↶ backup")
+		backup = "  " + successStyle.Render("↶")
 	}
-	line2 := bar + "  " + strings.Join(parts, dimStyle.Render(" · ")) + backup
 
-	return lipgloss.JoinVertical(lipgloss.Left, line1, line2)
+	row := indent + glyph + " " + id + " " + bar + " " + pctStr + "  " + tokStr + "  " + age + backup
+	return row
 }
 
 func (p *Picker) applySearchFilter() {
@@ -355,24 +509,26 @@ func (p *Picker) applySearchFilter() {
 			p.metas = append(p.metas, p.allMetas[m.Index])
 		}
 	}
-	if p.cursor >= len(p.metas) {
-		p.cursor = len(p.metas) - 1
+	p.rebuildGroups()
+	if p.cursor >= len(p.flatRows) {
+		p.cursor = len(p.flatRows) - 1
 	}
 	if p.cursor < 0 {
 		p.cursor = 0
 	}
-	p.offset = clampOffset(p.cursor, p.offset, len(p.metas), p.visibleCount())
+	p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 }
 
 func (p Picker) renderFooter() string {
 	hints := joinHints(
-		kbd("↑↓/jk", "nav"),
-		kbd("enter", "open"),
-		kbd("r", "replay"),
-		kbd("e", "edit"),
-		kbd("d", "delete"),
-		kbd("/", "search"),
-		kbd("q", "quit"),
+		kbdPill("↑↓/jk", "nav"),
+		kbdPill("enter", "open"),
+		kbdPill("r", "replay"),
+		kbdPill("e", "edit"),
+		kbdPill("space", "collapse"),
+		kbdPill("d", "delete"),
+		kbdPill("/", "search"),
+		kbdPill("q", "quit"),
 	)
 	hintsW := lipgloss.Width(hints)
 	gap := (p.width - hintsW) / 2
@@ -388,7 +544,6 @@ func (p Picker) visibleCount() int {
 	if p.height <= 0 {
 		return 8
 	}
-	// View subtracts header(1) + stats(1) + footer(1) = 3 from height (min 6).
 	fixedH := 3
 	if p.deleteErr != nil {
 		fixedH++
@@ -397,13 +552,11 @@ func (p Picker) visibleCount() int {
 	if mainH < 6 {
 		mainH = 6
 	}
-	// Panel renders title(1) + 2 borders + 1 pad inside its Height → body = mainH-4.
 	bodyH := mainH - 4
-	cards := bodyH / 2 // each card renders as 2 tight lines
-	if cards < 1 {
+	if bodyH < 1 {
 		return 1
 	}
-	return cards
+	return bodyH
 }
 
 // clampOffset adjusts offset so that cursor is within [offset, offset+visible).
@@ -445,10 +598,10 @@ type RestoreRequestedMsg struct{ Path string }
 // deleteSelected removes the currently-highlighted session's file and
 // cleans up its parent directory if it becomes empty.
 func deleteSelected(p *Picker) error {
-	if len(p.metas) == 0 {
+	sel, ok := p.selectedSession()
+	if !ok {
 		return nil
 	}
-	sel := p.metas[p.cursor]
 	if err := os.Remove(sel.Path); err != nil {
 		slog.Error("delete session failed", "path", sel.Path, "err", err)
 		return err
@@ -467,7 +620,8 @@ func deleteSelected(p *Picker) error {
 	}
 	p.allMetas = removeMeta(p.allMetas, sel.Path)
 	p.metas = removeMeta(p.metas, sel.Path)
-	if p.cursor >= len(p.metas) && p.cursor > 0 {
+	p.rebuildGroups()
+	if p.cursor >= len(p.flatRows) && p.cursor > 0 {
 		p.cursor--
 	}
 	return nil

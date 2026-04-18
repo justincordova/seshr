@@ -47,6 +47,16 @@ func kbd(k, desc string) string {
 	return keyStyle.Render(k) + " " + descStyle.Render(desc)
 }
 
+// kbdPill renders a keyboard hint with the key in a surface-colored pill.
+func kbdPill(k, desc string) string {
+	keyPill := lipgloss.NewStyle().
+		Foreground(colText).
+		Background(colSurface0).
+		Padding(0, 1).
+		Render(k)
+	return keyPill + descStyle.Render(" "+desc)
+}
+
 // joinHints joins multiple hint strings with a dim separator.
 func joinHints(hints ...string) string {
 	sep := dimStyle.Render("  ·  ")
