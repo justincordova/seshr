@@ -61,7 +61,7 @@ func TestEditor_ViewIncludesAllTopicsAndFooter(t *testing.T) {
 	out := u.(tui.Editor).View()
 	assert.Contains(t, out, "A")
 	assert.Contains(t, out, "B")
-	assert.Contains(t, out, "1 topic selected")
+	assert.Contains(t, out, "1 topic")
 }
 
 func TestEditor_ViewShowsStatus(t *testing.T) {

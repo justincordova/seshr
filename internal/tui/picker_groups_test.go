@@ -93,18 +93,31 @@ func TestBuildFlatRows_ExpandAndCollapse(t *testing.T) {
 	assert.Equal(t, tui.RowSession, rows[2].Kind)
 }
 
-func TestContextPct_ClampsToZeroOne(t *testing.T) {
-	assert.Equal(t, 0.0, tui.ContextPct(0, 200_000))
-	assert.Equal(t, 0.5, tui.ContextPct(100_000, 200_000))
-	assert.Equal(t, 1.0, tui.ContextPct(300_000, 200_000))
-	assert.Equal(t, 0.0, tui.ContextPct(100, 0))
+func TestProjectDisplayName(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"simple", "simple"},
+		{"-Users-justincordova-cs-projects-boot", "boot"},
+		{"-Users-justincordova-cs-njit-dartly", "dartly"},
+		{"no-dash-prefix", "no-dash-prefix"},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, tui.ProjectDisplayName(tc.input))
+	}
 }
 
-func TestContextBar_GreenThreshold(t *testing.T) {
+func TestGroupByProject_PopulatesDisplayName(t *testing.T) {
+	metas := []parser.SessionMeta{
+		{ID: "a", Project: "-Users-x-projects-myapp", ModifiedAt: time.Now()},
+	}
 	th := tui.CatppuccinMocha()
-	bar := tui.ContextBar(0.24, 8, th)
-	assert.Contains(t, bar, "█")
-	assert.Contains(t, bar, "░")
+	groups := tui.GroupByProject(metas, th)
+	require.Len(t, groups, 1)
+	assert.Equal(t, "-Users-x-projects-myapp", groups[0].Name)
+	assert.Equal(t, "myapp", groups[0].DisplayName)
 }
 
 func TestComputeSummary_Empty(t *testing.T) {

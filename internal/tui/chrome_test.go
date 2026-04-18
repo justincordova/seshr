@@ -105,6 +105,23 @@ func TestJoinHints(t *testing.T) {
 	})
 }
 
+func TestWrapHints(t *testing.T) {
+	hints := []string{"a key", "b other", "c more"}
+	lines := wrapHints(hints, 10, "   ")
+	assert.Len(t, lines, 3)
+}
+
+func TestWrapHints_FitsOnOneLine(t *testing.T) {
+	hints := []string{"short", "tiny"}
+	lines := wrapHints(hints, 100, "   ")
+	assert.Len(t, lines, 1)
+}
+
+func TestWrapHints_Empty(t *testing.T) {
+	lines := wrapHints(nil, 80, "   ")
+	assert.Nil(t, lines)
+}
+
 func TestPill(t *testing.T) {
 	// Act
 	got := pill("tag", lipgloss.AdaptiveColor{Dark: "#cba6f7", Light: "#8839ef"}, lipgloss.AdaptiveColor{Dark: "#313244", Light: "#ccd0da"})

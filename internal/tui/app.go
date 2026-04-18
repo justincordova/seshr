@@ -26,7 +26,7 @@ func (a App) currentBindings() []key.Binding {
 		return []key.Binding{k.Up, k.Down, k.Expand, k.Replay, k.Edit, k.Stats, k.Search, k.Back, k.Quit}
 	case stateReplay:
 		k := DefaultReplayKeys()
-		return []key.Binding{k.Next, k.Prev, k.AutoPlay, k.NextTopic, k.PrevTopic, k.ToggleThinking, k.ToggleWrap, k.Expand, k.SidebarFocus, k.Search, k.Back, k.Quit}
+		return []key.Binding{k.Next, k.Prev, k.AutoPlay, k.NextTopic, k.PrevTopic, k.ToggleThinking, k.SpeedUp, k.SpeedDown, k.Expand, k.SidebarFocus, k.Search, k.Back, k.Quit}
 	case stateEditor:
 		k := DefaultEditorKeys()
 		return []key.Binding{k.Up, k.Down, k.Toggle, k.SelectAll, k.SelectNone, k.Prune, k.Expand, k.Cancel, k.Quit}

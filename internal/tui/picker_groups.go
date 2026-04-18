@@ -3,6 +3,7 @@ package tui
 import (
 	"hash/fnv"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -11,6 +12,7 @@ import (
 
 type ProjectGroup struct {
 	Name        string
+	DisplayName string
 	Sessions    []parser.SessionMeta
 	TotalTokens int
 	Color       lipgloss.TerminalColor
@@ -29,7 +31,20 @@ type PickerRow struct {
 	SessionIdx int
 }
 
-const contextWindow = 200_000
+func ProjectDisplayName(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	if !strings.HasPrefix(raw, "-") {
+		return raw
+	}
+	s := strings.TrimPrefix(raw, "-")
+	parts := strings.Split(s, "-")
+	if len(parts) == 0 {
+		return raw
+	}
+	return parts[len(parts)-1]
+}
 
 func GroupByProject(metas []parser.SessionMeta, th Theme) []ProjectGroup {
 	groupMap := map[string]*ProjectGroup{}
@@ -41,8 +56,9 @@ func GroupByProject(metas []parser.SessionMeta, th Theme) []ProjectGroup {
 		if !ok {
 			order = append(order, m.Project)
 			groupMap[m.Project] = &ProjectGroup{
-				Name:  m.Project,
-				Color: projectColor(m.Project, th),
+				Name:        m.Project,
+				DisplayName: ProjectDisplayName(m.Project),
+				Color:       projectColor(m.Project, th),
 			}
 			g = groupMap[m.Project]
 		}
@@ -74,56 +90,6 @@ func projectColor(name string, th Theme) lipgloss.TerminalColor {
 	_, _ = h.Write([]byte(name))
 	idx := int(h.Sum32()) % len(th.ProjectPalette)
 	return th.ProjectPalette[idx]
-}
-
-func ContextPct(tokens, window int) float64 {
-	if window <= 0 {
-		return 0
-	}
-	p := float64(tokens) / float64(window)
-	if p < 0 {
-		return 0
-	}
-	if p > 1 {
-		return 1
-	}
-	return p
-}
-
-func ContextBar(pct float64, width int, th Theme) string {
-	if width <= 0 {
-		return ""
-	}
-	filled := int(pct * float64(width))
-	if filled > width {
-		filled = width
-	}
-	empty := width - filled
-
-	var color lipgloss.TerminalColor
-	switch {
-	case pct > 0.85:
-		color = th.Error
-	case pct > 0.60:
-		color = lipgloss.AdaptiveColor{Dark: "#f9e2af", Light: "#df8e1d"}
-	default:
-		color = th.TokenBar
-	}
-
-	bar := lipgloss.NewStyle().Foreground(color).Render(repeatStr("█", filled)) +
-		lipgloss.NewStyle().Foreground(th.TokenEmpty).Render(repeatStr("░", empty))
-	return bar
-}
-
-func repeatStr(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	out := make([]byte, 0, len(s)*n)
-	for i := 0; i < n; i++ {
-		out = append(out, s...)
-	}
-	return string(out)
 }
 
 type SummaryStats struct {

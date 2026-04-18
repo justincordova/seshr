@@ -60,7 +60,6 @@ func DefaultOverviewKeys() OverviewKeys {
 }
 
 // ReplayKeys enumerates keybindings for the Replay screen (SPEC §3.3).
-// Speed keys 1-9 are handled by a range check in Update, not stored here.
 type ReplayKeys struct {
 	Next           key.Binding
 	Prev           key.Binding
@@ -68,7 +67,8 @@ type ReplayKeys struct {
 	NextTopic      key.Binding
 	PrevTopic      key.Binding
 	ToggleThinking key.Binding
-	ToggleWrap     key.Binding
+	SpeedUp        key.Binding
+	SpeedDown      key.Binding
 	Expand         key.Binding
 	SidebarFocus   key.Binding
 	Search         key.Binding
@@ -84,7 +84,8 @@ func DefaultReplayKeys() ReplayKeys {
 		NextTopic:      key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next topic")),
 		PrevTopic:      key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev topic")),
 		ToggleThinking: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "thinking")),
-		ToggleWrap:     key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wrap")),
+		SpeedUp:        key.NewBinding(key.WithKeys("+"), key.WithHelp("+", "speed up")),
+		SpeedDown:      key.NewBinding(key.WithKeys("-"), key.WithHelp("-", "speed down")),
 		Expand:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand tool")),
 		SidebarFocus:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "sidebar")),
 		Search:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),

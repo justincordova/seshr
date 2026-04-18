@@ -25,7 +25,6 @@ type Replay struct {
 	topicsList     []topics.Topic
 	cursor         int
 	expandedTool   int
-	wrap           bool
 	showThinking   bool
 	autoPlay       bool
 	speed          int
@@ -49,7 +48,6 @@ func NewReplay(sess *parser.Session, ts []topics.Topic) Replay {
 		topicsList:   ts,
 		cursor:       0,
 		expandedTool: -1,
-		wrap:         true,
 		showThinking: false,
 		speed:        5,
 		keys:         DefaultReplayKeys(),
@@ -62,7 +60,6 @@ func NewReplay(sess *parser.Session, ts []topics.Topic) Replay {
 
 func (m Replay) Init() tea.Cmd         { return nil }
 func (m Replay) Cursor() int           { return m.cursor }
-func (m Replay) WrapEnabled() bool     { return m.wrap }
 func (m Replay) ThinkingVisible() bool { return m.showThinking }
 func (m Replay) AutoPlaying() bool     { return m.autoPlay }
 func (m Replay) Speed() int            { return m.speed }
@@ -108,14 +105,6 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// digit speed keys 1-9
-		if len(msg.Runes) == 1 && msg.Runes[0] >= '1' && msg.Runes[0] <= '9' {
-			m.speed = int(msg.Runes[0] - '0')
-			if m.autoPlay {
-				return m, AutoPlayCmd(SpeedToDelay(m.speed))
-			}
-			return m, nil
-		}
 		switch {
 		case key.Matches(msg, m.keys.SidebarFocus):
 			if m.width >= narrowBreakpoint && len(m.topicsList) > 0 {
@@ -170,8 +159,22 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = m.prevTopicStart()
 		case key.Matches(msg, m.keys.ToggleThinking):
 			m.showThinking = !m.showThinking
-		case key.Matches(msg, m.keys.ToggleWrap):
-			m.wrap = !m.wrap
+		case key.Matches(msg, m.keys.SpeedUp):
+			if m.autoPlay {
+				m.speed++
+				if m.speed > 9 {
+					m.speed = 9
+				}
+				return m, AutoPlayCmd(SpeedToDelay(m.speed))
+			}
+		case key.Matches(msg, m.keys.SpeedDown):
+			if m.autoPlay {
+				m.speed--
+				if m.speed < 1 {
+					m.speed = 1
+				}
+				return m, AutoPlayCmd(SpeedToDelay(m.speed))
+			}
 		case key.Matches(msg, m.keys.AutoPlay):
 			m.autoPlay = !m.autoPlay
 			if m.autoPlay {
@@ -338,29 +341,38 @@ func (m Replay) renderHeader() string {
 }
 
 func (m Replay) renderFooter() string {
+	thinkingState := dimStyle.Render("thinking ○")
+	if m.showThinking {
+		thinkingState = dimStyle.Italic(true).Render("thinking ●")
+	}
+
 	hints := []string{
-		kbd("←→/hl", "turns"),
-		kbd("space", "auto"),
-		kbd("1-9", "speed"),
-		kbd("[/]", "topics"),
+		kbdPill("←→/hl", "turns"),
+		kbdPill("space", "auto"),
+		kbdPill("[/]", "topics"),
 	}
 	if m.width >= narrowBreakpoint {
-		hints = append(hints, kbd("tab", "sidebar"))
+		hints = append(hints, kbdPill("tab", "sidebar"))
 	}
 	hints = append(hints,
-		kbd("t", "think"),
-		kbd("w", "wrap"),
-		kbd("/", "search"),
+		kbdPill("t", "think"),
+		thinkingState,
+		kbdPill("/", "search"),
 	)
 	if m.searchHasQuery {
-		hints = append(hints, kbd("n/N", "next/prev"))
+		hints = append(hints, kbdPill("n/N", "next/prev"))
 	}
-	hints = append(hints, kbd("esc/q", "back"))
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Padding(0, 1).
-		Background(colMantle).
-		Render(joinHints(hints...))
+	if m.autoPlay {
+		speedPill := lipgloss.NewStyle().
+			Foreground(m.theme.Accent).
+			Background(m.theme.Background).
+			Padding(0, 1).
+			Bold(true).
+			Render(fmt.Sprintf("▶ %dx", m.speed))
+		hints = append(hints, speedPill, kbdPill("+/-", "speed"))
+	}
+	hints = append(hints, kbdPill("esc/q", "back"))
+	return renderCenteredFooter(hints, m.width)
 }
 
 func (m Replay) sidebarWidth() int {
@@ -422,24 +434,22 @@ func (m Replay) renderMain(width int) string {
 	b.WriteString(RenderTurnHeader(turn, prev, width, m.styles, m.theme))
 	b.WriteString("\n")
 
-	bodyWidth := width
-	if !m.wrap {
-		bodyWidth = 10_000
+	if turn.Content != "" {
+		body, _ := RenderMarkdownBody(turn.Content, width)
+		b.WriteString(strings.TrimRight(body, "\n"))
 	}
-	body, _ := RenderMarkdownBody(turn.Content, bodyWidth)
-	b.WriteString(body)
 
 	for _, tc := range turn.ToolCalls {
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		b.WriteString(RenderToolCall(tc, width, m.styles))
 	}
 	for _, tr := range turn.ToolResults {
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		b.WriteString(RenderToolResult(tr.Content, width, m.styles))
 	}
 
 	if m.showThinking && turn.Thinking != "" {
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 		b.WriteString(m.styles.Thinking.Render(turn.Thinking))
 	}
 	return b.String()

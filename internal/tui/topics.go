@@ -302,7 +302,7 @@ func (o Overview) renderTopicPanel(height int) string {
 		dimStyle.Render("·"),
 		dimStyle.Render(shortID(o.sess.ID)),
 	)
-	bodyH := height - 4
+	bodyH := height - 5
 	if bodyH < 2 {
 		bodyH = len(o.topics)*3 + 10
 	}
@@ -334,6 +334,11 @@ func (o Overview) renderTopicList(width, bodyH int) string {
 		linesUsed += 2
 
 		if o.expanded[i] {
+			// renderTopicCard returns two lines with no trailing newline;
+			// break to the next line before writing turn previews so the
+			// first preview doesn't get appended to the card's meta row.
+			b.WriteByte('\n')
+			linesUsed++
 			remaining := bodyH - linesUsed
 			written := renderExpandedCapped(&b, o.styles, o.sess, top, remaining)
 			linesUsed += written

@@ -177,16 +177,26 @@ func (m Editor) View() string {
 		return m.confirm.View()
 	}
 
-	var b strings.Builder
-	b.WriteString(m.styles.Title.Render("EDIT MODE — select topics to prune"))
-	b.WriteString("\n\n")
-
-	headerH := lipgloss.Height(m.styles.Title.Render(""))
-	footerLines := 3
-	available := m.height - headerH - footerLines - 2
-	if available < 4 {
-		available = 4
+	detailH := 5
+	footerH := 2
+	mainH := m.height - detailH - footerH - 2
+	if mainH < 6 {
+		mainH = 6
 	}
+
+	body := m.renderTopicList(m.width-4, mainH-4)
+	main := panel(" Edit Mode — select topics to prune", body, m.width, mainH)
+
+	detail := m.renderDetailPanel(detailH)
+
+	footer := m.renderFooter()
+
+	parts := []string{main, detail, footer}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m Editor) renderTopicList(width, maxLines int) string {
+	var b strings.Builder
 
 	end := m.offset + m.visibleCount()
 	if end > len(m.topics) {
@@ -199,12 +209,12 @@ func (m Editor) View() string {
 			linesUsed++
 		}
 		t := m.topics[i]
-		b.WriteString(RenderCheckboxRow(i, t, m.selected[i], i == m.cursor, m.width, m.styles))
+		b.WriteString(RenderCheckboxRow(i, t, m.selected[i], i == m.cursor, width, m.styles))
 		linesUsed++
 
 		if m.expanded[i] {
 			for _, turnIdx := range t.TurnIndices {
-				if linesUsed >= available {
+				if linesUsed >= maxLines {
 					break
 				}
 				if turnIdx < 0 || turnIdx >= len(m.sess.Turns) {
@@ -220,25 +230,41 @@ func (m Editor) View() string {
 			}
 		}
 
-		if linesUsed >= available {
+		if linesUsed >= maxLines {
 			break
 		}
 	}
-
-	b.WriteString("\n\n")
-	sel := m.currentSelection()
-	b.WriteString(RenderSelectionFooter(m.selectedCount(), len(sel.Turns), m.tokensFreed()))
-	if m.status != "" {
-		b.WriteString("\n")
-		if m.pruning || strings.HasPrefix(m.status, "pruned") {
-			b.WriteString(successStyle.Render(m.status))
-		} else {
-			b.WriteString(m.styles.Error.Render(m.status))
-		}
-	}
-	b.WriteString("\n")
-	b.WriteString(m.styles.Hint.Render("space Select  a All  A None  enter Expand  p Prune  esc Cancel"))
 	return b.String()
+}
+
+func (m Editor) renderDetailPanel(height int) string {
+	sel := m.currentSelection()
+	title := dimStyle.Render(
+		fmt.Sprintf("%d topics · %d turns · ~%s tokens freed",
+			m.selectedCount(), len(sel.Turns), humanize.Comma(int64(m.tokensFreed()))),
+	)
+	body := "\n" + title + "\n"
+	if m.status != "" {
+		if m.pruning || strings.HasPrefix(m.status, "pruned") {
+			body += successStyle.Render(m.status)
+		} else {
+			body += m.styles.Error.Render(m.status)
+		}
+		body += "\n"
+	}
+	return panel(" Selection", body, m.width, height)
+}
+
+func (m Editor) renderFooter() string {
+	hints := []string{
+		kbdPill("space", "select"),
+		kbdPill("a", "all"),
+		kbdPill("A", "none"),
+		kbdPill("enter", "expand"),
+		kbdPill("p", "prune"),
+		kbdPill("esc", "cancel"),
+	}
+	return renderCenteredFooter(hints, m.width)
 }
 
 func (m Editor) visibleCount() int {

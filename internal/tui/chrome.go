@@ -63,6 +63,51 @@ func joinHints(hints ...string) string {
 	return strings.Join(hints, sep)
 }
 
+// wrapHints packs hint strings into lines that each fit within width.
+// Each hint is treated as atomic — never split across lines.
+func wrapHints(hints []string, width int, sep string) []string {
+	if len(hints) == 0 {
+		return nil
+	}
+	var lines []string
+	var cur string
+	for _, h := range hints {
+		if cur == "" {
+			cur = h
+			continue
+		}
+		candidate := cur + sep + h
+		if lipgloss.Width(candidate) > width {
+			lines = append(lines, cur)
+			cur = h
+		} else {
+			cur = candidate
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+// renderCenteredFooter wraps hints into centered lines.
+func renderCenteredFooter(hints []string, width int) string {
+	sep := dimStyle.Render("  ·  ")
+	lines := wrapHints(hints, width-4, sep)
+	var b strings.Builder
+	for i, line := range lines {
+		gap := (width - lipgloss.Width(line)) / 2
+		if gap < 0 {
+			gap = 0
+		}
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(strings.Repeat(" ", gap) + line)
+	}
+	return lipgloss.NewStyle().Width(width).Render(b.String())
+}
+
 // pill renders a small label badge with given foreground and background colors.
 func pill(label string, fg, bg lipgloss.TerminalColor) string {
 	return lipgloss.NewStyle().

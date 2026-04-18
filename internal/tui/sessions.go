@@ -45,6 +45,11 @@ func NewPicker(metas []parser.SessionMeta, th Theme) Picker {
 		search:    NewSearchBar(),
 		collapsed: make(map[string]bool),
 	}
+	// Projects collapsed by default; user expands with enter or space.
+	groups := GroupByProject(metas, th)
+	for _, g := range groups {
+		p.collapsed[g.Name] = true
+	}
 	p.rebuildGroups()
 	return p
 }
@@ -199,9 +204,11 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return p, nil
 			}
+			row, _ := p.selectedRow()
+			g := p.groups[row.GroupIdx]
 			c := NewConfirm(
 				"Delete session?",
-				fmt.Sprintf("%s · %s\nThis cannot be undone.", sel.Project, sel.ID),
+				fmt.Sprintf("%s · %s\nThis cannot be undone.", g.DisplayName, sel.Project),
 			)
 			p.confirm = &c
 			return p, nil
@@ -237,21 +244,13 @@ func (p Picker) View() string {
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
 		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
 
-	detailH := 0
-	if len(p.flatRows) > 0 {
-		detailH = 5
-	}
-
-	mainH := p.height - fixedH - detailH
+	mainH := p.height - fixedH
 	if mainH < 6 {
 		mainH = 6
 	}
 	main := p.renderSessionPanel(mainH)
 
 	parts := []string{header, statsStrip, main}
-	if detailH > 0 {
-		parts = append(parts, p.renderDetailPanel())
-	}
 	if errLine != "" {
 		parts = append(parts, errLine)
 	}
@@ -260,60 +259,6 @@ func (p Picker) View() string {
 	}
 	parts = append(parts, footer)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
-}
-
-const detailPanelHeight = 5
-
-func (p Picker) renderDetailPanel() string {
-	row, ok := p.selectedRow()
-	if !ok {
-		return ""
-	}
-
-	var body string
-	switch row.Kind {
-	case RowGroup:
-		g := p.groups[row.GroupIdx]
-		body = p.renderGroupDetail(g)
-	case RowSession:
-		m := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
-		g := p.groups[row.GroupIdx]
-		body = p.renderSessionDetail(m, g.Name)
-	}
-
-	return panel(" Detail", body, p.width, detailPanelHeight)
-}
-
-func (p Picker) renderGroupDetail(g ProjectGroup) string {
-	title := lipgloss.NewStyle().Foreground(g.Color).Bold(true).Render(truncate(g.Name, 50))
-	count := dimStyle.Render(countLabel(len(g.Sessions), "session"))
-	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tokens total")
-
-	return "\n" + title + dimStyle.Render(" · ") + count + dimStyle.Render(" · ") + tokens + "\n"
-}
-
-func (p Picker) renderSessionDetail(m parser.SessionMeta, projectName string) string {
-	title := lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true).Render(
-		truncate(projectName, 20) + dimStyle.Render("/") + truncate(m.ID, 30),
-	)
-
-	pct := ContextPct(m.TokenCount, contextWindow)
-	bar := ContextBar(pct, 20, p.theme)
-	pctStr := fmt.Sprintf("%.0f%% of 200k", pct*100)
-	tokenLine := humanize.Comma(int64(m.TokenCount)) + " tokens  " + bar + "  " + pctStr
-
-	backup := ""
-	if m.HasBackup {
-		backup = dimStyle.Render(" · ") + successStyle.Render("backup available")
-	}
-	metaLine := dimStyle.Render("modified "+humanize.Time(m.ModifiedAt)) +
-		dimStyle.Render(" · ") + dimStyle.Render(humanizeSize(m.Size)) + backup
-
-	if m.TurnCount > 0 {
-		metaLine += dimStyle.Render(" · ") + dimStyle.Render(fmt.Sprintf("%d turns", m.TurnCount))
-	}
-
-	return "\n" + title + "\n" + dimStyle.Render(tokenLine) + "\n" + metaLine + "\n"
 }
 
 func (p Picker) renderDeleteErr() string {
@@ -372,11 +317,20 @@ func (p Picker) renderStats() string {
 	var parts []string
 	for i, it := range items {
 		color := accents[i%len(accents)]
-		parts = append(parts, pill(it.label+" "+it.value, p.theme.Foreground, color))
+		parts = append(parts, statInline(it.label, it.value, color))
 	}
 
-	sep := dimStyle.Render("  ")
+	sep := dimStyle.Render(" · ")
 	row := strings.Join(parts, sep)
+
+	rowWidth := lipgloss.Width(row)
+	maxWidth := p.width - 4
+	for rowWidth > maxWidth && len(parts) > 2 {
+		parts = parts[:len(parts)-1]
+		row = strings.Join(parts, sep)
+		rowWidth = lipgloss.Width(row)
+	}
+
 	return lipgloss.NewStyle().Width(p.width).Padding(0, 2).Render(row)
 }
 
@@ -401,14 +355,24 @@ func (p Picker) renderSessionPanel(height int) string {
 
 func (p Picker) renderGroupedList(width int) string {
 	var b strings.Builder
-	visible := p.visibleCount()
+	// Line budget rather than row budget so group rows (2 lines) and
+	// session rows (1 line) can coexist without overflowing the panel.
+	budget := p.bodyLines()
 
-	end := p.offset + visible
-	if end > len(p.flatRows) {
-		end = len(p.flatRows)
-	}
-	for i := p.offset; i < end; i++ {
+	linesUsed := 0
+	for i := p.offset; i < len(p.flatRows); i++ {
 		row := p.flatRows[i]
+		h := rowHeight(row.Kind)
+		if linesUsed > 0 && linesUsed+1+h > budget {
+			break
+		}
+		if linesUsed == 0 && h > budget {
+			break
+		}
+		if linesUsed > 0 {
+			b.WriteByte('\n')
+			linesUsed++
+		}
 		switch row.Kind {
 		case RowGroup:
 			b.WriteString(p.renderGroupHeader(row, i == p.cursor, width))
@@ -417,20 +381,32 @@ func (p Picker) renderGroupedList(width int) string {
 			g := p.groups[row.GroupIdx]
 			b.WriteString(p.renderSessionRow(meta, g.Color, i == p.cursor, width))
 		}
-		if i < end-1 {
-			b.WriteString("\n")
-		}
+		linesUsed += h
 	}
 	return b.String()
 }
 
-func panel(title, body string, width, height int) string {
-	style := boxStyle.Width(width - 2).Height(height - 2)
-	titleBar := ""
-	if title != "" {
-		titleBar = lipgloss.NewStyle().Foreground(colMauve).Bold(true).Render(title) + "\n"
+// rowHeight returns the total line count each row kind occupies. Group headers
+// are 2 lines tall so the colored gutter reads as a bigger block; sessions stay
+// 1 line. Gutters line up vertically across adjacent rows so a whole project
+// visually reads as one connected bar on the left.
+func rowHeight(kind RowKind) int {
+	if kind == RowGroup {
+		return 2
 	}
-	return style.Render(titleBar + body)
+	return 1
+}
+
+func panel(title, body string, width, height int) string {
+	if title == "" {
+		style := boxStyle.Width(width - 2).Height(height - 2)
+		return style.Render(body)
+	}
+	// Reserve one line for the title above the box so the whole panel
+	// (title + box) fits exactly within the caller's requested height.
+	style := boxStyle.Width(width - 2).Height(height - 3)
+	titleBar := lipgloss.NewStyle().Foreground(colMauve).Bold(true).Width(width - 4).Render(title)
+	return titleBar + "\n" + style.Render(body)
 }
 
 func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) string {
@@ -442,17 +418,19 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 		glyph = "▸"
 	}
 
-	gutterStyle := lipgloss.NewStyle().Foreground(g.Color)
+	gutterStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
 	if !selected {
 		gutterStyle = lipgloss.NewStyle().Foreground(g.Color).Faint(true)
 	}
 	gutter := gutterStyle.Render("▌")
 
-	nameStyle := lipgloss.NewStyle().Foreground(p.theme.Foreground).Bold(true)
+	// Project name in its own color + bold + uppercase so each project reads
+	// as a distinct visual anchor. Selection just brightens via no-faint.
+	nameStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
 	if !selected {
-		nameStyle = lipgloss.NewStyle().Foreground(colOverlay1)
+		nameStyle = lipgloss.NewStyle().Foreground(g.Color).Bold(true).Faint(true)
 	}
-	name := nameStyle.Render(truncate(g.Name, 30))
+	name := nameStyle.Render(strings.ToUpper(truncate(g.DisplayName, 30)))
 
 	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
 	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tok")
@@ -461,11 +439,17 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	if gap < 1 {
 		gap = 1
 	}
-	return gutter + " " + name + strings.Repeat(" ", gap) + count + "  " + tokens
+	line1 := gutter + " " + name + strings.Repeat(" ", gap) + count + "  " + tokens
+	// Second line keeps the colored gutter so the project bar reads as a
+	// chunkier, taller block. Visually connects to the next row's gutter.
+	line2 := gutter
+	return line1 + "\n" + line2
 }
 
 func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
-	indent := "  "
+	// Faint project-colored gutter carries through into session rows so the
+	// whole project reads as one connected bar on the left.
+	gutter := lipgloss.NewStyle().Foreground(projectColor).Faint(true).Render("▌")
 
 	glyphStyle := lipgloss.NewStyle().Foreground(colOverlay1)
 	if selected {
@@ -479,20 +463,18 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 	}
 	id := idStyle.Render(truncate(m.ID, 20))
 
-	pct := ContextPct(m.TokenCount, contextWindow)
-	bar := ContextBar(pct, 8, p.theme)
-	pctStr := dimStyle.Render(fmt.Sprintf("%.0f%%", pct*100))
-
 	tokStr := dimStyle.Render(humanize.Comma(int64(m.TokenCount)) + " tok")
-	age := dimStyle.Render(humanize.Time(m.ModifiedAt))
 
 	backup := ""
 	if m.HasBackup {
 		backup = "  " + successStyle.Render("↶")
 	}
 
-	row := indent + glyph + " " + id + " " + bar + " " + pctStr + "  " + tokStr + "  " + age + backup
-	return row
+	if p.width >= 80 {
+		age := dimStyle.Render(humanize.Time(m.ModifiedAt))
+		return gutter + "   " + glyph + " " + id + "  " + tokStr + "  " + age + backup
+	}
+	return gutter + "   " + glyph + " " + id + "  " + tokStr + backup
 }
 
 func (p *Picker) applySearchFilter() {
@@ -520,7 +502,7 @@ func (p *Picker) applySearchFilter() {
 }
 
 func (p Picker) renderFooter() string {
-	hints := joinHints(
+	hints := []string{
 		kbdPill("↑↓/jk", "nav"),
 		kbdPill("enter", "open"),
 		kbdPill("r", "replay"),
@@ -529,20 +511,15 @@ func (p Picker) renderFooter() string {
 		kbdPill("d", "delete"),
 		kbdPill("/", "search"),
 		kbdPill("q", "quit"),
-	)
-	hintsW := lipgloss.Width(hints)
-	gap := (p.width - hintsW) / 2
-	if gap < 2 {
-		gap = 2
 	}
-	return lipgloss.NewStyle().Width(p.width).Render(strings.Repeat(" ", gap) + hints)
+	return renderCenteredFooter(hints, p.width)
 }
 
-// visibleCount returns the number of session cards that fit in the main panel.
-// Shared between cursor-scroll clamping and list rendering.
-func (p Picker) visibleCount() int {
+// bodyLines returns the number of text lines available inside the main
+// session panel's body (inside the border/title chrome).
+func (p Picker) bodyLines() int {
 	if p.height <= 0 {
-		return 8
+		return 16
 	}
 	fixedH := 3
 	if p.deleteErr != nil {
@@ -557,6 +534,18 @@ func (p Picker) visibleCount() int {
 		return 1
 	}
 	return bodyH
+}
+
+// visibleCount returns a conservative row count used for cursor-scroll
+// clamping. Group rows are 2 lines tall so worst-case assume every visible
+// row is a group header — this guarantees the cursor stays in view.
+func (p Picker) visibleCount() int {
+	bodyH := p.bodyLines()
+	rows := bodyH / 2
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
 
 // clampOffset adjusts offset so that cursor is within [offset, offset+visible).

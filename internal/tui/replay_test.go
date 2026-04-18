@@ -34,7 +34,6 @@ func TestReplay_NewDefaults(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics())
 
 	assert.Equal(t, 0, m.Cursor())
-	assert.True(t, m.WrapEnabled())
 	assert.False(t, m.ThinkingVisible())
 	assert.False(t, m.AutoPlaying())
 }
@@ -96,15 +95,6 @@ func TestReplay_ToggleThinking(t *testing.T) {
 	assert.True(t, u.(tui.Replay).ThinkingVisible())
 }
 
-func TestReplay_ToggleWrap(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
-	require.True(t, m.WrapEnabled())
-
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
-
-	assert.False(t, u.(tui.Replay).WrapEnabled())
-}
-
 func TestReplay_SpaceStartsAutoPlay(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics())
 
@@ -154,12 +144,47 @@ func TestReplay_TickAtEndStopsPlaying(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-func TestReplay_DigitSetsSpeed(t *testing.T) {
+func TestReplay_SpeedUpClampsTo9(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics())
+	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	r1 := u1.(tui.Replay)
 
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	for i := 0; i < 20; i++ {
+		u2, _ := r1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+		r1 = u2.(tui.Replay)
+	}
 
-	assert.Equal(t, 9, u.(tui.Replay).Speed())
+	assert.Equal(t, 9, r1.Speed())
+}
+
+func TestReplay_SpeedDownClampsTo1(t *testing.T) {
+	m := tui.NewReplay(sampleSession(), sampleTopics())
+	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	r1 := u1.(tui.Replay)
+
+	for i := 0; i < 20; i++ {
+		u2, _ := r1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+		r1 = u2.(tui.Replay)
+	}
+
+	assert.Equal(t, 1, r1.Speed())
+}
+
+func TestReplay_SpeedKeysNoOpWhenNotAutoplaying(t *testing.T) {
+	m := tui.NewReplay(sampleSession(), sampleTopics())
+	require.False(t, m.AutoPlaying())
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+
+	assert.Equal(t, 5, u.(tui.Replay).Speed())
+}
+
+func TestReplay_FooterContainsThinkingIndicator(t *testing.T) {
+	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m = m.SetSize(120, 40).(tui.Replay)
+
+	out := m.View()
+	assert.Contains(t, out, "thinking")
 }
 
 func TestReplay_EnterOnToolResultTurnExpands(t *testing.T) {
