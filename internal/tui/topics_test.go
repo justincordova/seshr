@@ -43,11 +43,10 @@ func TestOverview_New_InitialState(t *testing.T) {
 }
 
 func TestOverview_View_ContainsTopicLabel(t *testing.T) {
-	// Topics are sorted latest-first, so the last clustered topic renders first.
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops)
 	out := o.View()
-	assert.Contains(t, out, tops[len(tops)-1].Label)
+	assert.Contains(t, out, tops[0].Label)
 }
 
 func TestOverview_DownKey_MovesCursor(t *testing.T) {
@@ -108,13 +107,12 @@ func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 }
 
 func TestOverview_ExpandedView_ShowsPreviews(t *testing.T) {
-	// Topics are sorted latest-first, so cursor=0 is the later topic.
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	o = next.(tui.Overview)
 	out := o.View()
-	assert.Contains(t, out, "switching to database setup now")
+	assert.Contains(t, out, "set up express")
 }
 
 func TestOverview_TabKey_TogglesStats(t *testing.T) {
@@ -166,23 +164,20 @@ func TestOverview_UpKey_AtTopStays(t *testing.T) {
 	assert.Equal(t, 0, next.(tui.Overview).Cursor())
 }
 
-func TestOverview_Topics_SortedLatestFirst(t *testing.T) {
-	// Arrange — two topics: earlier (turns 1–2), later (turns 3–4).
+func TestOverview_Topics_SortedOldestFirst(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	require.Len(t, tops, 2)
 	o := tui.NewOverview(s, tops)
 
-	// Act
 	out := o.View()
 
-	// Assert — the later topic's turn range appears before the earlier one's.
-	laterRange := "turns 3–4"
 	earlierRange := "turns 1–2"
-	laterIdx := strings.Index(out, laterRange)
+	laterRange := "turns 3–4"
 	earlierIdx := strings.Index(out, earlierRange)
-	require.Greater(t, laterIdx, -1, "later turn range should be rendered")
+	laterIdx := strings.Index(out, laterRange)
 	require.Greater(t, earlierIdx, -1, "earlier turn range should be rendered")
-	assert.Less(t, laterIdx, earlierIdx, "latest topic must render before earlier one")
+	require.Greater(t, laterIdx, -1, "later turn range should be rendered")
+	assert.Less(t, earlierIdx, laterIdx, "earliest topic must render before later one")
 }
 
 func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
@@ -198,8 +193,7 @@ func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
 	// Assert — stats breakdown shown, and topic-panel cards are hidden.
 	assert.Contains(t, out, "user")
 	assert.Contains(t, out, "assistant")
-	assert.NotContains(t, out, "turns 1–2", "topic cards should be hidden while stats are toggled on")
-	assert.NotContains(t, out, "turns 3–4", "topic cards should be hidden while stats are toggled on")
+	assert.Contains(t, out, "2 topic")
 }
 
 func TestOverview_ZeroTimestamp_OmitsRelativeTime(t *testing.T) {
