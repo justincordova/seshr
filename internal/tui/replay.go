@@ -21,25 +21,26 @@ const (
 
 // Replay is the Bubbletea model for the Replay screen (SPEC §3.3).
 type Replay struct {
-	sess           *parser.Session
-	topicsList     []topics.Topic
-	cursor         int
-	expandedTool   int
-	compact        bool
-	showThinking   bool
-	autoPlay       bool
-	speed          int
-	width          int
-	height         int
-	keys           ReplayKeys
-	styles         Styles
-	theme          Theme
-	vp             viewport.Model
-	mainVP         viewport.Model
-	search         SearchBar
-	searchHasQuery bool
-	sidebarFocus   bool
-	sidebarCursor  int
+	sess               *parser.Session
+	topicsList         []topics.Topic
+	cursor             int
+	expandedTool       int
+	compact            bool
+	showThinking       bool
+	autoPlay           bool
+	speed              int
+	width              int
+	height             int
+	keys               ReplayKeys
+	styles             Styles
+	theme              Theme
+	vp                 viewport.Model
+	mainVP             viewport.Model
+	search             SearchBar
+	searchHasQuery     bool
+	searchResultCursor int
+	sidebarFocus       bool
+	sidebarCursor      int
 }
 
 // NewReplay constructs a Replay model with sensible defaults.
@@ -80,9 +81,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.search.Commit()
 				m.applyTurnSearch()
-				if idx, ok := m.search.CurrentMatch(); ok {
-					m.cursor = idx
-				}
+				m.searchResultCursor = 0
 				m.searchHasQuery = m.search.Query() != ""
 				return m, nil
 			default:
@@ -95,34 +94,40 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// n/N for search next/prev when a committed query exists
 		if m.searchHasQuery && !m.search.Active() {
 			switch msg.String() {
-			case "n":
-				if idx, ok := m.search.NextMatch(); ok {
-					m.cursor = idx
+			case "up", "k":
+				if m.searchResultCursor > 0 {
+					m.searchResultCursor--
 				}
 				return m, nil
-			case "N":
-				if idx, ok := m.search.PrevMatch(); ok {
-					m.cursor = idx
+			case "down", "j":
+				if m.searchResultCursor < m.search.MatchCount()-1 {
+					m.searchResultCursor++
 				}
+				return m, nil
+			case "enter":
+				matches := m.search.Matches()
+				if m.searchResultCursor >= 0 && m.searchResultCursor < len(matches) {
+					m.cursor = matches[m.searchResultCursor].Index
+					m.mainVP.GotoTop()
+				}
+				m.searchHasQuery = false
+				m.search.Close()
+				return m, nil
+			case "esc":
+				m.searchHasQuery = false
+				m.search.Close()
 				return m, nil
 			}
 		}
 
 		switch {
 		case key.Matches(msg, m.keys.SidebarFocus):
-			if m.width >= narrowBreakpoint {
+			if m.width >= narrowBreakpoint && len(m.topicsList) > 0 {
 				if !m.sidebarFocus {
 					m.sidebarFocus = true
-					if m.searchHasQuery {
-						m.sidebarCursor = m.search.MatchIndex()
-						if m.sidebarCursor < 0 {
-							m.sidebarCursor = 0
-						}
-					} else if len(m.topicsList) > 0 {
-						m.sidebarCursor = m.currentTopicIndex()
-						if m.sidebarCursor < 0 {
-							m.sidebarCursor = 0
-						}
+					m.sidebarCursor = m.currentTopicIndex()
+					if m.sidebarCursor < 0 {
+						m.sidebarCursor = 0
 					}
 				} else {
 					m.sidebarFocus = false
@@ -130,30 +135,6 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case m.sidebarFocus:
-			if m.searchHasQuery {
-				switch msg.String() {
-				case "up", "k":
-					if m.sidebarCursor > 0 {
-						m.sidebarCursor--
-					}
-					m.jumpToSearchMatch()
-					return m, nil
-				case "down", "j":
-					if m.sidebarCursor < m.search.MatchCount()-1 {
-						m.sidebarCursor++
-					}
-					m.jumpToSearchMatch()
-					return m, nil
-				case "enter":
-					m.jumpToSearchMatch()
-					m.sidebarFocus = false
-					return m, nil
-				case "esc":
-					m.sidebarFocus = false
-					return m, nil
-				}
-				return m, nil
-			}
 			switch msg.String() {
 			case "up", "k":
 				if m.sidebarCursor > 0 {
@@ -296,15 +277,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Replay) jumpToSearchMatch() {
-	matches := m.search.Matches()
-	if m.sidebarCursor >= 0 && m.sidebarCursor < len(matches) {
-		m.cursor = matches[m.sidebarCursor].Index
-		m.mainVP.GotoTop()
-	}
-}
-
-// syncMainVPSize recalculates mainVP dimensions from current layout.
+// syncMainVPSize
 func (m *Replay) syncMainVPSize() {
 	if m.width < narrowBreakpoint {
 		m.mainVP.Width = m.width - 4
@@ -459,9 +432,6 @@ func (m Replay) renderFooter() string {
 		kbdPill("c", "compact"),
 		kbdPill("/", "search"),
 	)
-	if m.searchHasQuery {
-		hints = append(hints, kbdPill("n/N", "next/prev"))
-	}
 	if m.autoPlay {
 		speedPill := lipgloss.NewStyle().
 			Foreground(m.theme.Accent).
@@ -471,7 +441,11 @@ func (m Replay) renderFooter() string {
 			Render(fmt.Sprintf("▶ %dx", m.speed))
 		hints = append(hints, speedPill, kbdPill("+/-", "speed"))
 	}
-	hints = append(hints, kbdPill("esc", "back"))
+	if m.searchHasQuery {
+		hints = append(hints, kbdPill("↑↓/jk", "browse"), kbdPill("enter", "jump"), kbdPill("esc", "clear"))
+	} else {
+		hints = append(hints, kbdPill("esc", "back"))
+	}
 	return renderCenteredFooter(hints, m.width)
 }
 
@@ -489,17 +463,12 @@ func (m Replay) sidebarWidth() int {
 func (m Replay) renderWide(contentH int) string {
 	sw := m.sidebarWidth()
 	mw := m.width - sw - 3
-
+	activeTopic := m.currentTopicIndex()
 	var sidebar string
-	if m.searchHasQuery {
-		sidebar = m.renderSearchSidebar(sw, contentH)
+	if m.sidebarFocus {
+		sidebar = m.renderSidebarPanel(m.topicsList, m.sidebarCursor, sw, contentH, true)
 	} else {
-		activeTopic := m.currentTopicIndex()
-		if m.sidebarFocus {
-			sidebar = m.renderSidebarPanel(m.topicsList, m.sidebarCursor, sw, contentH, true)
-		} else {
-			sidebar = m.renderSidebarPanel(m.topicsList, activeTopic, sw, contentH, false)
-		}
+		sidebar = m.renderSidebarPanel(m.topicsList, activeTopic, sw, contentH, false)
 	}
 	main := m.renderMainPanel(mw, contentH)
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, " ", main)
@@ -582,17 +551,6 @@ func (m Replay) renderSidebarPanel(ts []topics.Topic, active, width, height int,
 	return style.Render(body)
 }
 
-func (m Replay) renderSearchSidebar(width, height int) string {
-	focused := m.sidebarFocus
-	style := boxStyle.Width(width - 2).Height(height - 2)
-	if focused {
-		style = activeBoxStyle.Width(width - 2).Height(height - 2)
-	}
-	matches := m.search.Matches()
-	body := RenderSearchMatches(m.sess, matches, m.sidebarCursor, width-4, m.theme)
-	return style.Render(body)
-}
-
 func (m *Replay) applyTurnSearch() {
 	if m.sess == nil || len(m.sess.Turns) == 0 {
 		return
@@ -612,7 +570,17 @@ func (m *Replay) applyTurnSearch() {
 
 func (m Replay) renderMainPanel(width, height int) string {
 	style := boxStyle.Width(width - 2).Height(height - 2)
-	body := m.renderMain(width - 4)
+	var body string
+	if m.searchHasQuery {
+		body = m.renderSearchResults(width - 4)
+	} else {
+		body = m.renderMain(width - 4)
+	}
 	m.mainVP.SetContent(body)
 	return style.Render(m.mainVP.View())
+}
+
+func (m Replay) renderSearchResults(width int) string {
+	matches := m.search.Matches()
+	return RenderSearchResults(m.sess, matches, m.searchResultCursor, width, m.styles, m.theme)
 }

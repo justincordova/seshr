@@ -267,29 +267,57 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 	return b.String()
 }
 
-// RenderSearchMatches renders the search match list for the sidebar.
-func RenderSearchMatches(sess *parser.Session, matches []fuzzy.Match, currentIdx int, width int, th Theme) string {
-	if width < 4 {
-		width = 4
-	}
+// RenderSearchResults renders all search matches in the main panel.
+// Each match shows a header line (badge + turn number) and up to 3 lines of
+// excerpt. The selected match is highlighted; others are dimmed.
+func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width int, s Styles, th Theme) string {
 	if len(matches) == 0 {
-		return dimStyle.Render("  no matches")
+		return dimStyle.Render("No matches.")
 	}
+	const excerptLines = 3
+	divider := strings.Repeat("─", width)
 	var b strings.Builder
 	for i, m := range matches {
 		if m.Index < 0 || m.Index >= len(sess.Turns) {
 			continue
 		}
+		if i > 0 {
+			b.WriteString(dimStyle.Render(divider))
+			b.WriteByte('\n')
+		}
 		turn := sess.Turns[m.Index]
 		badge := RenderRoleBadge(turn.Role, th)
-		preview := strings.Split(turn.Content, "\n")[0]
-		label := fmt.Sprintf("%s %s", badge, truncate(preview, width-12))
-		if i == currentIdx {
-			b.WriteString(truncate("▸ "+label, width))
+		num := dimStyle.Render(fmt.Sprintf("  turn %d", m.Index+1))
+		header := badge + num
+		excerpt := buildExcerpt(turn.Content, excerptLines, width)
+		selected := i == selectedIdx
+		if selected {
+			b.WriteString(header)
+			b.WriteByte('\n')
+			b.WriteString(excerpt)
 		} else {
-			b.WriteString(dimStyle.Render(truncate("  "+label, width)))
+			b.WriteString(dimStyle.Render(header))
+			b.WriteByte('\n')
+			b.WriteString(dimStyle.Render(excerpt))
 		}
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// buildExcerpt returns the first n non-empty lines of content, wrapped to width.
+func buildExcerpt(content string, n, width int) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	var kept []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		kept = append(kept, truncate(l, width))
+		if len(kept) == n {
+			break
+		}
+	}
+	return strings.Join(kept, "\n")
 }
