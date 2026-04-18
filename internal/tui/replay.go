@@ -39,6 +39,7 @@ type Replay struct {
 	search             SearchBar
 	searchHasQuery     bool
 	searchResultCursor int
+	searchScrollTop    int
 	sidebarFocus       bool
 	sidebarCursor      int
 }
@@ -82,6 +83,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.search.Commit()
 				m.applyTurnSearch()
 				m.searchResultCursor = 0
+				m.searchScrollTop = 0
 				m.searchHasQuery = m.search.Query() != ""
 				return m, nil
 			default:
@@ -91,20 +93,20 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// search result navigation — j/k moves cursor, viewport follows
+		// n/N for search next/prev when a committed query exists
 		if m.searchHasQuery && !m.search.Active() {
 			switch msg.String() {
 			case "up", "k":
 				if m.searchResultCursor > 0 {
 					m.searchResultCursor--
+					m.recalcSearchScroll()
 				}
-				m.scrollSearchToSelected()
 				return m, nil
 			case "down", "j":
 				if m.searchResultCursor < m.search.MatchCount()-1 {
 					m.searchResultCursor++
+					m.recalcSearchScroll()
 				}
-				m.scrollSearchToSelected()
 				return m, nil
 			case "enter":
 				matches := m.search.Matches()
@@ -172,7 +174,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.vp.LineDown(1)
 					return m, nil
 				}
-			} else if !m.searchHasQuery {
+			} else {
 				switch msg.String() {
 				case "up", "k":
 					m.mainVP.LineUp(1)
@@ -271,82 +273,15 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.MouseWheelUp:
-			if !m.searchHasQuery {
-				m.mainVP.LineUp(3)
-			}
+			m.mainVP.LineUp(3)
 		case tea.MouseWheelDown:
-			if !m.searchHasQuery {
-				m.mainVP.LineDown(3)
-			}
+			m.mainVP.LineDown(3)
 		}
 	}
 	return m, nil
 }
 
-// scrollSearchToSelected adjusts mainVP.YOffset so the selected search result
-// is visible. Called during Update (pointer receiver) so the offset persists.
-func (m *Replay) scrollSearchToSelected() {
-	if m.sess == nil {
-		return
-	}
-	matches := m.search.Matches()
-	// Walk the match list the same way RenderSearchResults does to compute the
-	// line number of the selected result header.
-	line := 0
-	rendered := 0
-	selectedLine := 0
-	for i, match := range matches {
-		if match.Index < 0 || match.Index >= len(m.sess.Turns) {
-			continue
-		}
-		turn := m.sess.Turns[match.Index]
-		excerpt := searchExcerptLineCount(turn)
-		if excerpt == 0 {
-			continue
-		}
-		if rendered > 0 {
-			line++ // divider line
-		}
-		if i == m.searchResultCursor {
-			selectedLine = line
-		}
-		line += 1 + excerpt + 1 // header + excerpt lines + trailing newline
-		rendered++
-	}
-	vpH := m.mainVP.Height
-	top := m.mainVP.YOffset
-	bottom := top + vpH - 1
-	if selectedLine > bottom {
-		m.mainVP.SetYOffset(selectedLine - vpH + 1)
-	} else if selectedLine < top {
-		m.mainVP.SetYOffset(selectedLine)
-	}
-}
-
-// searchExcerptLineCount returns the number of lines the excerpt for this turn
-// will occupy (matching buildExcerpt / buildToolExcerpt logic), or 0 if blank.
-func searchExcerptLineCount(turn parser.Turn) int {
-	const excerptLines = 3
-	content := strings.TrimSpace(turn.Content)
-	if content != "" {
-		count := 0
-		for _, l := range strings.Split(content, "\n") {
-			if strings.TrimSpace(l) != "" {
-				count++
-				if count == excerptLines {
-					break
-				}
-			}
-		}
-		return count
-	}
-	if len(turn.ToolCalls) > 0 {
-		return 1
-	}
-	return 0
-}
-
-// syncMainVPSize recalculates mainVP dimensions from current layout.
+// syncMainVPSize
 func (m *Replay) syncMainVPSize() {
 	if m.width < narrowBreakpoint {
 		m.mainVP.Width = m.width - 4
@@ -637,12 +572,32 @@ func (m *Replay) applyTurnSearch() {
 	m.search.Filter(haystack)
 }
 
+func (m *Replay) recalcSearchScroll() {
+	h := m.mainVP.Height
+	if h < 1 {
+		h = 1
+	}
+	w := m.mainVP.Width
+	if w < 4 {
+		w = 4
+	}
+	m.searchScrollTop = ComputeSearchScrollTop(
+		m.sess, m.search.Matches(), m.searchResultCursor,
+		w, h, m.searchScrollTop,
+	)
+}
+
 func (m Replay) renderMainPanel(width, height int) string {
 	style := boxStyle.Width(width - 2).Height(height - 2)
 	if m.searchHasQuery {
-		out := RenderSearchResults(m.sess, m.search.Matches(), m.searchResultCursor, width-4, m.styles, m.theme)
-		m.mainVP.SetContent(out.Content)
-		return style.Render(m.mainVP.View())
+		// Search results manage their own scrolling — no viewport needed.
+		// Inner height = panel height minus top/bottom border.
+		innerH := height - 2
+		if innerH < 1 {
+			innerH = 1
+		}
+		body, _ := RenderSearchResults(m.sess, m.search.Matches(), m.searchResultCursor, width-4, innerH, m.searchScrollTop, m.styles, m.theme)
+		return style.Render(body)
 	}
 	body := m.renderMain(width - 4)
 	m.mainVP.SetContent(body)

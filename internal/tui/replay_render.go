@@ -267,27 +267,24 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 	return b.String()
 }
 
-// SearchResultsOutput holds the rendered string and the line offset of the
-// selected result, used to scroll the viewport to keep it visible.
-type SearchResultsOutput struct {
-	Content      string
-	SelectedLine int // 0-based line number of the selected result header
-}
-
 // RenderSearchResults renders all search matches in the main panel.
 // Each match shows a header line (badge + turn number) and up to 3 lines of
 // excerpt. The selected match is highlighted; others are dimmed.
 // Matches with no displayable content are skipped.
-func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width int, s Styles, th Theme) SearchResultsOutput {
+// scrollTop is the persisted scroll offset; the returned int is the updated offset.
+func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width, height, scrollTop int, s Styles, th Theme) (string, int) {
 	if len(matches) == 0 {
-		return SearchResultsOutput{Content: dimStyle.Render("No matches.")}
+		return dimStyle.Render("No matches."), 0
 	}
 	const excerptLines = 3
+
+	// Build all renderable blocks first so we know their heights.
+	type block struct {
+		matchIdx int
+		lines    []string // rendered lines for this block
+	}
+	var blocks []block
 	divider := strings.Repeat("─", width)
-	var b strings.Builder
-	rendered := 0
-	currentLine := 0
-	selectedLine := 0
 	for i, m := range matches {
 		if m.Index < 0 || m.Index >= len(sess.Turns) {
 			continue
@@ -300,36 +297,174 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 		if excerpt == "" {
 			continue
 		}
-		if rendered > 0 {
-			b.WriteString(dimStyle.Render(divider))
-			b.WriteByte('\n')
-			currentLine++
-		}
-		if i == selectedIdx {
-			selectedLine = currentLine
-		}
 		badge := RenderRoleBadge(turn.Role, th)
 		num := dimStyle.Render(fmt.Sprintf("  turn %d", m.Index+1))
 		header := badge + num
 		selected := i == selectedIdx
-		if selected {
-			b.WriteString(header)
-			b.WriteByte('\n')
-			b.WriteString(excerpt)
-		} else {
-			b.WriteString(dimStyle.Render(header))
-			b.WriteByte('\n')
-			b.WriteString(dimStyle.Render(excerpt))
+		var blk block
+		blk.matchIdx = i
+		if len(blocks) > 0 {
+			blk.lines = append(blk.lines, dimStyle.Render(divider))
 		}
-		b.WriteByte('\n')
-		// header line + excerpt lines + trailing newline
-		currentLine += 1 + strings.Count(excerpt, "\n") + 1
-		rendered++
+		if selected {
+			blk.lines = append(blk.lines, header)
+			for _, l := range strings.Split(excerpt, "\n") {
+				blk.lines = append(blk.lines, l)
+			}
+		} else {
+			blk.lines = append(blk.lines, dimStyle.Render(header))
+			for _, l := range strings.Split(excerpt, "\n") {
+				blk.lines = append(blk.lines, dimStyle.Render(l))
+			}
+		}
+		blocks = append(blocks, blk)
 	}
-	if rendered == 0 {
-		return SearchResultsOutput{Content: dimStyle.Render("No matches.")}
+	if len(blocks) == 0 {
+		return dimStyle.Render("No matches."), 0
 	}
-	return SearchResultsOutput{Content: b.String(), SelectedLine: selectedLine}
+
+	// Find which block is selected (by matchIdx).
+	selectedBlock := 0
+	for i, blk := range blocks {
+		if blk.matchIdx == selectedIdx {
+			selectedBlock = i
+			break
+		}
+	}
+
+	// Flatten all lines and track where selected block starts.
+	type lineEntry struct{ text string }
+	var allLines []string
+	blockStart := make([]int, len(blocks)) // line index of first line of each block
+	cur := 0
+	for i, blk := range blocks {
+		blockStart[i] = cur
+		for _, l := range blk.lines {
+			allLines = append(allLines, l)
+			cur++
+		}
+	}
+
+	// Determine the visible window: only scroll when selection leaves the window.
+	selStart := blockStart[selectedBlock]
+	selEnd := selStart + len(blocks[selectedBlock].lines) - 1
+	maxTop := len(allLines) - height
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if scrollTop > maxTop {
+		scrollTop = maxTop
+	}
+	top := scrollTop
+	bottom := top + height - 1
+	if selEnd > bottom {
+		top = selEnd - height + 1
+		if top > maxTop {
+			top = maxTop
+		}
+		bottom = top + height - 1
+	}
+	if selStart < top {
+		top = selStart
+		if top < 0 {
+			top = 0
+		}
+		bottom = top + height - 1
+	}
+
+	var out strings.Builder
+	for i, l := range allLines {
+		if i < top {
+			continue
+		}
+		if i > bottom {
+			break
+		}
+		out.WriteString(l)
+		out.WriteByte('\n')
+	}
+	return strings.TrimRight(out.String(), "\n"), top
+}
+
+// ComputeSearchScrollTop calculates the scroll offset for search results
+// without rendering. This is called from Update() on the pointer receiver
+// so the result can be persisted on the model.
+func ComputeSearchScrollTop(sess *parser.Session, matches []fuzzy.Match, selectedIdx, width, height, scrollTop int) int {
+	if len(matches) == 0 || height <= 0 {
+		return 0
+	}
+	const excerptLines = 3
+
+	type blockInfo struct {
+		matchIdx int
+		height   int
+	}
+	var blocks []blockInfo
+	for i, m := range matches {
+		if m.Index < 0 || m.Index >= len(sess.Turns) {
+			continue
+		}
+		turn := sess.Turns[m.Index]
+		excerpt := buildExcerpt(turn.Content, excerptLines, width)
+		if excerpt == "" {
+			excerpt = buildToolExcerpt(turn, width)
+		}
+		if excerpt == "" {
+			continue
+		}
+		h := 1 + strings.Count(excerpt, "\n") + 1
+		if len(blocks) > 0 {
+			h++
+		}
+		blocks = append(blocks, blockInfo{matchIdx: i, height: h})
+	}
+	if len(blocks) == 0 {
+		return 0
+	}
+
+	selectedBlock := 0
+	for i, blk := range blocks {
+		if blk.matchIdx == selectedIdx {
+			selectedBlock = i
+			break
+		}
+	}
+
+	totalLines := 0
+	blockStart := make([]int, len(blocks))
+	cur := 0
+	for i, blk := range blocks {
+		blockStart[i] = cur
+		cur += blk.height
+		totalLines = cur
+	}
+
+	selStart := blockStart[selectedBlock]
+	selEnd := selStart + blocks[selectedBlock].height - 1
+	maxTop := totalLines - height
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if scrollTop > maxTop {
+		scrollTop = maxTop
+	}
+	top := scrollTop
+	bottom := top + height - 1
+	if selEnd > bottom {
+		top = selEnd - height + 1
+		if top > maxTop {
+			top = maxTop
+		}
+		bottom = top + height - 1
+	}
+	if selStart < top {
+		top = selStart
+		if top < 0 {
+			top = 0
+		}
+		bottom = top + height - 1
+	}
+	return top
 }
 
 // buildToolExcerpt builds a fallback excerpt from tool call names when a turn
