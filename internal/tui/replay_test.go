@@ -1,7 +1,6 @@
 package tui_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -229,9 +228,8 @@ func TestReplay_View_NarrowHidesSidebar(t *testing.T) {
 
 	out := m.View()
 
-	lines := strings.Split(out, "\n")
-	require.NotEmpty(t, lines)
-	assert.Contains(t, lines[0], "Greet")
+	assert.Contains(t, out, "Greet")
+	assert.Contains(t, out, "Replay")
 }
 
 func TestReplay_View_ExpandedShowsOnlyViewport(t *testing.T) {

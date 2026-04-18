@@ -34,17 +34,22 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colSurface1).
 			Padding(0, 1)
+
+	activeBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colMauve).
+			Padding(0, 1)
 )
 
 // Styles bundles the shared lipgloss styles derived from a Theme.
 // Kept for backward compatibility with sessions.go and other consumers.
 type Styles struct {
-	App   lipgloss.Style
-	Title lipgloss.Style
-	Hint  lipgloss.Style
-	Error lipgloss.Style
+	App     lipgloss.Style
+	Title   lipgloss.Style
+	Hint    lipgloss.Style
+	Error   lipgloss.Style
+	Success lipgloss.Style
 
-	// Replay styles.
 	Thinking                 lipgloss.Style
 	ToolResultExpandedHeader lipgloss.Style
 }
@@ -52,10 +57,11 @@ type Styles struct {
 // NewStyles builds a Styles from a Theme.
 func NewStyles(t Theme) Styles {
 	return Styles{
-		App:   lipgloss.NewStyle().Foreground(t.Foreground),
-		Title: lipgloss.NewStyle().Foreground(t.Accent).Bold(true),
-		Hint:  lipgloss.NewStyle().Foreground(t.Muted),
-		Error: lipgloss.NewStyle().Foreground(t.Error),
+		App:     lipgloss.NewStyle().Foreground(t.Foreground),
+		Title:   lipgloss.NewStyle().Foreground(t.Accent).Bold(true),
+		Hint:    lipgloss.NewStyle().Foreground(t.Muted),
+		Error:   lipgloss.NewStyle().Foreground(t.Error),
+		Success: lipgloss.NewStyle().Foreground(colGreen),
 
 		Thinking:                 lipgloss.NewStyle().Foreground(t.Overlay1).Italic(true),
 		ToolResultExpandedHeader: lipgloss.NewStyle().Foreground(t.Subtext0).Background(t.Surface0).Padding(0, 1),

@@ -21,20 +21,25 @@ const (
 
 // Replay is the Bubbletea model for the Replay screen (SPEC §3.3).
 type Replay struct {
-	sess         *parser.Session
-	topicsList   []topics.Topic
-	cursor       int
-	expandedTool int // -1 means none expanded
-	wrap         bool
-	showThinking bool
-	autoPlay     bool
-	speed        int
-	width        int
-	height       int
-	keys         ReplayKeys
-	styles       Styles
-	theme        Theme
-	vp           viewport.Model
+	sess           *parser.Session
+	topicsList     []topics.Topic
+	cursor         int
+	expandedTool   int
+	wrap           bool
+	showThinking   bool
+	autoPlay       bool
+	speed          int
+	width          int
+	height         int
+	keys           ReplayKeys
+	styles         Styles
+	theme          Theme
+	vp             viewport.Model
+	search         SearchBar
+	searchHasQuery bool
+	sidebarFocus   bool
+	sidebarCursor  int
+	sidebarOffset  int
 }
 
 // NewReplay constructs a Replay model with sensible defaults.
@@ -52,6 +57,7 @@ func NewReplay(sess *parser.Session, ts []topics.Topic) Replay {
 		styles:       NewStyles(th),
 		theme:        th,
 		vp:           viewport.New(80, 20),
+		search:       NewSearchBar(),
 	}
 }
 
@@ -66,6 +72,43 @@ func (m Replay) ToolExpanded() bool    { return m.expandedTool >= 0 }
 func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.search.Active() {
+			switch msg.String() {
+			case "esc":
+				m.search.Close()
+				m.searchHasQuery = false
+				return m, nil
+			case "enter":
+				m.search.Commit()
+				m.applyTurnSearch()
+				if idx, ok := m.search.CurrentMatch(); ok {
+					m.cursor = idx
+				}
+				m.searchHasQuery = m.search.Query() != ""
+				return m, nil
+			default:
+				m.search.Update(msg)
+				m.applyTurnSearch()
+				return m, nil
+			}
+		}
+
+		// n/N for search next/prev when a committed query exists
+		if m.searchHasQuery && !m.search.Active() {
+			switch msg.String() {
+			case "n":
+				if idx, ok := m.search.NextMatch(); ok {
+					m.cursor = idx
+				}
+				return m, nil
+			case "N":
+				if idx, ok := m.search.PrevMatch(); ok {
+					m.cursor = idx
+				}
+				return m, nil
+			}
+		}
+
 		// digit speed keys 1-9
 		if len(msg.Runes) == 1 && msg.Runes[0] >= '1' && msg.Runes[0] <= '9' {
 			m.speed = int(msg.Runes[0] - '0')
@@ -75,6 +118,45 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch {
+		case key.Matches(msg, m.keys.SidebarFocus):
+			if m.width >= narrowBreakpoint && len(m.topicsList) > 0 {
+				if !m.sidebarFocus {
+					m.sidebarFocus = true
+					m.sidebarCursor = m.currentTopicIndex()
+					if m.sidebarCursor < 0 {
+						m.sidebarCursor = 0
+					}
+				} else {
+					m.sidebarFocus = false
+				}
+			}
+			return m, nil
+		case m.sidebarFocus:
+			switch msg.String() {
+			case "up", "k":
+				if m.sidebarCursor > 0 {
+					m.sidebarCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.sidebarCursor < len(m.topicsList)-1 {
+					m.sidebarCursor++
+				}
+				return m, nil
+			case "enter":
+				if m.sidebarCursor >= 0 && m.sidebarCursor < len(m.topicsList) {
+					t := m.topicsList[m.sidebarCursor]
+					if len(t.TurnIndices) > 0 {
+						m.cursor = t.TurnIndices[0]
+					}
+				}
+				m.sidebarFocus = false
+				return m, nil
+			case "esc":
+				m.sidebarFocus = false
+				return m, nil
+			}
+			return m, nil
 		case key.Matches(msg, m.keys.Next):
 			if m.cursor < len(m.sess.Turns)-1 {
 				m.cursor++
@@ -104,6 +186,9 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.vp.SetContent(curTurn.ToolResults[0].Content)
 				}
 			}
+		case key.Matches(msg, m.keys.Search):
+			m.search.Open()
+			return m, nil
 		case key.Matches(msg, m.keys.Back):
 			if m.expandedTool >= 0 {
 				m.expandedTool = -1
@@ -111,7 +196,11 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg { return ReturnToOverviewMsg{} }
 		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+			return m, func() tea.Msg { return ReturnToOverviewMsg{} }
+		default:
+			if msg.String() == "q" {
+				return m, func() tea.Msg { return ReturnToOverviewMsg{} }
+			}
 		}
 		return m, nil
 
@@ -193,12 +282,86 @@ func (m Replay) View() string { return m.renderView() }
 
 func (m Replay) renderView() string {
 	if m.expandedTool >= 0 {
-		return m.vp.View()
+		return m.renderExpanded()
 	}
+
+	header := m.renderHeader()
+	footer := m.renderFooter()
+	searchBar := m.search.View(m.width)
+
+	fixedH := lipgloss.Height(header) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
+	contentH := m.height - fixedH
+	if contentH < 6 {
+		contentH = 6
+	}
+
+	var content string
 	if m.width < narrowBreakpoint {
-		return m.renderNarrow()
+		content = m.renderNarrow(contentH)
+	} else {
+		content = m.renderWide(contentH)
 	}
-	return m.renderWide()
+
+	parts := []string{header, content}
+	if searchBar != "" {
+		parts = append(parts, searchBar)
+	}
+	parts = append(parts, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m Replay) renderExpanded() string {
+	return m.vp.View()
+}
+
+func (m Replay) renderHeader() string {
+	left := lipgloss.NewStyle().
+		Foreground(colMauve).
+		Bold(true).
+		Render("◆ Replay")
+
+	progress := ""
+	if m.sess != nil && len(m.sess.Turns) > 0 {
+		progress = dimStyle.Render(fmt.Sprintf("Turn %d/%d", m.cursor+1, len(m.sess.Turns)))
+	}
+	right := progress + "  " + dimStyle.Render("esc ") + keyStyle.Render("back")
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	row := left + strings.Repeat(" ", gap) + right
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Padding(0, 1).
+		Background(colMantle).
+		Render(row)
+}
+
+func (m Replay) renderFooter() string {
+	hints := []string{
+		kbd("←→/hl", "turns"),
+		kbd("space", "auto"),
+		kbd("1-9", "speed"),
+		kbd("[/]", "topics"),
+	}
+	if m.width >= narrowBreakpoint {
+		hints = append(hints, kbd("tab", "sidebar"))
+	}
+	hints = append(hints,
+		kbd("t", "think"),
+		kbd("w", "wrap"),
+		kbd("/", "search"),
+	)
+	if m.searchHasQuery {
+		hints = append(hints, kbd("n/N", "next/prev"))
+	}
+	hints = append(hints, kbd("esc/q", "back"))
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Padding(0, 1).
+		Background(colMantle).
+		Render(joinHints(hints...))
 }
 
 func (m Replay) sidebarWidth() int {
@@ -212,19 +375,24 @@ func (m Replay) sidebarWidth() int {
 	return w
 }
 
-func (m Replay) renderWide() string {
+func (m Replay) renderWide(contentH int) string {
 	sw := m.sidebarWidth()
-	mw := m.width - sw - 1
+	mw := m.width - sw - 3
 	activeTopic := m.currentTopicIndex()
-	sidebar := RenderSidebar(m.topicsList, activeTopic, sw, m.theme)
-	main := m.renderMain(mw)
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, main)
+	var sidebar string
+	if m.sidebarFocus {
+		sidebar = m.renderSidebarPanel(m.topicsList, m.sidebarCursor, sw, contentH, true)
+	} else {
+		sidebar = m.renderSidebarPanel(m.topicsList, activeTopic, sw, contentH, false)
+	}
+	main := m.renderMainPanel(mw, contentH)
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, " ", main)
 }
 
-func (m Replay) renderNarrow() string {
+func (m Replay) renderNarrow(contentH int) string {
 	header := m.renderTopicHeaderBar()
-	main := m.renderMain(m.width)
-	return header + "\n" + main
+	main := m.renderMainPanel(m.width, contentH-1)
+	return lipgloss.JoinVertical(lipgloss.Left, header, main)
 }
 
 func (m Replay) renderTopicHeaderBar() string {
@@ -253,7 +421,7 @@ func (m Replay) renderMain(width int) string {
 
 	var b strings.Builder
 	b.WriteString(RenderTurnHeader(turn, prev, width, m.styles, m.theme))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	bodyWidth := width
 	if !m.wrap {
@@ -276,4 +444,36 @@ func (m Replay) renderMain(width int) string {
 		b.WriteString(m.styles.Thinking.Render(turn.Thinking))
 	}
 	return b.String()
+}
+
+func (m Replay) renderSidebarPanel(ts []topics.Topic, active, width, height int, focused bool) string {
+	style := boxStyle.Width(width - 2).Height(height - 2)
+	if focused {
+		style = activeBoxStyle.Width(width - 2).Height(height - 2)
+	}
+	body := RenderSidebar(ts, active, width-4, m.theme)
+	return style.Render(body)
+}
+
+func (m *Replay) applyTurnSearch() {
+	if m.sess == nil || len(m.sess.Turns) == 0 {
+		return
+	}
+	haystack := make([]string, len(m.sess.Turns))
+	for i, t := range m.sess.Turns {
+		haystack[i] = t.Content
+		for _, tc := range t.ToolCalls {
+			haystack[i] += " " + string(tc.Input)
+		}
+		for _, tr := range t.ToolResults {
+			haystack[i] += " " + tr.Content
+		}
+	}
+	m.search.Filter(haystack)
+}
+
+func (m Replay) renderMainPanel(width, height int) string {
+	style := boxStyle.Width(width - 2).Height(height - 2)
+	body := m.renderMain(width - 4)
+	return style.Render(body)
 }

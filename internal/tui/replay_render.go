@@ -8,25 +8,51 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 )
 
 var markdownRenderer *glamour.TermRenderer
+var markdownRendererWidth int
+
+func catppuccinStyleConfig() ansi.StyleConfig {
+	cfg := styles.DarkStyleConfig
+	textColor := "#cdd6f4"
+	headingColor := "#cba6f7"
+	linkColor := "#89b4fa"
+	codeColor := "#a6e3a1"
+	codeBg := "#313244"
+	cfg.Document.Color = &textColor
+	cfg.H1.Color = &headingColor
+	cfg.H2.Color = &headingColor
+	cfg.H3.Color = &headingColor
+	cfg.H4.Color = &headingColor
+	cfg.H5.Color = &headingColor
+	cfg.H6.Color = &headingColor
+	cfg.Link.Color = &linkColor
+	cfg.Code.Color = &codeColor
+	cfg.Code.BackgroundColor = &codeBg
+	cfg.CodeBlock.Color = &codeColor
+	cfg.CodeBlock.BackgroundColor = &codeBg
+	return cfg
+}
 
 func getMarkdownRenderer(width int) (*glamour.TermRenderer, error) {
-	if markdownRenderer != nil {
+	if markdownRenderer != nil && markdownRendererWidth == width {
 		return markdownRenderer, nil
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(catppuccinStyleConfig()),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
 		return nil, err
 	}
 	markdownRenderer = r
+	markdownRendererWidth = width
 	return r, nil
 }
 
