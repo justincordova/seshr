@@ -572,15 +572,21 @@ func (m Replay) renderMainPanel(width, height int) string {
 	style := boxStyle.Width(width - 2).Height(height - 2)
 	var body string
 	if m.searchHasQuery {
-		body = m.renderSearchResults(width - 4)
-	} else {
-		body = m.renderMain(width - 4)
+		out := RenderSearchResults(m.sess, m.search.Matches(), m.searchResultCursor, width-4, m.styles, m.theme)
+		m.mainVP.SetContent(out.Content)
+		// Scroll so the selected result is visible: if it's below the viewport
+		// bottom, jump to it; if it's above the top, jump to it.
+		vpH := m.mainVP.Height
+		top := m.mainVP.YOffset
+		bottom := top + vpH - 1
+		if out.SelectedLine > bottom {
+			m.mainVP.SetYOffset(out.SelectedLine - vpH + 1)
+		} else if out.SelectedLine < top {
+			m.mainVP.SetYOffset(out.SelectedLine)
+		}
+		return style.Render(m.mainVP.View())
 	}
+	body = m.renderMain(width - 4)
 	m.mainVP.SetContent(body)
 	return style.Render(m.mainVP.View())
-}
-
-func (m Replay) renderSearchResults(width int) string {
-	matches := m.search.Matches()
-	return RenderSearchResults(m.sess, matches, m.searchResultCursor, width, m.styles, m.theme)
 }

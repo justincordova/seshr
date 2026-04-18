@@ -267,18 +267,27 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 	return b.String()
 }
 
+// SearchResultsOutput holds the rendered string and the line offset of the
+// selected result, used to scroll the viewport to keep it visible.
+type SearchResultsOutput struct {
+	Content      string
+	SelectedLine int // 0-based line number of the selected result header
+}
+
 // RenderSearchResults renders all search matches in the main panel.
 // Each match shows a header line (badge + turn number) and up to 3 lines of
 // excerpt. The selected match is highlighted; others are dimmed.
 // Matches with no displayable content are skipped.
-func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width int, s Styles, th Theme) string {
+func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width int, s Styles, th Theme) SearchResultsOutput {
 	if len(matches) == 0 {
-		return dimStyle.Render("No matches.")
+		return SearchResultsOutput{Content: dimStyle.Render("No matches.")}
 	}
 	const excerptLines = 3
 	divider := strings.Repeat("─", width)
 	var b strings.Builder
 	rendered := 0
+	currentLine := 0
+	selectedLine := 0
 	for i, m := range matches {
 		if m.Index < 0 || m.Index >= len(sess.Turns) {
 			continue
@@ -294,6 +303,10 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 		if rendered > 0 {
 			b.WriteString(dimStyle.Render(divider))
 			b.WriteByte('\n')
+			currentLine++
+		}
+		if i == selectedIdx {
+			selectedLine = currentLine
 		}
 		badge := RenderRoleBadge(turn.Role, th)
 		num := dimStyle.Render(fmt.Sprintf("  turn %d", m.Index+1))
@@ -309,12 +322,14 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 			b.WriteString(dimStyle.Render(excerpt))
 		}
 		b.WriteByte('\n')
+		// header line + excerpt lines + trailing newline
+		currentLine += 1 + strings.Count(excerpt, "\n") + 1
 		rendered++
 	}
 	if rendered == 0 {
-		return dimStyle.Render("No matches.")
+		return SearchResultsOutput{Content: dimStyle.Render("No matches.")}
 	}
-	return b.String()
+	return SearchResultsOutput{Content: b.String(), SelectedLine: selectedLine}
 }
 
 // buildToolExcerpt builds a fallback excerpt from tool call names when a turn
