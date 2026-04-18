@@ -91,18 +91,20 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// n/N for search next/prev when a committed query exists
+		// search result navigation — j/k moves cursor, viewport follows
 		if m.searchHasQuery && !m.search.Active() {
 			switch msg.String() {
 			case "up", "k":
 				if m.searchResultCursor > 0 {
 					m.searchResultCursor--
 				}
+				m.scrollSearchToSelected()
 				return m, nil
 			case "down", "j":
 				if m.searchResultCursor < m.search.MatchCount()-1 {
 					m.searchResultCursor++
 				}
+				m.scrollSearchToSelected()
 				return m, nil
 			case "enter":
 				matches := m.search.Matches()
@@ -281,7 +283,70 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// syncMainVPSize
+// scrollSearchToSelected adjusts mainVP.YOffset so the selected search result
+// is visible. Called during Update (pointer receiver) so the offset persists.
+func (m *Replay) scrollSearchToSelected() {
+	if m.sess == nil {
+		return
+	}
+	matches := m.search.Matches()
+	// Walk the match list the same way RenderSearchResults does to compute the
+	// line number of the selected result header.
+	line := 0
+	rendered := 0
+	selectedLine := 0
+	for i, match := range matches {
+		if match.Index < 0 || match.Index >= len(m.sess.Turns) {
+			continue
+		}
+		turn := m.sess.Turns[match.Index]
+		excerpt := searchExcerptLineCount(turn)
+		if excerpt == 0 {
+			continue
+		}
+		if rendered > 0 {
+			line++ // divider line
+		}
+		if i == m.searchResultCursor {
+			selectedLine = line
+		}
+		line += 1 + excerpt + 1 // header + excerpt lines + trailing newline
+		rendered++
+	}
+	vpH := m.mainVP.Height
+	top := m.mainVP.YOffset
+	bottom := top + vpH - 1
+	if selectedLine > bottom {
+		m.mainVP.SetYOffset(selectedLine - vpH + 1)
+	} else if selectedLine < top {
+		m.mainVP.SetYOffset(selectedLine)
+	}
+}
+
+// searchExcerptLineCount returns the number of lines the excerpt for this turn
+// will occupy (matching buildExcerpt / buildToolExcerpt logic), or 0 if blank.
+func searchExcerptLineCount(turn parser.Turn) int {
+	const excerptLines = 3
+	content := strings.TrimSpace(turn.Content)
+	if content != "" {
+		count := 0
+		for _, l := range strings.Split(content, "\n") {
+			if strings.TrimSpace(l) != "" {
+				count++
+				if count == excerptLines {
+					break
+				}
+			}
+		}
+		return count
+	}
+	if len(turn.ToolCalls) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// syncMainVPSize recalculates mainVP dimensions from current layout.
 func (m *Replay) syncMainVPSize() {
 	if m.width < narrowBreakpoint {
 		m.mainVP.Width = m.width - 4
@@ -574,23 +639,12 @@ func (m *Replay) applyTurnSearch() {
 
 func (m Replay) renderMainPanel(width, height int) string {
 	style := boxStyle.Width(width - 2).Height(height - 2)
-	var body string
 	if m.searchHasQuery {
 		out := RenderSearchResults(m.sess, m.search.Matches(), m.searchResultCursor, width-4, m.styles, m.theme)
 		m.mainVP.SetContent(out.Content)
-		// Scroll so the selected result is visible: if it's below the viewport
-		// bottom, jump to it; if it's above the top, jump to it.
-		vpH := m.mainVP.Height
-		top := m.mainVP.YOffset
-		bottom := top + vpH - 1
-		if out.SelectedLine > bottom {
-			m.mainVP.SetYOffset(out.SelectedLine - vpH + 1)
-		} else if out.SelectedLine < top {
-			m.mainVP.SetYOffset(out.SelectedLine)
-		}
 		return style.Render(m.mainVP.View())
 	}
-	body = m.renderMain(width - 4)
+	body := m.renderMain(width - 4)
 	m.mainVP.SetContent(body)
 	return style.Render(m.mainVP.View())
 }
