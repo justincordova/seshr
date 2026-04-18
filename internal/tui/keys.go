@@ -80,3 +80,29 @@ func DefaultReplayKeys() ReplayKeys {
 		Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}
 }
+
+type EditorKeys struct {
+	Up         key.Binding
+	Down       key.Binding
+	Toggle     key.Binding
+	SelectAll  key.Binding
+	SelectNone key.Binding
+	Prune      key.Binding
+	Expand     key.Binding
+	Cancel     key.Binding
+	Quit       key.Binding
+}
+
+func DefaultEditorKeys() EditorKeys {
+	return EditorKeys{
+		Up:         key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:       key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		Toggle:     key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
+		SelectAll:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "all")),
+		SelectNone: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "none")),
+		Prune:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prune")),
+		Expand:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand")),
+		Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	}
+}

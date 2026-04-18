@@ -13,6 +13,23 @@ import (
 	"github.com/justincordova/agentlens/internal/topics"
 )
 
+var markdownRenderer *glamour.TermRenderer
+
+func getMarkdownRenderer(width int) (*glamour.TermRenderer, error) {
+	if markdownRenderer != nil {
+		return markdownRenderer, nil
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return nil, err
+	}
+	markdownRenderer = r
+	return r, nil
+}
+
 // RenderRoleBadge returns a styled role badge using the pill chrome primitive.
 func RenderRoleBadge(role parser.Role, t Theme) string {
 	switch role {
@@ -74,10 +91,7 @@ func RenderMarkdownBody(md string, width int) (string, error) {
 	if strings.TrimSpace(md) == "" {
 		return "", nil
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
-		glamour.WithWordWrap(width),
-	)
+	r, err := getMarkdownRenderer(width)
 	if err != nil {
 		return md, nil
 	}
@@ -129,7 +143,7 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 		if i == active {
 			b.WriteString(truncate("▸ "+label+" ◂", width))
 		} else {
-			b.WriteString(truncate("  "+label, width))
+			b.WriteString(dimStyle.Render(truncate("  "+label, width)))
 		}
 		b.WriteByte('\n')
 	}

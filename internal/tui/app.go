@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/agentlens/internal/editor"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 )
@@ -17,31 +18,38 @@ const (
 	stateOverview
 	stateError
 	stateReplay
+	stateEditor
+	stateConfirmRestore
 )
 
 // Exported state name constants for use in tests.
 const (
-	StateList     = "list"
-	StateLoading  = "loading"
-	StateOverview = "overview"
-	StateError    = "error"
-	StateReplay   = "replay"
+	StateList           = "list"
+	StateLoading        = "loading"
+	StateOverview       = "overview"
+	StateError          = "error"
+	StateReplay         = "replay"
+	StateEditor         = "editor"
+	StateConfirmRestore = "confirm_restore"
 )
 
 // App is the root Bubbletea model. Routes between picker, loading, overview, and replay.
 type App struct {
-	state       appState
-	picker      Picker
-	overview    Overview
-	replay      Replay
-	spinner     spinner.Model
-	loading     string
-	lastErr     string
-	styles      Styles
-	width       int
-	height      int
-	session     *parser.Session
-	topicsCache []topics.Topic
+	state        appState
+	picker       Picker
+	overview     Overview
+	replay       Replay
+	editorModel  Editor
+	spinner      spinner.Model
+	loading      string
+	lastErr      string
+	styles       Styles
+	width        int
+	height       int
+	session      *parser.Session
+	topicsCache  []topics.Topic
+	restorePath  string
+	restoreModal Confirm
 }
 
 // State returns a string name for the current state, usable in tests.
@@ -55,6 +63,10 @@ func (a App) State() string {
 		return StateOverview
 	case stateReplay:
 		return StateReplay
+	case stateEditor:
+		return StateEditor
+	case stateConfirmRestore:
+		return StateConfirmRestore
 	case stateError:
 		return StateError
 	default:
@@ -124,6 +136,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ReturnToOverviewMsg:
 		a.state = stateOverview
 		return a, nil
+	case OpenEditorMsg:
+		a.editorModel = NewEditor(a.session, a.topicsCache)
+		a.editorModel = a.editorModel.SetSize(a.width, a.height).(Editor)
+		a.state = stateEditor
+		return a, a.editorModel.Init()
+	case RestoreRequestedMsg:
+		a.restorePath = m.Path
+		a.restoreModal = NewConfirm("Restore from backup?", "This will overwrite the current session file with the backup.")
+		a.state = stateConfirmRestore
+		return a, nil
+	case RestoreDoneMsg:
+		a.state = stateList
+		return a, nil
+	case RestoreErrMsg:
+		a.lastErr = m.Err.Error()
+		a.state = stateError
+		return a, nil
 	case spinner.TickMsg:
 		if a.state == stateLoading {
 			var cmd tea.Cmd
@@ -146,6 +175,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rm, cmd := a.replay.Update(msg)
 		a.replay = rm.(Replay)
 		return a, cmd
+	case stateEditor:
+		em, cmd := a.editorModel.Update(msg)
+		a.editorModel = em.(Editor)
+		return a, cmd
+	case stateConfirmRestore:
+		if km, ok := msg.(tea.KeyMsg); ok {
+			m, _ := a.restoreModal.Update(km)
+			c := m.(Confirm)
+			a.restoreModal = c
+			if c.Done() {
+				if c.Confirmed() {
+					return a, restoreCmd(a.restorePath)
+				}
+				a.state = stateList
+			}
+			return a, nil
+		}
+		return a, nil
 	case stateError:
 		if km, ok := msg.(tea.KeyMsg); ok {
 			switch km.String() {
@@ -168,6 +215,10 @@ func (a App) View() string {
 		return a.overview.View()
 	case stateReplay:
 		return a.replay.View()
+	case stateEditor:
+		return a.editorModel.View()
+	case stateConfirmRestore:
+		return a.restoreModal.View()
 	case stateError:
 		return a.styles.App.Render(
 			a.styles.Error.Render("error: ") + a.lastErr + "\n\n" +
@@ -175,5 +226,17 @@ func (a App) View() string {
 		)
 	default:
 		return a.picker.View()
+	}
+}
+
+type RestoreDoneMsg struct{ Path string }
+type RestoreErrMsg struct{ Err error }
+
+func restoreCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		if err := editor.Restore(path); err != nil {
+			return RestoreErrMsg{Err: err}
+		}
+		return RestoreDoneMsg{Path: path}
 	}
 }

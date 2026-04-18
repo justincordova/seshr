@@ -1,6 +1,9 @@
 package tokenizer
 
-import "math"
+import (
+	"math"
+	"unicode/utf8"
+)
 
 // Usage mirrors the usage subfield that Claude Code includes on assistant
 // JSONL records. Cache fields are summed as billable context per SPEC §7.
@@ -18,7 +21,7 @@ func Estimate(text string) int {
 	if text == "" {
 		return 0
 	}
-	return int(math.Round(float64(len(text)) / 3.5))
+	return int(math.Round(float64(utf8.RuneCountInString(text)) / 3.5))
 }
 
 // FromUsage returns the total token count from a usage field, summing input,

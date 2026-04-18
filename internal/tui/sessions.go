@@ -112,6 +112,15 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 			p.confirm = &c
 			return p, nil
+		case key.Matches(msg, p.keys.Restore):
+			if len(p.metas) == 0 {
+				return p, nil
+			}
+			meta := p.metas[p.cursor]
+			if !meta.HasBackup {
+				return p, nil
+			}
+			return p, func() tea.Msg { return RestoreRequestedMsg{Path: meta.Path} }
 		}
 	}
 	return p, nil
@@ -339,6 +348,8 @@ type OpenSessionMsg struct {
 	Meta parser.SessionMeta
 }
 
+type RestoreRequestedMsg struct{ Path string }
+
 // deleteSelected removes the currently-highlighted session's file and
 // cleans up its parent directory if it becomes empty.
 func deleteSelected(p *Picker) error {
@@ -350,6 +361,8 @@ func deleteSelected(p *Picker) error {
 		slog.Error("delete session failed", "path", sel.Path, "err", err)
 		return err
 	}
+	_ = os.Remove(sel.Path + ".bak")
+	_ = os.Remove(sel.Path + ".lock")
 	slog.Info("deleted session", "path", sel.Path)
 	dir := filepath.Dir(sel.Path)
 	entries, err := os.ReadDir(dir)

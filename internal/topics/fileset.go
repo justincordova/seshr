@@ -63,8 +63,5 @@ func Jaccard(a, b []string) float64 {
 		setB[s] = struct{}{}
 	}
 	union := len(setA) + len(setB) - intersection
-	if union == 0 {
-		return 1.0
-	}
 	return float64(intersection) / float64(union)
 }

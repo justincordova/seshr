@@ -249,3 +249,15 @@ func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
 	_, ok := msg.(tui.OpenReplayMsg)
 	assert.True(t, ok, "expected OpenReplayMsg, got %T", msg)
 }
+
+func TestOverview_EKeyEmitsOpenEditorMsg(t *testing.T) {
+	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
+	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
+	m := tui.NewOverview(sess, ts)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+	require.NotNil(t, cmd)
+	_, ok := cmd().(tui.OpenEditorMsg)
+	assert.True(t, ok, "expected OpenEditorMsg, got %T", cmd())
+}

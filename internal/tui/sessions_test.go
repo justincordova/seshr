@@ -182,3 +182,22 @@ func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 	_, err = os.Stat(proj)
 	assert.True(t, os.IsNotExist(err), "empty project dir should be cleaned up")
 }
+
+func TestPicker_RKeyOnBackupRowEmitsRestoreMsg(t *testing.T) {
+	metas := []parser.SessionMeta{
+		{ID: "a", Path: "/x/a.jsonl", HasBackup: true},
+	}
+	p := tui.NewPicker(metas)
+	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(tui.RestoreRequestedMsg)
+	require.True(t, ok)
+	assert.Equal(t, "/x/a.jsonl", msg.Path)
+}
+
+func TestPicker_RKeyOnNonBackupRowNoOp(t *testing.T) {
+	metas := []parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: false}}
+	p := tui.NewPicker(metas)
+	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	assert.Nil(t, cmd)
+}

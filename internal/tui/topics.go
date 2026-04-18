@@ -94,7 +94,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, o.keys.Replay):
 			return o, func() tea.Msg { return OpenReplayMsg{} }
 		case key.Matches(msg, o.keys.Edit):
-			return o, nil
+			return o, func() tea.Msg { return OpenEditorMsg{} }
 		}
 	}
 	return o, nil
@@ -103,21 +103,21 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // topicVisibleCount returns the number of topic cards that fit in the main
 // panel body. Shared between cursor-scroll clamping and list rendering.
 func (o Overview) topicVisibleCount() int {
-	// Derive from the same mainH used in View() so clamp and render agree.
-	// Fallback of 8 when height is unknown (pre-first WindowSizeMsg).
 	if o.height <= 0 {
 		return 8
 	}
-	// View uses: mainH = height - (header+stats+footer = 3), min 6.
 	mainH := o.height - 3
 	if mainH < 6 {
 		mainH = 6
 	}
-	// renderTopicPanel passes height-4 to the list (2 borders + 1 title + 1 pad).
 	bodyH := mainH - 4
-	cards := bodyH / 2 // each card renders as 2 tight lines
+	maxPerCard := 2 + maxExpandedPreviews + 1
+	cards := bodyH / maxPerCard
 	if cards < 1 {
-		return 1
+		cards = 1
+	}
+	if cards > len(o.topics) {
+		cards = len(o.topics)
 	}
 	return cards
 }
@@ -171,8 +171,14 @@ func (o Overview) renderStatsStrip() string {
 	s := o.sess
 
 	dur := s.ModifiedAt.Sub(s.CreatedAt).Round(time.Minute)
+	if dur < 0 {
+		dur = -dur
+	}
 	if dur == 0 {
 		dur = s.ModifiedAt.Sub(s.CreatedAt).Round(time.Second)
+		if dur < 0 {
+			dur = -dur
+		}
 		if dur == 0 {
 			dur = time.Second
 		}
@@ -324,6 +330,8 @@ type ReturnToPickerMsg struct{}
 
 // OpenReplayMsg is emitted when the user presses r on the Topic Overview.
 type OpenReplayMsg struct{}
+
+type OpenEditorMsg struct{}
 
 func shortID(id string) string {
 	if len(id) > 12 {

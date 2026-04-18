@@ -210,6 +210,7 @@ func attachToolResult(sess *Session, turn Turn) bool {
 			if tc.ID == id {
 				sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, turn.ToolResults[0])
 				sess.Turns[i].Tokens += turn.Tokens
+				sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
 				sess.TokenCount += turn.Tokens
 				return true
 			}

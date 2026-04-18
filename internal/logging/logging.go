@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 )
 
-// Init opens ~/.agentlens/debug.log for append and installs a slog text
-// handler as the default. Must be called once from main before any logging.
+var logFile *os.File
+
 func Init(debug bool) error {
+	if logFile != nil {
+		_ = logFile.Close()
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("user home: %w", err)
@@ -23,6 +26,7 @@ func Init(debug bool) error {
 	if err != nil {
 		return fmt.Errorf("open log: %w", err)
 	}
+	logFile = f
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
