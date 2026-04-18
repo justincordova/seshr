@@ -2,10 +2,22 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// sanitize strips carriage returns and ANSI escape sequences from tool output
+// so it renders cleanly inside lipgloss bordered panels.
+func sanitize(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = ansiRe.ReplaceAllString(s, "")
+	return s
+}
 
 // truncate shortens s to at most max runes. If truncation occurs the last
 // character is replaced with an ellipsis (…). If max == 1 it always returns

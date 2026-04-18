@@ -404,8 +404,6 @@ func panel(title, body string, width, height int) string {
 		style := boxStyle.Width(width - 2).Height(height - 2)
 		return style.Render(body)
 	}
-	// Reserve one line for the title above the box so the whole panel
-	// (title + box) fits exactly within the caller's requested height.
 	style := boxStyle.Width(width - 2).Height(height - 3)
 	titleBar := lipgloss.NewStyle().Foreground(colMauve).Bold(true).Width(width - 4).Render(title)
 	return titleBar + "\n" + style.Render(body)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
@@ -137,7 +138,8 @@ func RenderToolCall(tc parser.ToolCall, width int, s Styles) string {
 		pretty.Reset()
 		pretty.Write(tc.Input)
 	}
-	return panel(fmt.Sprintf("tool: %s", tc.Name), pretty.String(), width, 0)
+	body := wrapBody(sanitize(pretty.String()), panelContentWidth(width))
+	return panel(fmt.Sprintf("tool: %s", tc.Name), body, width, 0)
 }
 
 // RenderAgentToolCall renders an Agent (subagent) tool call with a distinct
@@ -169,6 +171,7 @@ func RenderAgentToolCall(tc parser.ToolCall, width int, th Theme) string {
 
 // RenderToolResult renders tool result content, truncated to 20 lines.
 func RenderToolResult(result string, isError bool, width int, s Styles) string {
+	result = sanitize(result)
 	lines := strings.Split(result, "\n")
 	truncated := false
 	hidden := 0
@@ -181,11 +184,67 @@ func RenderToolResult(result string, isError bool, width int, s Styles) string {
 	if truncated {
 		body += fmt.Sprintf("\n\n(+%d more lines — enter to expand)", hidden)
 	}
+	body = wrapBody(body, panelContentWidth(width))
 	title := "result"
 	if isError {
 		title = "error"
 	}
 	return panel(title, body, width, 0)
+}
+
+const panelBorderOverhead = 4
+
+func panelContentWidth(panelWidth int) int {
+	w := panelWidth - panelBorderOverhead
+	if w < 4 {
+		w = 4
+	}
+	return w
+}
+
+// wrapBody wraps each line in body to at most contentW visible characters.
+func wrapBody(body string, contentW int) string {
+	var b strings.Builder
+	first := true
+	for _, line := range strings.Split(body, "\n") {
+		if !first {
+			b.WriteByte('\n')
+		}
+		first = false
+		if lipgloss.Width(line) <= contentW {
+			b.WriteString(line)
+			continue
+		}
+		b.WriteString(wrapLine(line, contentW))
+	}
+	return b.String()
+}
+
+// wrapLine hard-wraps a line at contentW visible-width boundaries,
+// skipping ANSI escape sequences.
+func wrapLine(line string, contentW int) string {
+	var b strings.Builder
+	col := 0
+	for i := 0; i < len(line); {
+		if line[i] == '\x1b' {
+			end := strings.IndexByte(line[i:], 'm')
+			if end == -1 {
+				end = len(line) - i - 1
+			}
+			b.WriteString(line[i : i+end+1])
+			i += end + 1
+			continue
+		}
+		if col >= contentW {
+			b.WriteByte('\n')
+			col = 0
+		}
+		_, sz := utf8.DecodeRuneInString(line[i:])
+		b.WriteString(line[i : i+sz])
+		col++
+		i += sz
+	}
+	return b.String()
 }
 
 // RenderSidebar renders the topic list column for Replay mode.
