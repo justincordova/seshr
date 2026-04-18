@@ -28,6 +28,19 @@ type Theme struct {
 	ToolResultColor lipgloss.AdaptiveColor
 }
 
+// ThemeByName returns the Theme matching name (case-insensitive). Falls back
+// to CatppuccinMocha for unknown names.
+func ThemeByName(name string) Theme {
+	switch name {
+	case "nord":
+		return Nord()
+	case "dracula":
+		return Dracula()
+	default:
+		return CatppuccinMocha()
+	}
+}
+
 // CatppuccinMocha is the default theme.
 func CatppuccinMocha() Theme {
 	return Theme{
@@ -48,5 +61,71 @@ func CatppuccinMocha() Theme {
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#89b4fa"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#df8e1d", Dark: "#f9e2af"},
 		ToolResultColor: lipgloss.AdaptiveColor{Light: "#6c6f85", Dark: "#6c7086"},
+	}
+}
+
+// Nord theme — Polar Night / Snow Storm / Aurora palette.
+func Nord() Theme {
+	bg := lipgloss.AdaptiveColor{Dark: "#2E3440", Light: "#ECEFF4"}
+	fg := lipgloss.AdaptiveColor{Dark: "#D8DEE9", Light: "#2E3440"}
+	accent := lipgloss.AdaptiveColor{Dark: "#88C0D0", Light: "#5E81AC"}
+	muted := lipgloss.AdaptiveColor{Dark: "#4C566A", Light: "#9EACBA"}
+	green := lipgloss.AdaptiveColor{Dark: "#A3BE8C", Light: "#A3BE8C"}
+	surface := lipgloss.AdaptiveColor{Dark: "#3B4252", Light: "#E5E9F0"}
+	surface1 := lipgloss.AdaptiveColor{Dark: "#434C5E", Light: "#D8DEE9"}
+	overlay1 := lipgloss.AdaptiveColor{Dark: "#616E88", Light: "#7B88A1"}
+	subtext := lipgloss.AdaptiveColor{Dark: "#A0AABB", Light: "#4C566A"}
+	errCol := lipgloss.AdaptiveColor{Dark: "#BF616A", Light: "#BF616A"}
+	return Theme{
+		Name:       "nord",
+		Background: bg,
+		Foreground: fg,
+		Accent:     accent,
+		Muted:      muted,
+		TokenBar:   green,
+		TokenEmpty: surface,
+		Error:      errCol,
+
+		Overlay1: overlay1,
+		Subtext0: subtext,
+		Surface0: surface1,
+
+		UserColor:       lipgloss.AdaptiveColor{Light: "#A3BE8C", Dark: "#A3BE8C"},
+		AssistantColor:  lipgloss.AdaptiveColor{Light: "#5E81AC", Dark: "#88C0D0"},
+		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#EBCB8B", Dark: "#EBCB8B"},
+		ToolResultColor: lipgloss.AdaptiveColor{Light: "#7B88A1", Dark: "#616E88"},
+	}
+}
+
+// Dracula theme — dark background, vivid accent palette.
+func Dracula() Theme {
+	bg := lipgloss.AdaptiveColor{Dark: "#282A36", Light: "#F8F8F2"}
+	fg := lipgloss.AdaptiveColor{Dark: "#F8F8F2", Light: "#282A36"}
+	accent := lipgloss.AdaptiveColor{Dark: "#8BE9FD", Light: "#6272A4"}
+	muted := lipgloss.AdaptiveColor{Dark: "#6272A4", Light: "#9AACCE"}
+	green := lipgloss.AdaptiveColor{Dark: "#50FA7B", Light: "#50FA7B"}
+	surface := lipgloss.AdaptiveColor{Dark: "#44475A", Light: "#E8E8F0"}
+	surface1 := lipgloss.AdaptiveColor{Dark: "#383A59", Light: "#D8D8E8"}
+	overlay1 := lipgloss.AdaptiveColor{Dark: "#BD93F9", Light: "#7B6FBF"}
+	subtext := lipgloss.AdaptiveColor{Dark: "#BFBFCF", Light: "#44475A"}
+	errCol := lipgloss.AdaptiveColor{Dark: "#FF5555", Light: "#FF5555"}
+	return Theme{
+		Name:       "dracula",
+		Background: bg,
+		Foreground: fg,
+		Accent:     accent,
+		Muted:      muted,
+		TokenBar:   green,
+		TokenEmpty: surface,
+		Error:      errCol,
+
+		Overlay1: overlay1,
+		Subtext0: subtext,
+		Surface0: surface1,
+
+		UserColor:       lipgloss.AdaptiveColor{Light: "#50FA7B", Dark: "#50FA7B"},
+		AssistantColor:  lipgloss.AdaptiveColor{Light: "#6272A4", Dark: "#8BE9FD"},
+		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#FFB86C", Dark: "#FFB86C"},
+		ToolResultColor: lipgloss.AdaptiveColor{Light: "#7B6FBF", Dark: "#6272A4"},
 	}
 }

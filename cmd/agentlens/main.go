@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/agentlens/internal/config"
 	"github.com/justincordova/agentlens/internal/logging"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/tui"
@@ -16,9 +17,10 @@ import (
 
 func main() {
 	var (
-		debug       bool
-		showVersion bool
-		dirOverride string
+		debug         bool
+		showVersion   bool
+		dirOverride   string
+		themeOverride string
 	)
 
 	root := &cobra.Command{
@@ -36,6 +38,16 @@ func main() {
 				return fmt.Errorf("init logger: %w", err)
 			}
 			slog.Info("agentlens starting", "version", version.Version, "debug", debug)
+
+			cfg, err := config.Load()
+			if err != nil {
+				slog.Warn("config load failed — using defaults", "err", err)
+				cfg = config.Default()
+			}
+			if themeOverride != "" {
+				cfg.Theme = themeOverride
+			}
+			slog.Info("config loaded", "theme", cfg.Theme)
 
 			scanRoot := dirOverride
 			if scanRoot == "" {
@@ -57,7 +69,7 @@ func main() {
 				slog.Info("positional path arg ignored in phase 2", "path", args[0])
 			}
 
-			p := tea.NewProgram(tui.NewApp(metas), tea.WithAltScreen())
+			p := tea.NewProgram(tui.NewApp(metas, cfg), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				slog.Error("tui exited with error", "err", err)
 				return fmt.Errorf("run tui: %w", err)
@@ -70,6 +82,7 @@ func main() {
 	root.Flags().BoolVar(&debug, "debug", false, "enable debug logging")
 	root.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
 	root.Flags().StringVar(&dirOverride, "dir", "", "directory to scan for sessions (default ~/.claude/projects)")
+	root.Flags().StringVar(&themeOverride, "theme", "", "color theme: catppuccin-mocha, nord, dracula")
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

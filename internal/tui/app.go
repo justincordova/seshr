@@ -5,16 +5,49 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/agentlens/internal/config"
 	"github.com/justincordova/agentlens/internal/editor"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 )
 
+// currentBindings returns the keybindings for the currently active screen,
+// used to populate the help overlay.
+func (a App) currentBindings() []key.Binding {
+	switch a.state {
+	case stateList:
+		k := DefaultPickerKeys()
+		return []key.Binding{k.Up, k.Down, k.Open, k.Replay, k.Edit, k.Delete, k.Restore, k.Search, k.Quit}
+	case stateOverview:
+		k := DefaultOverviewKeys()
+		return []key.Binding{k.Up, k.Down, k.Expand, k.Replay, k.Edit, k.Stats, k.Search, k.Back, k.Quit}
+	case stateReplay:
+		k := DefaultReplayKeys()
+		return []key.Binding{k.Next, k.Prev, k.AutoPlay, k.NextTopic, k.PrevTopic, k.ToggleThinking, k.ToggleWrap, k.Expand, k.SidebarFocus, k.Search, k.Back, k.Quit}
+	case stateEditor:
+		k := DefaultEditorKeys()
+		return []key.Binding{k.Up, k.Down, k.Toggle, k.SelectAll, k.SelectNone, k.Prune, k.Expand, k.Cancel, k.Quit}
+	default:
+		return nil
+	}
+}
+
 const (
 	minWidth  = 60
 	minHeight = 15
+)
+
+// overlayKind identifies which overlay (if any) is active.
+type overlayKind int
+
+const (
+	ovNone     overlayKind = iota
+	ovHelp                 // ? — keybinding reference
+	ovLogView              // L — debug log viewer
+	ovSettings             // , — settings popup
 )
 
 type appState int
@@ -51,6 +84,8 @@ type App struct {
 	loading      string
 	lastErr      string
 	styles       Styles
+	theme        Theme
+	cfg          config.Config
 	width        int
 	height       int
 	session      *parser.Session
@@ -60,7 +95,15 @@ type App struct {
 	prevState    appState
 	autoReplay   bool
 	autoEdit     bool
+	// overlay fields
+	overlay  overlayKind
+	help     Help
+	logView  LogViewer
+	settings Settings
 }
+
+// overlayActive reports whether any overlay is currently shown.
+func (a App) overlayActive() bool { return a.overlay != ovNone }
 
 // State returns a string name for the current state, usable in tests.
 func (a App) State() string {
@@ -93,27 +136,98 @@ func AppInOverview(sess *parser.Session, ts []topics.Topic) App {
 		topicsCache: ts,
 		overview:    NewOverview(sess, ts),
 		styles:      NewStyles(th),
+		theme:       th,
+		cfg:         config.Default(),
 	}
 }
 
 // NewApp returns the root model with a pre-populated session list.
-func NewApp(metas []parser.SessionMeta) App {
+// cfg is the loaded user configuration; pass config.Default() in tests.
+func NewApp(metas []parser.SessionMeta, cfg config.Config) App {
+	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return App{
 		state:   stateList,
 		picker:  NewPicker(metas),
 		spinner: sp,
-		styles:  NewStyles(CatppuccinMocha()),
+		styles:  NewStyles(th),
+		theme:   th,
+		cfg:     cfg,
 	}
 }
 
 func (a App) Init() tea.Cmd { return a.picker.Init() }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// ── Window resize: always propagate ──────────────────────────────────────
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		a.width = wsm.Width
 		a.height = wsm.Height
+		if a.overlay == ovLogView {
+			a.logView = a.logView.SetSize(wsm.Width, wsm.Height)
+		}
+		if a.overlay == ovHelp {
+			a.help = a.help.SetSize(wsm.Width, wsm.Height)
+		}
+		if a.overlay == ovSettings {
+			a.settings = a.settings.SetSize(wsm.Width, wsm.Height)
+		}
+	}
+
+	// ── Active overlay: route all input to it ────────────────────────────────
+	if a.overlayActive() {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch a.overlay {
+			case ovHelp:
+				// Any key closes help.
+				_ = km
+				a.overlay = ovNone
+				return a, nil
+			case ovLogView:
+				var done bool
+				a.logView, done = a.logView.Update(msg)
+				if done {
+					a.overlay = ovNone
+				}
+				return a, nil
+			case ovSettings:
+				var done bool
+				var cmd tea.Cmd
+				a.settings, done, cmd = a.settings.Update(msg)
+				if done {
+					a.overlay = ovNone
+				}
+				return a, cmd
+			}
+		}
+		return a, nil
+	}
+
+	// ── Global key intercepts (active when no overlay is open) ───────────────
+	if km, ok := msg.(tea.KeyMsg); ok {
+		switch km.String() {
+		case "?":
+			a.help = NewHelp(a.currentBindings(), a.width, a.height)
+			a.overlay = ovHelp
+			return a, nil
+		case "L":
+			a.logView = NewLogViewer(a.width, a.height)
+			a.overlay = ovLogView
+			return a, nil
+		case ",":
+			a.settings = NewSettings(a.cfg, a.width, a.height)
+			a.overlay = ovSettings
+			return a, nil
+		}
+	}
+
+	// ── SettingsSavedMsg: rebuild theme/styles ───────────────────────────────
+	if sm, ok := msg.(SettingsSavedMsg); ok {
+		a.cfg = sm.Cfg
+		a.theme = ThemeByName(sm.Cfg.Theme)
+		a.styles = NewStyles(a.theme)
+		return a, nil
 	}
 
 	switch m := msg.(type) {
@@ -260,25 +374,42 @@ func (a App) View() string {
 			fmt.Sprintf("Terminal too small (%dx%d). Need at least %dx%d.", a.width, a.height, minWidth, minHeight),
 		)
 	}
+
+	// Log viewer replaces the base screen entirely.
+	if a.overlay == ovLogView {
+		return a.logView.View()
+	}
+
+	// Render the base screen first.
+	var base string
 	switch a.state {
 	case stateLoading:
-		return a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
+		base = a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
 	case stateOverview:
-		return a.overview.View()
+		base = a.overview.View()
 	case stateReplay:
-		return a.replay.View()
+		base = a.replay.View()
 	case stateEditor:
-		return a.editorModel.View()
+		base = a.editorModel.View()
 	case stateConfirmRestore:
-		return a.restoreModal.View()
+		base = a.restoreModal.View()
 	case stateError:
-		return a.styles.App.Render(
+		base = a.styles.App.Render(
 			a.styles.Error.Render("error: ") + a.lastErr + "\n\n" +
 				a.styles.Hint.Render("press esc to go back"),
 		)
 	default:
-		return a.picker.View()
+		base = a.picker.View()
 	}
+
+	// Layer overlay on top.
+	switch a.overlay {
+	case ovHelp:
+		return a.help.View()
+	case ovSettings:
+		return a.settings.View()
+	}
+	return base
 }
 
 type RestoreDoneMsg struct{ Path string }
