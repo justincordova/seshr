@@ -94,3 +94,29 @@ func TestApp_QuitKey_StillQuitsInPicker(t *testing.T) {
 	_, ok := cmd().(tea.QuitMsg)
 	assert.True(t, ok)
 }
+
+func TestApp_OpenReplayTransitionsToReplayState(t *testing.T) {
+	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
+	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
+	app := tui.AppInOverview(sess, ts)
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a := next.(tui.App)
+
+	a2, _ := a.Update(tui.OpenReplayMsg{})
+
+	assert.Equal(t, tui.StateReplay, a2.(tui.App).State())
+}
+
+func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
+	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
+	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
+	app := tui.AppInOverview(sess, ts)
+	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a := next.(tui.App)
+	a2, _ := a.Update(tui.OpenReplayMsg{})
+	require.Equal(t, tui.StateReplay, a2.(tui.App).State())
+
+	a3, _ := a2.(tui.App).Update(tui.ReturnToOverviewMsg{})
+
+	assert.Equal(t, tui.StateOverview, a3.(tui.App).State())
+}

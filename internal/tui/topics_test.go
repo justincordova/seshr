@@ -236,3 +236,16 @@ func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {
 	_, ok := msg.(tui.ReturnToPickerMsg)
 	assert.True(t, ok, "expected ReturnToPickerMsg, got %T", msg)
 }
+
+func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
+	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
+	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
+	m := tui.NewOverview(sess, ts)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(tui.OpenReplayMsg)
+	assert.True(t, ok, "expected OpenReplayMsg, got %T", msg)
+}

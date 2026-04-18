@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/agentlens/internal/parser"
+	"github.com/justincordova/agentlens/internal/topics"
 )
 
 type appState int
@@ -15,19 +16,62 @@ const (
 	stateLoading
 	stateOverview
 	stateError
+	stateReplay
 )
 
-// App is the root Bubbletea model. Routes between picker, loading, and overview.
+// Exported state name constants for use in tests.
+const (
+	StateList     = "list"
+	StateLoading  = "loading"
+	StateOverview = "overview"
+	StateError    = "error"
+	StateReplay   = "replay"
+)
+
+// App is the root Bubbletea model. Routes between picker, loading, overview, and replay.
 type App struct {
-	state    appState
-	picker   Picker
-	overview Overview
-	spinner  spinner.Model
-	loading  string
-	lastErr  string
-	styles   Styles
-	width    int
-	height   int
+	state       appState
+	picker      Picker
+	overview    Overview
+	replay      Replay
+	spinner     spinner.Model
+	loading     string
+	lastErr     string
+	styles      Styles
+	width       int
+	height      int
+	session     *parser.Session
+	topicsCache []topics.Topic
+}
+
+// State returns a string name for the current state, usable in tests.
+func (a App) State() string {
+	switch a.state {
+	case stateList:
+		return StateList
+	case stateLoading:
+		return StateLoading
+	case stateOverview:
+		return StateOverview
+	case stateReplay:
+		return StateReplay
+	case stateError:
+		return StateError
+	default:
+		return "unknown"
+	}
+}
+
+// AppInOverview returns an App pre-seeded in stateOverview, useful for tests.
+func AppInOverview(sess *parser.Session, ts []topics.Topic) App {
+	th := CatppuccinMocha()
+	return App{
+		state:       stateOverview,
+		session:     sess,
+		topicsCache: ts,
+		overview:    NewOverview(sess, ts),
+		styles:      NewStyles(th),
+	}
 }
 
 // NewApp returns the root model with a pre-populated session list.
@@ -56,6 +100,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = m.Meta.Path
 		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
 	case SessionLoadedMsg:
+		a.session = m.Session
+		a.topicsCache = m.Topics
 		a.overview = NewOverview(m.Session, m.Topics)
 		if a.width > 0 {
 			om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
@@ -69,6 +115,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case ReturnToPickerMsg:
 		a.state = stateList
+		return a, nil
+	case OpenReplayMsg:
+		a.replay = NewReplay(a.session, a.topicsCache)
+		a.replay = a.replay.SetSize(a.width, a.height).(Replay)
+		a.state = stateReplay
+		return a, a.replay.Init()
+	case ReturnToOverviewMsg:
+		a.state = stateOverview
 		return a, nil
 	case spinner.TickMsg:
 		if a.state == stateLoading {
@@ -87,6 +141,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateOverview:
 		om, cmd := a.overview.Update(msg)
 		a.overview = om.(Overview)
+		return a, cmd
+	case stateReplay:
+		rm, cmd := a.replay.Update(msg)
+		a.replay = rm.(Replay)
 		return a, cmd
 	case stateError:
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -108,6 +166,8 @@ func (a App) View() string {
 		return a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
 	case stateOverview:
 		return a.overview.View()
+	case stateReplay:
+		return a.replay.View()
 	case stateError:
 		return a.styles.App.Render(
 			a.styles.Error.Render("error: ") + a.lastErr + "\n\n" +

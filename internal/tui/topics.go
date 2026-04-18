@@ -92,7 +92,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, o.keys.Back):
 			return o, func() tea.Msg { return ReturnToPickerMsg{} }
 		case key.Matches(msg, o.keys.Replay):
-			return o, nil
+			return o, func() tea.Msg { return OpenReplayMsg{} }
 		case key.Matches(msg, o.keys.Edit):
 			return o, nil
 		}
@@ -208,26 +208,41 @@ func (o Overview) renderTopicPanel(height int) string {
 		dimStyle.Render("·"),
 		dimStyle.Render(shortID(o.sess.ID)),
 	)
-	body := o.renderTopicList(o.width - 4)
+	bodyH := height - 4 // 2 borders + 1 title + 1 blank pad
+	if bodyH < 16 {
+		bodyH = 16 // minimum content budget; panel clips visual excess
+	}
+	body := o.renderTopicList(o.width-4, bodyH)
 	return panel(title, body, o.width, height)
 }
 
-func (o Overview) renderTopicList(width int) string {
+func (o Overview) renderTopicList(width, bodyH int) string {
 	var b strings.Builder
-	visible := o.topicVisibleCount()
+	linesUsed := 0
 
-	end := o.offset + visible
-	if end > len(o.topics) {
-		end = len(o.topics)
-	}
-	for i := o.offset; i < end; i++ {
+	for i := o.offset; i < len(o.topics); i++ {
 		top := o.topics[i]
-		b.WriteString(o.renderTopicCard(i, top, width))
-		if o.expanded[i] {
-			renderExpanded(&b, o.styles, o.sess, top)
+
+		// Each card always takes 2 lines; need 1 more for separator after first.
+		needed := 2
+		if linesUsed > 0 {
+			needed++
 		}
-		if i < end-1 {
-			b.WriteString("\n")
+		if linesUsed+needed > bodyH {
+			break
+		}
+
+		if linesUsed > 0 {
+			b.WriteByte('\n')
+			linesUsed++
+		}
+		b.WriteString(o.renderTopicCard(i, top, width))
+		linesUsed += 2
+
+		if o.expanded[i] {
+			remaining := bodyH - linesUsed
+			written := renderExpandedCapped(&b, o.styles, o.sess, top, remaining)
+			linesUsed += written
 		}
 	}
 	return b.String()
@@ -307,6 +322,9 @@ func (o Overview) renderFooter() string {
 // ReturnToPickerMsg tells the root app to swap back to the session picker.
 type ReturnToPickerMsg struct{}
 
+// OpenReplayMsg is emitted when the user presses r on the Topic Overview.
+type OpenReplayMsg struct{}
+
 func shortID(id string) string {
 	if len(id) > 12 {
 		return id[:12]
@@ -345,19 +363,28 @@ func lastTurnIdx(ix []int) int {
 
 const maxExpandedPreviews = 8
 
-func renderExpanded(b *strings.Builder, st Styles, sess *parser.Session, top topics.Topic) {
-	if sess == nil {
-		return
+// renderExpandedCapped writes expanded turn previews into b, consuming at most
+// maxLines lines. Returns the number of lines written.
+func renderExpandedCapped(b *strings.Builder, st Styles, sess *parser.Session, top topics.Topic, maxLines int) int {
+	if sess == nil || maxLines <= 0 {
+		return 0
 	}
+	written := 0
 	shown := 0
 	for _, ix := range top.TurnIndices {
 		if ix < 0 || ix >= len(sess.Turns) {
 			continue
 		}
+		// Reserve 1 line for the trailing blank.
+		if written >= maxLines-1 {
+			break
+		}
 		if shown >= maxExpandedPreviews {
 			more := len(top.TurnIndices) - shown
 			b.WriteString(st.Hint.Render(fmt.Sprintf("       … %d more turns", more)))
 			b.WriteString("\n")
+			written++
+			shown++
 			break
 		}
 		tn := sess.Turns[ix]
@@ -366,9 +393,15 @@ func renderExpanded(b *strings.Builder, st Styles, sess *parser.Session, top top
 		line := fmt.Sprintf("       %s  %s  ~%d", badge, preview, tn.Tokens)
 		b.WriteString(st.Hint.Render(line))
 		b.WriteString("\n")
+		written++
 		shown++
 	}
-	b.WriteString("\n")
+	// Trailing blank line to visually separate from next card.
+	if written > 0 && written < maxLines {
+		b.WriteString("\n")
+		written++
+	}
+	return written
 }
 
 func roleBadge(r parser.Role) string {

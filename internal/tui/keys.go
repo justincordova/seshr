@@ -50,3 +50,33 @@ func DefaultOverviewKeys() OverviewKeys {
 		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}
 }
+
+// ReplayKeys enumerates keybindings for the Replay screen (SPEC §3.3).
+// Speed keys 1-9 are handled by a range check in Update, not stored here.
+type ReplayKeys struct {
+	Next           key.Binding
+	Prev           key.Binding
+	AutoPlay       key.Binding
+	NextTopic      key.Binding
+	PrevTopic      key.Binding
+	ToggleThinking key.Binding
+	ToggleWrap     key.Binding
+	Expand         key.Binding
+	Back           key.Binding
+	Quit           key.Binding
+}
+
+func DefaultReplayKeys() ReplayKeys {
+	return ReplayKeys{
+		Next:           key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next turn")),
+		Prev:           key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev turn")),
+		AutoPlay:       key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "auto-play")),
+		NextTopic:      key.NewBinding(key.WithKeys("]", "n"), key.WithHelp("]/n", "next topic")),
+		PrevTopic:      key.NewBinding(key.WithKeys("[", "p"), key.WithHelp("[/p", "prev topic")),
+		ToggleThinking: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "thinking")),
+		ToggleWrap:     key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wrap")),
+		Expand:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand tool")),
+		Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	}
+}

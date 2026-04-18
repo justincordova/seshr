@@ -43,6 +43,10 @@ type Styles struct {
 	Title lipgloss.Style
 	Hint  lipgloss.Style
 	Error lipgloss.Style
+
+	// Replay styles.
+	Thinking                 lipgloss.Style
+	ToolResultExpandedHeader lipgloss.Style
 }
 
 // NewStyles builds a Styles from a Theme.
@@ -52,5 +56,8 @@ func NewStyles(t Theme) Styles {
 		Title: lipgloss.NewStyle().Foreground(t.Accent).Bold(true),
 		Hint:  lipgloss.NewStyle().Foreground(t.Muted),
 		Error: lipgloss.NewStyle().Foreground(t.Error),
+
+		Thinking:                 lipgloss.NewStyle().Foreground(t.Overlay1).Italic(true),
+		ToolResultExpandedHeader: lipgloss.NewStyle().Foreground(t.Subtext0).Background(t.Surface0).Padding(0, 1),
 	}
 }
