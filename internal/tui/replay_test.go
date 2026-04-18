@@ -179,11 +179,12 @@ func TestReplay_SpeedKeysNoOpWhenNotAutoplaying(t *testing.T) {
 	assert.Equal(t, 5, u.(tui.Replay).Speed())
 }
 
-func TestReplay_FooterContainsThinkingIndicator(t *testing.T) {
+func TestReplay_ThinkingIndicatorInHeader(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics())
 	m = m.SetSize(120, 40).(tui.Replay)
 
-	out := m.View()
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	out := u.View()
 	assert.Contains(t, out, "thinking")
 }
 

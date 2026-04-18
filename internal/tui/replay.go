@@ -189,11 +189,17 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Next):
 			if m.cursor < len(m.sess.Turns)-1 {
 				m.cursor++
+				if m.compact {
+					m.skipInvisibleForward()
+				}
 				m.mainVP.GotoTop()
 			}
 		case key.Matches(msg, m.keys.Prev):
 			if m.cursor > 0 {
 				m.cursor--
+				if m.compact {
+					m.skipInvisibleBackward()
+				}
 				m.mainVP.GotoTop()
 			}
 		case key.Matches(msg, m.keys.NextTopic):
@@ -256,6 +262,9 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cursor++
+		if m.compact {
+			m.skipInvisibleForward()
+		}
 		return m, AutoPlayCmd(SpeedToDelay(m.speed))
 
 	case tea.WindowSizeMsg:
@@ -398,17 +407,31 @@ func (m Replay) renderHeader() string {
 		Bold(true).
 		Render("◆ Replay")
 
+	var indicators []string
+	if m.showThinking {
+		indicators = append(indicators, lipgloss.NewStyle().Foreground(colLavender).Bold(true).Render("thinking"))
+	}
+	if m.compact {
+		indicators = append(indicators, lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("compact"))
+	}
+	indicatorStr := strings.Join(indicators, " ")
+
 	progress := ""
 	if m.sess != nil && len(m.sess.Turns) > 0 {
 		progress = dimStyle.Render(fmt.Sprintf("Turn %d/%d", m.cursor+1, len(m.sess.Turns)))
 	}
+
+	center := indicatorStr
 	right := progress + "  " + dimStyle.Render("esc ") + keyStyle.Render("back")
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	leftW := lipgloss.Width(left)
+	centerW := lipgloss.Width(center)
+	rightW := lipgloss.Width(right)
+	gap := m.width - leftW - centerW - rightW - 4
 	if gap < 1 {
 		gap = 1
 	}
-	row := left + strings.Repeat(" ", gap) + right
+	row := left + strings.Repeat(" ", gap) + center + "  " + right
 	return lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
@@ -417,11 +440,6 @@ func (m Replay) renderHeader() string {
 }
 
 func (m Replay) renderFooter() string {
-	thinkingState := dimStyle.Render("thinking ○")
-	if m.showThinking {
-		thinkingState = dimStyle.Italic(true).Render("thinking ●")
-	}
-
 	hints := []string{
 		kbdPill("←→/hl", "turns"),
 		kbdPill("space", "auto"),
@@ -432,7 +450,6 @@ func (m Replay) renderFooter() string {
 	}
 	hints = append(hints,
 		kbdPill("t", "think"),
-		thinkingState,
 		kbdPill("c", "compact"),
 		kbdPill("/", "search"),
 	)
@@ -503,6 +520,9 @@ func (m Replay) renderMain(width int) string {
 		return ""
 	}
 	turn := m.sess.Turns[m.cursor]
+	if m.compact && !m.turnVisible(turn) {
+		return ""
+	}
 	prev := time.Time{}
 	if m.cursor > 0 {
 		prev = m.sess.Turns[m.cursor-1].Timestamp
@@ -544,6 +564,36 @@ func (m Replay) renderMain(width int) string {
 		b.WriteString(m.styles.Thinking.Render(turn.Thinking))
 	}
 	return b.String()
+}
+
+func (m Replay) turnVisible(turn parser.Turn) bool {
+	if turn.Content != "" {
+		return true
+	}
+	if m.showThinking && turn.Thinking != "" {
+		return true
+	}
+	for _, tc := range turn.ToolCalls {
+		if tc.Name == "Agent" {
+			return true
+		}
+	}
+	if !m.compact {
+		return len(turn.ToolCalls) > 0 || len(turn.ToolResults) > 0
+	}
+	return false
+}
+
+func (m *Replay) skipInvisibleForward() {
+	for m.cursor < len(m.sess.Turns)-1 && !m.turnVisible(m.sess.Turns[m.cursor]) {
+		m.cursor++
+	}
+}
+
+func (m *Replay) skipInvisibleBackward() {
+	for m.cursor > 0 && !m.turnVisible(m.sess.Turns[m.cursor]) {
+		m.cursor--
+	}
 }
 
 func (m Replay) renderSidebarPanel(ts []topics.Topic, active, width, height int, focused bool) string {

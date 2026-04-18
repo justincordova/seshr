@@ -309,7 +309,6 @@ func (p Picker) renderStats(width int) string {
 		value string
 	}
 	items := []statItem{
-		{"SESSIONS", fmt.Sprintf("%d", sum.TotalSessions)},
 		{"PROJECTS", fmt.Sprintf("%d", sum.Projects)},
 		{"TOKENS", humanize.Comma(sum.TotalTokens)},
 		{"SIZE", humanizeSize(sum.TotalBytes)},
