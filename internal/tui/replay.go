@@ -34,6 +34,7 @@ type Replay struct {
 	styles         Styles
 	theme          Theme
 	vp             viewport.Model
+	mainVP         viewport.Model
 	search         SearchBar
 	searchHasQuery bool
 	sidebarFocus   bool
@@ -54,6 +55,7 @@ func NewReplay(sess *parser.Session, ts []topics.Topic) Replay {
 		styles:       NewStyles(th),
 		theme:        th,
 		vp:           viewport.New(80, 20),
+		mainVP:       viewport.New(80, 20),
 		search:       NewSearchBar(),
 	}
 }
@@ -145,13 +147,37 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		default:
+			if m.expandedTool >= 0 {
+				switch msg.String() {
+				case "up", "k":
+					m.vp.LineUp(1)
+					return m, nil
+				case "down", "j":
+					m.vp.LineDown(1)
+					return m, nil
+				}
+			} else {
+				switch msg.String() {
+				case "up", "k":
+					m.mainVP.LineUp(1)
+					return m, nil
+				case "down", "j":
+					m.mainVP.LineDown(1)
+					return m, nil
+				}
+			}
+		}
+		switch {
 		case key.Matches(msg, m.keys.Next):
 			if m.cursor < len(m.sess.Turns)-1 {
 				m.cursor++
+				m.mainVP.GotoTop()
 			}
 		case key.Matches(msg, m.keys.Prev):
 			if m.cursor > 0 {
 				m.cursor--
+				m.mainVP.GotoTop()
 			}
 		case key.Matches(msg, m.keys.NextTopic):
 			m.cursor = m.nextTopicStart()
@@ -218,8 +244,42 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.vp.Width = msg.Width
 		m.vp.Height = msg.Height - 1
+		m.syncMainVPSize()
+
+	case tea.MouseMsg:
+		if m.expandedTool >= 0 {
+			var cmd tea.Cmd
+			m.vp, cmd = m.vp.Update(msg)
+			return m, cmd
+		}
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.mainVP.LineUp(3)
+		case tea.MouseWheelDown:
+			m.mainVP.LineDown(3)
+		}
 	}
 	return m, nil
+}
+
+// syncMainVPSize recalculates mainVP dimensions from current layout.
+func (m *Replay) syncMainVPSize() {
+	if m.width < narrowBreakpoint {
+		m.mainVP.Width = m.width - 4
+	} else {
+		sw := m.sidebarWidth()
+		mw := m.width - sw - 3
+		m.mainVP.Width = mw - 4
+	}
+	header := m.renderHeader()
+	footer := m.renderFooter()
+	searchBar := m.search.View(m.width)
+	fixedH := lipgloss.Height(header) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
+	contentH := m.height - fixedH
+	if contentH < 6 {
+		contentH = 6
+	}
+	m.mainVP.Height = contentH - 2
 }
 
 // SetSize updates layout dimensions.
@@ -228,6 +288,7 @@ func (m Replay) SetSize(w, h int) tea.Model {
 	m.height = h
 	m.vp.Width = w
 	m.vp.Height = h - 1
+	m.syncMainVPSize()
 	return m
 }
 
@@ -480,5 +541,6 @@ func (m *Replay) applyTurnSearch() {
 func (m Replay) renderMainPanel(width, height int) string {
 	style := boxStyle.Width(width - 2).Height(height - 2)
 	body := m.renderMain(width - 4)
-	return style.Render(body)
+	m.mainVP.SetContent(body)
+	return style.Render(m.mainVP.View())
 }

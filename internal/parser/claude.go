@@ -99,13 +99,21 @@ func parseLine(b []byte, lineNum int) (Turn, bool) {
 	}
 	switch rec.Type {
 	case "user":
-		return userTurn(rec, lineNum), true
+		t := userTurn(rec, lineNum)
+		if t.Content == "" {
+			return Turn{}, false
+		}
+		return t, true
 	case "assistant":
-		return assistantTurn(rec, lineNum), true
+		t := assistantTurn(rec, lineNum)
+		if t.Content == "" && len(t.ToolCalls) == 0 && t.Thinking == "" {
+			return Turn{}, false
+		}
+		return t, true
 	case "tool_result":
 		return toolResultTurn(rec, lineNum), true
 	case "system", "summary":
-		return Turn{Role: Role(rec.Type), Timestamp: rec.Timestamp, RawIndex: lineNum}, true
+		return Turn{}, false
 	case "", "file-history-snapshot", "progress", "hook":
 		// Infrastructure records, silently ignored.
 		return Turn{}, false
@@ -143,6 +151,9 @@ func assistantTurn(rec rawRecord, lineNum int) Turn {
 	}
 
 	var text string
+	if len(blocks) == 0 {
+		text = flattenContent(msg.Content)
+	}
 	for _, bl := range blocks {
 		switch bl.Type {
 		case "text":
