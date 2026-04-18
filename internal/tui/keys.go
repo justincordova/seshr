@@ -67,6 +67,7 @@ type ReplayKeys struct {
 	NextTopic      key.Binding
 	PrevTopic      key.Binding
 	ToggleThinking key.Binding
+	ToggleCompact  key.Binding
 	SpeedUp        key.Binding
 	SpeedDown      key.Binding
 	Expand         key.Binding
@@ -84,6 +85,7 @@ func DefaultReplayKeys() ReplayKeys {
 		NextTopic:      key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next topic")),
 		PrevTopic:      key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev topic")),
 		ToggleThinking: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "thinking")),
+		ToggleCompact:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "compact")),
 		SpeedUp:        key.NewBinding(key.WithKeys("+"), key.WithHelp("+", "speed up")),
 		SpeedDown:      key.NewBinding(key.WithKeys("-"), key.WithHelp("-", "speed down")),
 		Expand:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand tool")),

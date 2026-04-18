@@ -16,6 +16,7 @@ func TestReplayKeys_AllBindingsDefined(t *testing.T) {
 	assert.NotEmpty(t, k.NextTopic.Keys())
 	assert.NotEmpty(t, k.PrevTopic.Keys())
 	assert.NotEmpty(t, k.ToggleThinking.Keys())
+	assert.NotEmpty(t, k.ToggleCompact.Keys())
 	assert.NotEmpty(t, k.SpeedUp.Keys())
 	assert.NotEmpty(t, k.SpeedDown.Keys())
 	assert.NotEmpty(t, k.Expand.Keys())

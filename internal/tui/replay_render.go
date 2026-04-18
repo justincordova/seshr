@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/sahilm/fuzzy"
 )
 
 var markdownRenderer *glamour.TermRenderer
@@ -258,6 +259,33 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 		label := fmt.Sprintf("%d. %s", i+1, t.Label)
 		if i == active {
 			b.WriteString(truncate("▸ "+label+" ◂", width))
+		} else {
+			b.WriteString(dimStyle.Render(truncate("  "+label, width)))
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// RenderSearchMatches renders the search match list for the sidebar.
+func RenderSearchMatches(sess *parser.Session, matches []fuzzy.Match, currentIdx int, width int, th Theme) string {
+	if width < 4 {
+		width = 4
+	}
+	if len(matches) == 0 {
+		return dimStyle.Render("  no matches")
+	}
+	var b strings.Builder
+	for i, m := range matches {
+		if m.Index < 0 || m.Index >= len(sess.Turns) {
+			continue
+		}
+		turn := sess.Turns[m.Index]
+		badge := RenderRoleBadge(turn.Role, th)
+		preview := strings.Split(turn.Content, "\n")[0]
+		label := fmt.Sprintf("%s %s", badge, truncate(preview, width-12))
+		if i == currentIdx {
+			b.WriteString(truncate("▸ "+label, width))
 		} else {
 			b.WriteString(dimStyle.Render(truncate("  "+label, width)))
 		}

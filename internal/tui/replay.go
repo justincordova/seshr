@@ -25,6 +25,7 @@ type Replay struct {
 	topicsList     []topics.Topic
 	cursor         int
 	expandedTool   int
+	compact        bool
 	showThinking   bool
 	autoPlay       bool
 	speed          int
@@ -109,12 +110,19 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, m.keys.SidebarFocus):
-			if m.width >= narrowBreakpoint && len(m.topicsList) > 0 {
+			if m.width >= narrowBreakpoint {
 				if !m.sidebarFocus {
 					m.sidebarFocus = true
-					m.sidebarCursor = m.currentTopicIndex()
-					if m.sidebarCursor < 0 {
-						m.sidebarCursor = 0
+					if m.searchHasQuery {
+						m.sidebarCursor = m.search.MatchIndex()
+						if m.sidebarCursor < 0 {
+							m.sidebarCursor = 0
+						}
+					} else if len(m.topicsList) > 0 {
+						m.sidebarCursor = m.currentTopicIndex()
+						if m.sidebarCursor < 0 {
+							m.sidebarCursor = 0
+						}
 					}
 				} else {
 					m.sidebarFocus = false
@@ -122,6 +130,30 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case m.sidebarFocus:
+			if m.searchHasQuery {
+				switch msg.String() {
+				case "up", "k":
+					if m.sidebarCursor > 0 {
+						m.sidebarCursor--
+					}
+					m.jumpToSearchMatch()
+					return m, nil
+				case "down", "j":
+					if m.sidebarCursor < m.search.MatchCount()-1 {
+						m.sidebarCursor++
+					}
+					m.jumpToSearchMatch()
+					return m, nil
+				case "enter":
+					m.jumpToSearchMatch()
+					m.sidebarFocus = false
+					return m, nil
+				case "esc":
+					m.sidebarFocus = false
+					return m, nil
+				}
+				return m, nil
+			}
 			switch msg.String() {
 			case "up", "k":
 				if m.sidebarCursor > 0 {
@@ -185,6 +217,8 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = m.prevTopicStart()
 		case key.Matches(msg, m.keys.ToggleThinking):
 			m.showThinking = !m.showThinking
+		case key.Matches(msg, m.keys.ToggleCompact):
+			m.compact = !m.compact
 		case key.Matches(msg, m.keys.SpeedUp):
 			if m.autoPlay {
 				m.speed++
@@ -260,6 +294,14 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Replay) jumpToSearchMatch() {
+	matches := m.search.Matches()
+	if m.sidebarCursor >= 0 && m.sidebarCursor < len(matches) {
+		m.cursor = matches[m.sidebarCursor].Index
+		m.mainVP.GotoTop()
+	}
 }
 
 // syncMainVPSize recalculates mainVP dimensions from current layout.
@@ -414,6 +456,7 @@ func (m Replay) renderFooter() string {
 	hints = append(hints,
 		kbdPill("t", "think"),
 		thinkingState,
+		kbdPill("c", "compact"),
 		kbdPill("/", "search"),
 	)
 	if m.searchHasQuery {
@@ -446,12 +489,17 @@ func (m Replay) sidebarWidth() int {
 func (m Replay) renderWide(contentH int) string {
 	sw := m.sidebarWidth()
 	mw := m.width - sw - 3
-	activeTopic := m.currentTopicIndex()
+
 	var sidebar string
-	if m.sidebarFocus {
-		sidebar = m.renderSidebarPanel(m.topicsList, m.sidebarCursor, sw, contentH, true)
+	if m.searchHasQuery {
+		sidebar = m.renderSearchSidebar(sw, contentH)
 	} else {
-		sidebar = m.renderSidebarPanel(m.topicsList, activeTopic, sw, contentH, false)
+		activeTopic := m.currentTopicIndex()
+		if m.sidebarFocus {
+			sidebar = m.renderSidebarPanel(m.topicsList, m.sidebarCursor, sw, contentH, true)
+		} else {
+			sidebar = m.renderSidebarPanel(m.topicsList, activeTopic, sw, contentH, false)
+		}
 	}
 	main := m.renderMainPanel(mw, contentH)
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, " ", main)
@@ -496,17 +544,26 @@ func (m Replay) renderMain(width int) string {
 		b.WriteString(strings.TrimRight(body, "\n"))
 	}
 
-	for _, tc := range turn.ToolCalls {
-		b.WriteString("\n\n")
-		if tc.Name == "Agent" {
-			b.WriteString(RenderAgentToolCall(tc, width, m.theme))
-		} else {
-			b.WriteString(RenderToolCall(tc, width, m.styles))
+	if !m.compact {
+		for _, tc := range turn.ToolCalls {
+			b.WriteString("\n\n")
+			if tc.Name == "Agent" {
+				b.WriteString(RenderAgentToolCall(tc, width, m.theme))
+			} else {
+				b.WriteString(RenderToolCall(tc, width, m.styles))
+			}
 		}
-	}
-	for _, tr := range turn.ToolResults {
-		b.WriteString("\n\n")
-		b.WriteString(RenderToolResult(tr.Content, tr.IsError, width, m.styles))
+		for _, tr := range turn.ToolResults {
+			b.WriteString("\n\n")
+			b.WriteString(RenderToolResult(tr.Content, tr.IsError, width, m.styles))
+		}
+	} else {
+		for _, tc := range turn.ToolCalls {
+			if tc.Name == "Agent" {
+				b.WriteString("\n")
+				b.WriteString(RenderAgentToolCall(tc, width, m.theme))
+			}
+		}
 	}
 
 	if m.showThinking && turn.Thinking != "" {
@@ -522,6 +579,17 @@ func (m Replay) renderSidebarPanel(ts []topics.Topic, active, width, height int,
 		style = activeBoxStyle.Width(width - 2).Height(height - 2)
 	}
 	body := RenderSidebar(ts, active, width-4, m.theme)
+	return style.Render(body)
+}
+
+func (m Replay) renderSearchSidebar(width, height int) string {
+	focused := m.sidebarFocus
+	style := boxStyle.Width(width - 2).Height(height - 2)
+	if focused {
+		style = activeBoxStyle.Width(width - 2).Height(height - 2)
+	}
+	matches := m.search.Matches()
+	body := RenderSearchMatches(m.sess, matches, m.sidebarCursor, width-4, m.theme)
 	return style.Render(body)
 }
 
