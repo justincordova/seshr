@@ -198,11 +198,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg { return ReturnToOverviewMsg{} }
 		case key.Matches(msg, m.keys.Quit):
-			return m, func() tea.Msg { return ReturnToOverviewMsg{} }
-		default:
-			if msg.String() == "q" {
-				return m, func() tea.Msg { return ReturnToOverviewMsg{} }
-			}
+			return m, tea.Quit
 		}
 		return m, nil
 
@@ -371,7 +367,7 @@ func (m Replay) renderFooter() string {
 			Render(fmt.Sprintf("▶ %dx", m.speed))
 		hints = append(hints, speedPill, kbdPill("+/-", "speed"))
 	}
-	hints = append(hints, kbdPill("esc/q", "back"))
+	hints = append(hints, kbdPill("esc", "back"))
 	return renderCenteredFooter(hints, m.width)
 }
 

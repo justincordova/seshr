@@ -108,7 +108,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, o.keys.Quit):
-			return o, func() tea.Msg { return ReturnToPickerMsg{} }
+			return o, tea.Quit
 		case key.Matches(msg, o.keys.Up):
 			if o.cursor > 0 {
 				o.cursor--
@@ -136,10 +136,6 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return o, func() tea.Msg { return OpenReplayMsg{} }
 		case key.Matches(msg, o.keys.Edit):
 			return o, func() tea.Msg { return OpenEditorMsg{} }
-		default:
-			if msg.String() == "q" {
-				return o, func() tea.Msg { return ReturnToPickerMsg{} }
-			}
 		}
 	}
 	return o, nil
@@ -412,7 +408,7 @@ func (o Overview) renderFooter(width int) string {
 		kbd("e", "edit"),
 		kbd("tab", "stats"),
 		kbd("/", "search"),
-		kbd("esc/q", "back"),
+		kbd("esc", "back"),
 	)
 	hintsW := lipgloss.Width(hints)
 	gap := (width - hintsW) / 2

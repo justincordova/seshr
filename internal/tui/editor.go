@@ -166,6 +166,8 @@ func (m Editor) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 			styles: m.styles,
 		}
 		return m, nil
+	case key.Matches(km, m.keys.Quit):
+		return m, tea.Quit
 	case key.Matches(km, m.keys.Cancel):
 		return m, func() tea.Msg { return ReturnToOverviewMsg{} }
 	}
