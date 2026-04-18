@@ -232,7 +232,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View satisfies tea.Model.
 func (p Picker) View() string {
 	if p.confirm != nil {
-		return p.confirm.View()
+		return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, p.confirm.View())
 	}
 
 	cw := contentWidth(p.width)
@@ -501,9 +501,6 @@ func (p Picker) renderFooter(width int) string {
 	hints := []string{
 		kbdPill("↑↓/jk", "nav"),
 		kbdPill("enter", "open"),
-		kbdPill("r", "replay"),
-		kbdPill("e", "edit"),
-		kbdPill("space", "collapse"),
 		kbdPill("d", "delete"),
 		kbdPill("/", "search"),
 		kbdPill("q", "quit"),
