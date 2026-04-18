@@ -270,6 +270,7 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 // RenderSearchResults renders all search matches in the main panel.
 // Each match shows a header line (badge + turn number) and up to 3 lines of
 // excerpt. The selected match is highlighted; others are dimmed.
+// Matches with no displayable content are skipped.
 func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width int, s Styles, th Theme) string {
 	if len(matches) == 0 {
 		return dimStyle.Render("No matches.")
@@ -277,19 +278,26 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 	const excerptLines = 3
 	divider := strings.Repeat("─", width)
 	var b strings.Builder
+	rendered := 0
 	for i, m := range matches {
 		if m.Index < 0 || m.Index >= len(sess.Turns) {
 			continue
 		}
-		if i > 0 {
+		turn := sess.Turns[m.Index]
+		excerpt := buildExcerpt(turn.Content, excerptLines, width)
+		if excerpt == "" {
+			excerpt = buildToolExcerpt(turn, width)
+		}
+		if excerpt == "" {
+			continue
+		}
+		if rendered > 0 {
 			b.WriteString(dimStyle.Render(divider))
 			b.WriteByte('\n')
 		}
-		turn := sess.Turns[m.Index]
 		badge := RenderRoleBadge(turn.Role, th)
 		num := dimStyle.Render(fmt.Sprintf("  turn %d", m.Index+1))
 		header := badge + num
-		excerpt := buildExcerpt(turn.Content, excerptLines, width)
 		selected := i == selectedIdx
 		if selected {
 			b.WriteString(header)
@@ -301,8 +309,25 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 			b.WriteString(dimStyle.Render(excerpt))
 		}
 		b.WriteByte('\n')
+		rendered++
+	}
+	if rendered == 0 {
+		return dimStyle.Render("No matches.")
 	}
 	return b.String()
+}
+
+// buildToolExcerpt builds a fallback excerpt from tool call names when a turn
+// has no text content.
+func buildToolExcerpt(turn parser.Turn, width int) string {
+	if len(turn.ToolCalls) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(turn.ToolCalls))
+	for _, tc := range turn.ToolCalls {
+		names = append(names, tc.Name)
+	}
+	return truncate(strings.Join(names, ", "), width)
 }
 
 // buildExcerpt returns the first n non-empty lines of content, wrapped to width.
