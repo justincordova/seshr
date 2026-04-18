@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,8 @@ type SessionMeta struct {
 	Size       int64
 	ModifiedAt time.Time
 	HasBackup  bool // true if a sibling <Path>.bak exists — see SPEC §4.5
+	TurnCount  int  // populated by quick parse during Scan
+	TokenCount int  // populated by quick parse during Scan
 }
 
 // Scan walks one level deep into root and returns metadata for every
@@ -79,5 +82,17 @@ func Scan(root string) ([]SessionMeta, error) {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ModifiedAt.After(out[j].ModifiedAt)
 	})
+
+	p := NewClaude()
+	for i := range out {
+		sess, err := p.Parse(context.Background(), out[i].Path)
+		if err != nil {
+			slog.Warn("quick parse failed", "path", out[i].Path, "err", err)
+			continue
+		}
+		out[i].TurnCount = len(sess.Turns)
+		out[i].TokenCount = sess.TokenCount
+	}
+
 	return out, nil
 }

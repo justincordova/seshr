@@ -3,30 +3,39 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/dustin/go-humanize"
 	"github.com/justincordova/agentlens/internal/editor"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
 )
 
 type Editor struct {
-	sess     *parser.Session
-	topics   []topics.Topic
-	cursor   int
-	selected map[int]bool
-	width    int
-	height   int
-	keys     EditorKeys
-	styles   Styles
-	status   string
+	sess      *parser.Session
+	topics    []topics.Topic
+	cursor    int
+	offset    int
+	expanded  map[int]bool
+	selected  map[int]bool
+	width     int
+	height    int
+	keys      EditorKeys
+	styles    Styles
+	status    string
+	pruning   bool
+	confirm   *Confirm
+	prevState string
 }
 
 func NewEditor(sess *parser.Session, ts []topics.Topic) Editor {
 	return Editor{
 		sess:     sess,
 		topics:   ts,
+		expanded: map[int]bool{},
 		selected: map[int]bool{},
 		keys:     DefaultEditorKeys(),
 		styles:   NewStyles(CatppuccinMocha()),
@@ -36,6 +45,8 @@ func NewEditor(sess *parser.Session, ts []topics.Topic) Editor {
 func (m Editor) Init() tea.Cmd         { return nil }
 func (m Editor) Cursor() int           { return m.cursor }
 func (m Editor) IsSelected(i int) bool { return m.selected[i] }
+func (m Editor) IsExpanded(i int) bool { return m.expanded[i] }
+func (m Editor) Pruning() bool         { return m.pruning }
 
 func (m Editor) SetSize(w, h int) tea.Model {
 	m.width = w
@@ -74,20 +85,48 @@ func (m Editor) currentSelection() editor.Selection {
 }
 
 func (m Editor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.confirm != nil {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			cm, _ := m.confirm.Update(km)
+			c := cm.(Confirm)
+			m.confirm = &c
+			if c.Done() {
+				m.confirm = nil
+				if c.Confirmed() {
+					sel := m.currentSelection()
+					m.pruning = true
+					m.status = "pruning…"
+					return m, pruneCmd(m.sess, sel)
+				}
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case PruneDoneMsg:
+		m.pruning = false
 		m.status = fmt.Sprintf("pruned %d turns — press esc to return", msg.RemovedTurns)
 		m.selected = map[int]bool{}
-		return m, LoadSessionCmd(m.sess.Path)
+		return m, tea.Batch(LoadSessionCmd(m.sess.Path), clearStatusCmd())
 	case PruneErrMsg:
+		m.pruning = false
 		m.status = msg.Err.Error()
 		return m, nil
 	case SessionLoadedMsg:
 		m.sess = msg.Session
 		m.topics = msg.Topics
 		m.cursor = 0
+		return m, nil
+	case clearStatusMsg:
+		m.status = ""
 		return m, nil
 	}
 	return m, nil
@@ -98,10 +137,12 @@ func (m Editor) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(km, m.keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
+			m.offset = clampOffset(m.cursor, m.offset, len(m.topics), m.visibleCount())
 		}
 	case key.Matches(km, m.keys.Down):
 		if m.cursor < len(m.topics)-1 {
 			m.cursor++
+			m.offset = clampOffset(m.cursor, m.offset, len(m.topics), m.visibleCount())
 		}
 	case key.Matches(km, m.keys.Toggle):
 		m.selected[m.cursor] = !m.selected[m.cursor]
@@ -111,13 +152,21 @@ func (m Editor) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(km, m.keys.SelectNone):
 		m.selected = map[int]bool{}
+	case key.Matches(km, m.keys.Expand):
+		m.expanded[m.cursor] = !m.expanded[m.cursor]
 	case key.Matches(km, m.keys.Prune):
-		if m.selectedCount() == 0 {
+		if m.pruning || m.selectedCount() == 0 {
 			return m, nil
 		}
 		sel := m.currentSelection()
-		m.status = "pruning…"
-		return m, pruneCmd(m.sess, sel)
+		body := fmt.Sprintf("%d topics · %d turns · ~%s tokens freed\n\nThis rewrites the file and creates a .bak backup.\nType /clear in Claude Code then resume for changes to take effect.",
+			m.selectedCount(), len(sel.Turns), humanize.Comma(int64(m.tokensFreed())))
+		m.confirm = &Confirm{
+			title:  "Prune selected topics?",
+			body:   body,
+			styles: m.styles,
+		}
+		return m, nil
 	case key.Matches(km, m.keys.Cancel):
 		return m, func() tea.Msg { return ReturnToOverviewMsg{} }
 	}
@@ -125,22 +174,90 @@ func (m Editor) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Editor) View() string {
+	if m.confirm != nil {
+		return m.confirm.View()
+	}
+
 	var b strings.Builder
 	b.WriteString(m.styles.Title.Render("EDIT MODE — select topics to prune"))
 	b.WriteString("\n\n")
-	for i, t := range m.topics {
-		b.WriteString(RenderCheckboxRow(i, t, m.selected[i], i == m.cursor, m.width, m.styles))
-		b.WriteByte('\n')
+
+	headerH := lipgloss.Height(m.styles.Title.Render(""))
+	footerLines := 3
+	available := m.height - headerH - footerLines - 2
+	if available < 4 {
+		available = 4
 	}
-	b.WriteString("\n")
-	b.WriteString(RenderSelectionFooter(m.selectedCount(), 0, m.tokensFreed()))
+
+	end := m.offset + m.visibleCount()
+	if end > len(m.topics) {
+		end = len(m.topics)
+	}
+	linesUsed := 0
+	for i := m.offset; i < end; i++ {
+		if linesUsed > 0 {
+			b.WriteByte('\n')
+			linesUsed++
+		}
+		t := m.topics[i]
+		b.WriteString(RenderCheckboxRow(i, t, m.selected[i], i == m.cursor, m.width, m.styles))
+		linesUsed++
+
+		if m.expanded[i] {
+			for _, turnIdx := range t.TurnIndices {
+				if linesUsed >= available {
+					break
+				}
+				if turnIdx < 0 || turnIdx >= len(m.sess.Turns) {
+					continue
+				}
+				tn := m.sess.Turns[turnIdx]
+				b.WriteByte('\n')
+				badge := roleBadge(tn.Role)
+				preview := truncate(firstLine(tn.Content), 50)
+				line := fmt.Sprintf("       %s  %s  ~%d", badge, preview, tn.Tokens)
+				b.WriteString(m.styles.Hint.Render(line))
+				linesUsed++
+			}
+		}
+
+		if linesUsed >= available {
+			break
+		}
+	}
+
+	b.WriteString("\n\n")
+	sel := m.currentSelection()
+	b.WriteString(RenderSelectionFooter(m.selectedCount(), len(sel.Turns), m.tokensFreed()))
 	if m.status != "" {
 		b.WriteString("\n")
-		b.WriteString(m.styles.Error.Render(m.status))
+		if m.pruning || strings.HasPrefix(m.status, "pruned") {
+			b.WriteString(successStyle.Render(m.status))
+		} else {
+			b.WriteString(m.styles.Error.Render(m.status))
+		}
 	}
 	b.WriteString("\n")
-	b.WriteString(m.styles.Hint.Render("space Select  a All  A None  p Prune  esc Cancel"))
+	b.WriteString(m.styles.Hint.Render("space Select  a All  A None  enter Expand  p Prune  esc Cancel"))
 	return b.String()
+}
+
+func (m Editor) visibleCount() int {
+	if m.height <= 0 {
+		return 10
+	}
+	available := m.height - 5
+	if available < 4 {
+		available = 4
+	}
+	count := available / 2
+	if count < 1 {
+		return 1
+	}
+	if count > len(m.topics) {
+		return len(m.topics)
+	}
+	return count
 }
 
 func pruneCmd(sess *parser.Session, sel editor.Selection) tea.Cmd {
@@ -154,3 +271,8 @@ func pruneCmd(sess *parser.Session, sel editor.Selection) tea.Cmd {
 
 type PruneDoneMsg struct{ RemovedTurns int }
 type PruneErrMsg struct{ Err error }
+type clearStatusMsg struct{}
+
+func clearStatusCmd() tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return clearStatusMsg{} })
+}

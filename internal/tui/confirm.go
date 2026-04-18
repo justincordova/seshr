@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Confirm is a minimal yes/no modal. Caller constructs with NewConfirm,
@@ -47,9 +48,13 @@ func (c Confirm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View satisfies tea.Model.
 func (c Confirm) View() string {
-	return c.styles.App.Render(
-		c.styles.Title.Render(c.title) + "\n\n" +
-			c.body + "\n\n" +
-			c.styles.Hint.Render("y/n"),
-	)
+	body := c.styles.Title.Render(c.title) + "\n\n" +
+		c.body + "\n\n" +
+		c.styles.Hint.Render("y/n")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colMauve).
+		Padding(1, 2).
+		Width(50).
+		Render(body)
 }

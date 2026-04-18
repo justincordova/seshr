@@ -2,12 +2,19 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/agentlens/internal/editor"
 	"github.com/justincordova/agentlens/internal/parser"
 	"github.com/justincordova/agentlens/internal/topics"
+)
+
+const (
+	minWidth  = 60
+	minHeight = 15
 )
 
 type appState int
@@ -50,6 +57,9 @@ type App struct {
 	topicsCache  []topics.Topic
 	restorePath  string
 	restoreModal Confirm
+	prevState    appState
+	autoReplay   bool
+	autoEdit     bool
 }
 
 // State returns a string name for the current state, usable in tests.
@@ -111,6 +121,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateLoading
 		a.loading = m.Meta.Path
 		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
+	case OpenSessionAndReplayMsg:
+		a.state = stateLoading
+		a.loading = m.Meta.Path
+		a.autoReplay = true
+		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
+	case OpenSessionAndEditMsg:
+		a.state = stateLoading
+		a.loading = m.Meta.Path
+		a.autoEdit = true
+		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
 	case SessionLoadedMsg:
 		a.session = m.Session
 		a.topicsCache = m.Topics
@@ -119,9 +139,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
 			a.overview = om.(Overview)
 		}
+		if a.autoReplay {
+			a.autoReplay = false
+			a.replay = NewReplay(m.Session, m.Topics)
+			a.replay = a.replay.SetSize(a.width, a.height).(Replay)
+			a.state = stateReplay
+			return a, a.replay.Init()
+		}
+		if a.autoEdit {
+			a.autoEdit = false
+			a.editorModel = NewEditor(m.Session, m.Topics)
+			a.editorModel = a.editorModel.SetSize(a.width, a.height).(Editor)
+			a.state = stateEditor
+			return a, a.editorModel.Init()
+		}
 		a.state = stateOverview
 		return a, nil
 	case SessionLoadErrMsg:
+		a.prevState = a.state
 		a.state = stateError
 		a.lastErr = fmt.Sprintf("load %s: %v", m.Path, m.Err)
 		return a, nil
@@ -147,11 +182,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateConfirmRestore
 		return a, nil
 	case RestoreDoneMsg:
+		a.overview = NewOverview(a.session, a.topicsCache)
 		a.state = stateList
-		return a, nil
+		return a, rescanCmd()
 	case RestoreErrMsg:
 		a.lastErr = m.Err.Error()
+		a.prevState = a.state
 		a.state = stateError
+		return a, nil
+	case RescanDoneMsg:
+		if m.Metas != nil {
+			a.picker = NewPicker(m.Metas)
+		}
 		return a, nil
 	case spinner.TickMsg:
 		if a.state == stateLoading {
@@ -196,8 +238,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateError:
 		if km, ok := msg.(tea.KeyMsg); ok {
 			switch km.String() {
-			case "esc":
-				a.state = stateList
+			case "esc", "enter":
+				if a.prevState != 0 {
+					a.state = a.prevState
+					a.prevState = 0
+				} else {
+					a.state = stateList
+				}
 				return a, nil
 			case "q":
 				return a, tea.Quit
@@ -208,6 +255,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) View() string {
+	if a.width > 0 && a.height > 0 && (a.width < minWidth || a.height < minHeight) {
+		return a.styles.App.Render(
+			fmt.Sprintf("Terminal too small (%dx%d). Need at least %dx%d.", a.width, a.height, minWidth, minHeight),
+		)
+	}
 	switch a.state {
 	case stateLoading:
 		return a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
@@ -231,6 +283,9 @@ func (a App) View() string {
 
 type RestoreDoneMsg struct{ Path string }
 type RestoreErrMsg struct{ Err error }
+type RescanDoneMsg struct {
+	Metas []parser.SessionMeta
+}
 
 func restoreCmd(path string) tea.Cmd {
 	return func() tea.Msg {
@@ -238,5 +293,16 @@ func restoreCmd(path string) tea.Cmd {
 			return RestoreErrMsg{Err: err}
 		}
 		return RestoreDoneMsg{Path: path}
+	}
+}
+
+func rescanCmd() tea.Cmd {
+	return func() tea.Msg {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return RescanDoneMsg{}
+		}
+		metas, _ := parser.Scan(filepath.Join(home, ".claude", "projects"))
+		return RescanDoneMsg{Metas: metas}
 	}
 }
