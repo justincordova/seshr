@@ -3,8 +3,8 @@ package topics_test
 import (
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
 	"github.com/stretchr/testify/assert"
 )
 

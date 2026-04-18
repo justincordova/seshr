@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/agentlens/internal/config"
+	"github.com/justincordova/seshly/internal/config"
 )
 
 // SettingsSavedMsg is emitted when the user saves settings.

@@ -1,8 +1,8 @@
 package editor
 
 import (
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
 )
 
 type Selection struct {

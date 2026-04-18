@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
-	"github.com/justincordova/agentlens/internal/parser"
+	"github.com/justincordova/seshly/internal/parser"
 )
 
 // Picker is the Session Picker Bubbletea model. See SPEC §3.1.
@@ -272,7 +272,7 @@ func (p Picker) renderDeleteErr(width int) string {
 }
 
 func renderLogo() string {
-	text := "◆ AgentLens"
+	text := "◆ Seshly"
 	gradient := []lipgloss.TerminalColor{colMauve, colMauve, colLavender, colPink, colPink, colFlamingo, colFlamingo, colPink, colPink, colLavender, colMauve}
 	var b strings.Builder
 	for i, r := range text {

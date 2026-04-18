@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/editor"
+	"github.com/justincordova/seshly/internal/editor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

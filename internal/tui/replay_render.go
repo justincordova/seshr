@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
 	"github.com/sahilm/fuzzy"
 )
 

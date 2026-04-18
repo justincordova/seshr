@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/justincordova/agentlens/internal/parser"
+	"github.com/justincordova/seshly/internal/parser"
 )
 
 const labelMaxLen = 40

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/agentlens/internal/tui"
+	"github.com/justincordova/seshly/internal/tui"
 	"github.com/stretchr/testify/assert"
 )
 

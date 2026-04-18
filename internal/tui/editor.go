@@ -9,9 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
-	"github.com/justincordova/agentlens/internal/editor"
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/editor"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
 )
 
 type Editor struct {

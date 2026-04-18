@@ -1,15 +1,15 @@
-# agentlens Makefile
+# seshly Makefile
 # ─────────────────────────────────────────────────────────────────────────────
 #
 #   make build       — compile the binary
 #   make test        — go test ./...
 #   make lint        — golangci-lint run
 #   make check       — build + test + lint (pre-commit gate)
-#   make sandbox     — reset run/, copy canonical sessions, launch agentlens
+#   make sandbox     — reset run/, copy canonical sessions, launch seshly
 #   make reset       — wipe run/ only (no launch)
 #   make clean       — remove binary and run/
 
-BINARY     := ./agentlens
+BINARY     := ./seshly
 SESSIONS   := sandbox/sessions
 RUN        := sandbox/run
 
@@ -17,7 +17,7 @@ RUN        := sandbox/run
 
 # ── build ─────────────────────────────────────────────────────────────────────
 build:
-	go build -o $(BINARY) ./cmd/agentlens
+	go build -o $(BINARY) ./cmd/seshly
 
 # ── test ──────────────────────────────────────────────────────────────────────
 test:
@@ -42,7 +42,7 @@ reset:
 #   sandbox/sessions/   — committed source-of-truth; never modified by the app
 #   sandbox/run/        — fresh working copy; wiped and rebuilt on each `make sandbox`
 #
-# agentlens points at sandbox/run/ via --dir, so edits/backups happen there.
+# seshly points at sandbox/run/ via --dir, so edits/backups happen there.
 # The originals in sandbox/sessions/ are untouched.
 sandbox: build reset
 	@echo "→ copying canonical sessions → $(RUN)/"
@@ -54,7 +54,7 @@ sandbox: build reset
 		echo "   $$size  $$proj/$$(basename $$f)"; \
 	done
 	@echo ""
-	@echo "→ launching agentlens (--dir $(RUN)) ..."
+	@echo "→ launching seshly (--dir $(RUN)) ..."
 	@$(BINARY) --dir $(RUN)
 
 # ── clean ─────────────────────────────────────────────────────────────────────

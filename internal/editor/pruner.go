@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/justincordova/agentlens/internal/parser"
+	"github.com/justincordova/seshly/internal/parser"
 )
 
 func Prune(sess *parser.Session, selection Selection, dstPath string) error {

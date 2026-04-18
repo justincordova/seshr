@@ -3,7 +3,7 @@ package version_test
 import (
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/version"
+	"github.com/justincordova/seshly/internal/version"
 	"github.com/stretchr/testify/assert"
 )
 

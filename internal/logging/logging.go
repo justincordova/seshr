@@ -17,7 +17,7 @@ func Init(debug bool) error {
 	if err != nil {
 		return fmt.Errorf("user home: %w", err)
 	}
-	dir := filepath.Join(home, ".agentlens")
+	dir := filepath.Join(home, ".seshly")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}

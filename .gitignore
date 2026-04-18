@@ -2,8 +2,8 @@
 docs/plans/
 
 # Go build artifacts
-/agentlens
-/agentlens.exe
+/seshly
+/seshly.exe
 /dist/
 *.exe
 *.test
@@ -32,8 +32,8 @@ Thumbs.db
 .env.local
 *.local
 
-# Local agentlens data (in case a dev symlinks or runs from repo root)
-.agentlens/
+# Local seshly data (in case a dev symlinks or runs from repo root)
+.seshly/
 debug.log
 
 # Sandbox working copy — wiped and rebuilt by `make sandbox`

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/agentlens/internal/config"
-	"github.com/justincordova/agentlens/internal/logging"
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/tui"
-	"github.com/justincordova/agentlens/internal/version"
+	"github.com/justincordova/seshly/internal/config"
+	"github.com/justincordova/seshly/internal/logging"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/tui"
+	"github.com/justincordova/seshly/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ func main() {
 	)
 
 	root := &cobra.Command{
-		Use:           "agentlens [session-path]",
+		Use:           "seshly [session-path]",
 		Short:         "Replay and edit AI agent conversation sessions",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
@@ -37,7 +37,7 @@ func main() {
 			if err := logging.Init(debug); err != nil {
 				return fmt.Errorf("init logger: %w", err)
 			}
-			slog.Info("agentlens starting", "version", version.Version, "debug", debug)
+			slog.Info("seshly starting", "version", version.Version, "debug", debug)
 
 			cfg, err := config.Load()
 			if err != nil {
@@ -74,7 +74,7 @@ func main() {
 				slog.Error("tui exited with error", "err", err)
 				return fmt.Errorf("run tui: %w", err)
 			}
-			slog.Info("agentlens exiting")
+			slog.Info("seshly exiting")
 			return nil
 		},
 	}

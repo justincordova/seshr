@@ -1,4 +1,4 @@
-# AgentLens Testing Guide
+# Seshly Testing Guide
 
 ## Overview
 
@@ -24,7 +24,7 @@ TUI coverage is lower by design — view rendering is validated manually. Focus 
 ## Project Layout
 
 ```
-agentlens/
+seshly/
 ├── main.go
 ├── internal/
 │   ├── parser/

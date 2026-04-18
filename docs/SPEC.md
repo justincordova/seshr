@@ -1,4 +1,4 @@
-# AgentLens — Product Specification
+# Seshly — Product Specification
 
 **AI Agent Session Replay & Conversation Editor**
 A Bubbletea TUI for understanding and managing AI agent conversations
@@ -9,7 +9,7 @@ v0.1.0 · April 2026
 
 ## 1. Overview
 
-AgentLens is a terminal-based tool built in Go with Bubbletea and Lipgloss that lets developers replay, inspect, and edit AI agent conversation sessions. In v1 it reads conversation logs from Claude Code (JSONL), groups messages into topics automatically, and provides two core modes: a step-by-step Replay Mode for understanding what happened, and an Edit Mode for pruning irrelevant turns from session files. The parser layer is designed to be extensible — additional formats (OpenCode, LangChain, Cursor) are planned post-v1.
+Seshly is a terminal-based tool built in Go with Bubbletea and Lipgloss that lets developers replay, inspect, and edit AI agent conversation sessions. In v1 it reads conversation logs from Claude Code (JSONL), groups messages into topics automatically, and provides two core modes: a step-by-step Replay Mode for understanding what happened, and an Edit Mode for pruning irrelevant turns from session files. The parser layer is designed to be extensible — additional formats (OpenCode, LangChain, Cursor) are planned post-v1.
 
 ### 1.1 Problem Statement
 
@@ -31,14 +31,14 @@ Developers who use Claude Code, OpenCode, or other LLM-based coding agents daily
 
 ## 2. Architecture
 
-AgentLens follows a simple three-layer architecture: a parser layer that reads and understands conversation files, a topic clustering engine that groups turns into logical topics, and a TUI layer built with Bubbletea that renders the interface and handles user interaction.
+Seshly follows a simple three-layer architecture: a parser layer that reads and understands conversation files, a topic clustering engine that groups turns into logical topics, and a TUI layer built with Bubbletea that renders the interface and handles user interaction.
 
 ### 2.1 Project Structure
 
 ```
-agentlens/
+seshly/
 ├── cmd/
-│   └── agentlens/
+│   └── seshly/
 │       └── main.go            # CLI entry point (Cobra)
 ├── internal/
 │   ├── parser/
@@ -52,9 +52,9 @@ agentlens/
 │   ├── tokenizer/
 │   │   └── estimate.go        # Token count estimation
 │   ├── config/
-│   │   └── config.go          # Settings management (~/.agentlens/config.json)
+│   │   └── config.go          # Settings management (~/.seshly/config.json)
 │   ├── logging/
-│   │   └── logging.go         # slog setup → ~/.agentlens/debug.log
+│   │   └── logging.go         # slog setup → ~/.seshly/debug.log
 │   ├── version/
 │   │   └── version.go         # const Version, injected via ldflags on release
 │   └── tui/
@@ -108,12 +108,12 @@ Session file(s) on disk
 
 ### 3.1 Session Picker
 
-The entry point of the application. On launch, AgentLens scans the default directory for Claude Code (`~/.claude/projects/`) sessions. Users can also pass a custom path via CLI flag.
+The entry point of the application. On launch, Seshly scans the default directory for Claude Code (`~/.claude/projects/`) sessions. Users can also pass a custom path via CLI flag.
 
 **Displayed per session:** project name (derived from directory), source badge (Claude Code), total token count (approximate), turn count, topic count, last modified timestamp.
 
 ```
-┌─ AgentLens ──────────────────────────────────────────────┐
+┌─ Seshly ───────────────────────────────────────────────────┐
 │  Sessions (4 found)                                      │
 │──────────────────────────────────────────────────────────│
 │                                                          │
@@ -147,7 +147,7 @@ The entry point of the application. On launch, AgentLens scans the default direc
 | `R`            | Restore from `.bak`           | Only if a `.bak` sibling exists (§4.5) |
 | `/`            | Fuzzy search/filter sessions  | Inline filter bar, fuzzy matching      |
 | `,`            | Open settings                 | Popup with current config              |
-| `L`            | Open log viewer               | Shows ~/.agentlens/debug.log           |
+| `L`            | Open log viewer               | Shows ~/.seshly/debug.log            |
 | `?`            | Show help overlay             | Context-sensitive keybinding reference |
 | `q`            | Quit application              |                                        |
 
@@ -304,7 +304,7 @@ When `p` is pressed, a confirmation dialog shows: number of turns/topics selecte
 
 #### Concurrent Access
 
-Only one `agentlens` process should write to a given session file at a time. The pruner takes an advisory file lock (`flock`) on the target `.jsonl` for the duration of the rewrite. If the lock is held, the prune confirmation shows "Session is locked by another process" and the operation is cancelled. Reads (parsing, replay) do not require a lock.
+Only one `seshly` process should write to a given session file at a time. The pruner takes an advisory file lock (`flock`) on the target `.jsonl` for the duration of the rewrite. If the lock is held, the prune confirmation shows "Session is locked by another process" and the operation is cancelled. Reads (parsing, replay) do not require a lock.
 
 #### Safe Message Pairing
 
@@ -365,7 +365,7 @@ Uses `github.com/sahilm/fuzzy` for matching. Search targets vary by screen:
 
 ### 4.3 Settings (`,`)
 
-Opens a centered popup showing current configuration values. Editable inline with `enter` to confirm changes. Saves to `~/.agentlens/config.json`.
+Opens a centered popup showing current configuration values. Editable inline with `enter` to confirm changes. Saves to `~/.seshly/config.json`.
 
 Settings for v1:
 
@@ -380,7 +380,7 @@ Settings for v1:
 
 ### 4.4 Log Viewer (`L`)
 
-Opens a full-screen viewport showing the tail of `~/.agentlens/debug.log`. Scrollable with `j/k` and `g/G` (top/bottom). Press `esc` to close. Useful for debugging parser issues or seeing why a session failed to load.
+Opens a full-screen viewport showing the tail of `~/.seshly/debug.log`. Scrollable with `j/k` and `g/G` (top/bottom). Press `esc` to close. Useful for debugging parser issues or seeing why a session failed to load.
 
 ### 4.5 Backup Restore
 
@@ -469,7 +469,7 @@ The parser interface is designed so additional formats can be added without modi
 
 ## 7. Token Estimation
 
-AgentLens estimates token counts for display purposes using a character-based heuristic: divide character count by 3.5 for English text. This gives an approximation within 10-15% of actual Claude tokenization. All token counts are prefixed with `~` in the UI to indicate they are approximate.
+Seshly estimates token counts for display purposes using a character-based heuristic: divide character count by 3.5 for English text. This gives an approximation within 10-15% of actual Claude tokenization. All token counts are prefixed with `~` in the UI to indicate they are approximate.
 
 If the JSONL records contain actual token usage data (some Claude Code versions include usage fields in assistant messages), the parser should prefer those values over the heuristic.
 
@@ -479,7 +479,7 @@ If the JSONL records contain actual token usage data (some Claude Code versions 
 
 ### 8.1 Default Theme: Catppuccin Mocha
 
-AgentLens uses Catppuccin Mocha as the default color scheme. It's the most widely adopted terminal color scheme, has excellent contrast, and looks professional across different terminal emulators.
+Seshly uses Catppuccin Mocha as the default color scheme. It's the most widely adopted terminal color scheme, has excellent contrast, and looks professional across different terminal emulators.
 
 All colors are defined using `lipgloss.AdaptiveColor` so they degrade gracefully on light terminal backgrounds.
 
@@ -516,7 +516,7 @@ var Theme = struct {
 
 ### 8.2 Theme Switching
 
-Themes are selectable via the settings popup (`,`) or `--theme` CLI flag. v1 ships with three themes: `catppuccin` (default), `nord`, and `dracula`. Themes are defined as structs implementing the same shape as above. The active theme is stored in `~/.agentlens/config.json`.
+Themes are selectable via the settings popup (`,`) or `--theme` CLI flag. v1 ships with three themes: `catppuccin` (default), `nord`, and `dracula`. Themes are defined as structs implementing the same shape as above. The active theme is stored in `~/.seshly/config.json`.
 
 ### 8.3 Style Constants
 
@@ -559,20 +559,20 @@ All user-facing errors go through a single channel so the app feels consistent.
 
 ## 9.6 Privacy & Telemetry
 
-AgentLens collects **no telemetry**. No analytics, no crash reporting, no network calls, no update pings. The only network-capable dependency is `glamour` (for rendering images in markdown, which is disabled). If any future feature would phone home, it is opt-in and documented in this section before landing.
+Seshly collects **no telemetry**. No analytics, no crash reporting, no network calls, no update pings. The only network-capable dependency is `glamour` (for rendering images in markdown, which is disabled). If any future feature would phone home, it is opt-in and documented in this section before landing.
 
-Session content never leaves disk. All processing is local. The log file at `~/.agentlens/debug.log` contains metadata only — see LOGGING.md for the "no raw content" rule.
+Session content never leaves disk. All processing is local. The log file at `~/.seshly/debug.log` contains metadata only — see LOGGING.md for the "no raw content" rule.
 
 ---
 
 ## 10. CLI Specification
 
-AgentLens uses Cobra for CLI argument parsing.
+Seshly uses Cobra for CLI argument parsing.
 
 | Command / Flag          | Description                    | Default                |
 | ----------------------- | ------------------------------ | ---------------------- |
-| `agentlens`             | Launch TUI with session picker | Scans default dirs     |
-| `agentlens <file>`      | Open a specific JSONL file     | Goes to Topic Overview |
+| `seshly`                | Launch TUI with session picker | Scans default dirs     |
+| `seshly <file>`         | Open a specific JSONL file     | Goes to Topic Overview |
 | `--dir <path>`          | Scan a custom directory        | Auto-detected          |
 | `--gap-threshold <dur>` | Time gap for topic boundaries  | `3m`                   |
 | `--theme <name>`        | Color theme                    | `catppuccin`           |
@@ -585,7 +585,7 @@ AgentLens uses Cobra for CLI argument parsing.
 
 ### 11.1 Go Version
 
-AgentLens targets **Go 1.26** (latest stable, released February 2026). The `go.mod` file should specify `go 1.26`.
+Seshly targets **Go 1.26** (latest stable, released February 2026). The `go.mod` file should specify `go 1.26`.
 
 > **Note on import paths:** Current Charm library releases use `charm.land/bubbletea/v2` and `charm.land/lipgloss/v2` module paths. Check the latest Charm documentation at release time — if the `charm.land` paths are stable, use those. Otherwise fall back to `github.com/charmbracelet/*`. Pin to specific versions in `go.mod`.
 
@@ -618,7 +618,7 @@ AgentLens targets **Go 1.26** (latest stable, released February 2026). The `go.m
 
 **Conventions:**
 
-- **Destination:** Always `~/.agentlens/debug.log`. Never stdout/stderr — the TUI owns the terminal.
+- **Destination:** Always `~/.seshly/debug.log`. Never stdout/stderr — the TUI owns the terminal.
 - **Levels:** `info` by default, `debug` when `--debug` is passed. `warn` for recoverable parser issues (unknown JSONL types, malformed records skipped). `error` for failures the user should see (file read errors, prune validation failures) — these also surface in the UI, never only in the log.
 - **Structured fields:** Use key/value pairs, not formatted strings. Prefer `slog.Info("parsed session", "path", p, "turns", n)` over `slog.Info(fmt.Sprintf(...))`.
 - **Standard keys:** `path` (file path), `session_id`, `turns`, `topics`, `duration_ms`, `err`. Keep keys consistent across the codebase so log grep works.
@@ -627,7 +627,7 @@ AgentLens targets **Go 1.26** (latest stable, released February 2026). The `go.m
 
 ```go
 logFile, _ := os.OpenFile(
-    filepath.Join(home, ".agentlens", "debug.log"),
+    filepath.Join(home, ".seshly", "debug.log"),
     os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644,
 )
 handler := slog.NewTextHandler(logFile, &slog.HandlerOptions{
@@ -744,7 +744,7 @@ Phases are executed sequentially by AI agents. Each phase must be fully complete
 These are explicitly out of scope for v1 but are natural extensions:
 
 - **OpenCode parser:** SQLite + file-based + CLI export fallback. Deferred from v1 to keep scope focused on Claude Code.
-- **Live session watching:** Use fsnotify to watch an active session and update the TUI in real time, similar to claude-esp. Turns AgentLens from post-hoc analysis into a live companion.
+- **Live session watching:** Use fsnotify to watch an active session and update the TUI in real time, similar to claude-esp. Turns Seshly from post-hoc analysis into a live companion.
 - **Additional parsers:** LangChain traces, Cursor conversation logs, generic JSONL agent logs.
 - **Session comparison:** Side-by-side diff of two sessions to understand how different approaches played out.
 - **Export:** Generate clean markdown or HTML reports from sessions for documentation or sharing.

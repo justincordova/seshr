@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/topics"
-	"github.com/justincordova/agentlens/internal/tui"
+	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshly/internal/tui"
 	"github.com/stretchr/testify/assert"
 )
 

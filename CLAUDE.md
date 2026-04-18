@@ -1,4 +1,4 @@
-# AgentLens
+# Seshly
 
 AI agent session replay & conversation editor. Bubbletea TUI in Go.
 
@@ -24,7 +24,7 @@ Fix failures before committing. Do not skip.
 
 ## Non-Negotiables
 
-- **No logging to stdout/stderr.** TUI owns the terminal. Use `slog` to `~/.agentlens/debug.log` only.
+- **No logging to stdout/stderr.** TUI owns the terminal. Use `slog` to `~/.seshly/debug.log` only.
 - **Never log raw message content.** Sessions contain user data. Log metadata only.
 - **Testify only.** Don't mix assertion styles.
 - **No third-party logging library.** stdlib `slog` is enough.

@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/justincordova/agentlens/internal/tokenizer"
+	"github.com/justincordova/seshly/internal/tokenizer"
 )
 
 // Claude parses Claude Code JSONL session files per SPEC §6.2.

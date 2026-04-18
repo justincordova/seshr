@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/topics"
 )
 
 func RenderCheckboxRow(i int, t topics.Topic, selected, active bool, width int, s Styles) string {

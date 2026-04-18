@@ -8,10 +8,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/agentlens/internal/config"
-	"github.com/justincordova/agentlens/internal/editor"
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
+	"github.com/justincordova/seshly/internal/config"
+	"github.com/justincordova/seshly/internal/editor"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
 )
 
 // currentBindings returns the keybindings for the currently active screen,

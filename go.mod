@@ -1,4 +1,4 @@
-module github.com/justincordova/agentlens
+module github.com/justincordova/seshly
 
 go 1.26.1
 

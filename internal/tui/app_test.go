@@ -5,10 +5,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/agentlens/internal/config"
-	"github.com/justincordova/agentlens/internal/parser"
-	"github.com/justincordova/agentlens/internal/topics"
-	"github.com/justincordova/agentlens/internal/tui"
+	"github.com/justincordova/seshly/internal/config"
+	"github.com/justincordova/seshly/internal/parser"
+	"github.com/justincordova/seshly/internal/topics"
+	"github.com/justincordova/seshly/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

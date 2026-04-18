@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/agentlens/internal/parser"
+	"github.com/justincordova/seshly/internal/parser"
 )
 
 type ProjectGroup struct {

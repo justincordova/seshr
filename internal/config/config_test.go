@@ -5,18 +5,18 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/config"
+	"github.com/justincordova/seshly/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDir_ReturnsAgentlensSubdir(t *testing.T) {
+func TestDir_ReturnsSeshlySubdir(t *testing.T) {
 	// Arrange / Act
 	dir, err := config.Dir()
 
 	// Assert
 	require.NoError(t, err)
-	assert.Equal(t, ".agentlens", filepath.Base(dir))
+	assert.Equal(t, ".seshly", filepath.Base(dir))
 }
 
 func TestEnsureDir_HomeOverridden_CreatesDir(t *testing.T) {
@@ -69,7 +69,7 @@ func TestLoad_UnknownField_IgnoredWithoutError(t *testing.T) {
 	// Arrange
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	dir := filepath.Join(tmp, ".agentlens")
+	dir := filepath.Join(tmp, ".seshly")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "config.json"),

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justincordova/agentlens/internal/tokenizer"
+	"github.com/justincordova/seshly/internal/tokenizer"
 	"github.com/stretchr/testify/assert"
 )
 
