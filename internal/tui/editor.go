@@ -177,6 +177,8 @@ func (m Editor) View() string {
 		return m.confirm.View()
 	}
 
+	cw := contentWidth(m.width)
+
 	detailH := 5
 	footerH := 2
 	mainH := m.height - detailH - footerH - 2
@@ -184,15 +186,14 @@ func (m Editor) View() string {
 		mainH = 6
 	}
 
-	body := m.renderTopicList(m.width-4, mainH-4)
-	main := panel(" Edit Mode — select topics to prune", body, m.width, mainH)
+	body := m.renderTopicList(cw-4, mainH-4)
+	main := panel(" Edit Mode — select topics to prune", body, cw, mainH)
 
-	detail := m.renderDetailPanel(detailH)
-
-	footer := m.renderFooter()
+	detail := m.renderDetailPanel(cw, detailH)
+	footer := m.renderFooter(cw)
 
 	parts := []string{main, detail, footer}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), m.width)
 }
 
 func (m Editor) renderTopicList(width, maxLines int) string {
@@ -237,7 +238,7 @@ func (m Editor) renderTopicList(width, maxLines int) string {
 	return b.String()
 }
 
-func (m Editor) renderDetailPanel(height int) string {
+func (m Editor) renderDetailPanel(width, height int) string {
 	sel := m.currentSelection()
 	title := dimStyle.Render(
 		fmt.Sprintf("%d topics · %d turns · ~%s tokens freed",
@@ -252,10 +253,10 @@ func (m Editor) renderDetailPanel(height int) string {
 		}
 		body += "\n"
 	}
-	return panel(" Selection", body, m.width, height)
+	return panel(" Selection", body, width, height)
 }
 
-func (m Editor) renderFooter() string {
+func (m Editor) renderFooter(width int) string {
 	hints := []string{
 		kbdPill("space", "select"),
 		kbdPill("a", "all"),
@@ -264,7 +265,7 @@ func (m Editor) renderFooter() string {
 		kbdPill("p", "prune"),
 		kbdPill("esc", "cancel"),
 	}
-	return renderCenteredFooter(hints, m.width)
+	return renderCenteredFooter(hints, width)
 }
 
 func (m Editor) visibleCount() int {

@@ -151,9 +151,9 @@ func (o Overview) topicVisibleCount() int {
 	if o.height <= 0 || o.width <= 0 {
 		return len(o.topics)
 	}
-	header := o.renderHeader()
-	statsStrip := o.renderStatsStrip()
-	footer := o.renderFooter()
+	header := o.renderHeader(o.width)
+	statsStrip := o.renderStatsStrip(o.width)
+	footer := o.renderFooter(o.width)
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) + lipgloss.Height(footer)
 	mainH := o.height - fixedH
 	if mainH < 6 {
@@ -210,10 +210,12 @@ func (o Overview) View() string {
 		)
 	}
 
-	header := o.renderHeader()
-	statsStrip := o.renderStatsStrip()
-	searchBar := o.search.View(o.width)
-	footer := o.renderFooter()
+	cw := contentWidth(o.width)
+
+	header := o.renderHeader(cw)
+	statsStrip := o.renderStatsStrip(cw)
+	searchBar := o.search.View(cw)
+	footer := o.renderFooter(cw)
 
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
 		lipgloss.Height(searchBar) + lipgloss.Height(footer)
@@ -223,9 +225,9 @@ func (o Overview) View() string {
 	}
 	var main string
 	if o.stats {
-		main = o.renderStatsPanel(mainH)
+		main = o.renderStatsPanel(cw, mainH)
 	} else {
-		main = o.renderTopicPanel(mainH)
+		main = o.renderTopicPanel(cw, mainH)
 	}
 
 	parts := []string{header, statsStrip, main}
@@ -233,29 +235,29 @@ func (o Overview) View() string {
 		parts = append(parts, searchBar)
 	}
 	parts = append(parts, footer)
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), o.width)
 }
 
-func (o Overview) renderStatsPanel(height int) string {
+func (o Overview) renderStatsPanel(width, height int) string {
 	title := fmt.Sprintf(" Stats %s", dimStyle.Render("(tab to return)"))
 	body := renderStats(o.styles, o.sess, o.topics)
-	return panel(title, body, o.width, height)
+	return panel(title, body, width, height)
 }
 
-func (o Overview) renderHeader() string {
+func (o Overview) renderHeader(width int) string {
 	logo := renderLogo()
 
 	right := dimStyle.Render("esc ") + keyStyle.Render("back")
 
-	gap := o.width - lipgloss.Width(logo) - lipgloss.Width(right) - 2
+	gap := width - lipgloss.Width(logo) - lipgloss.Width(right) - 2
 	if gap < 1 {
 		gap = 1
 	}
 	row := logo + strings.Repeat(" ", gap) + right
-	return lipgloss.NewStyle().Width(o.width).Padding(0, 1).Render(row)
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(row)
 }
 
-func (o Overview) renderStatsStrip() string {
+func (o Overview) renderStatsStrip(width int) string {
 	s := o.sess
 
 	dur := s.ModifiedAt.Sub(s.CreatedAt).Round(time.Minute)
@@ -293,10 +295,10 @@ func (o Overview) renderStatsStrip() string {
 
 	sep := dimStyle.Render("  │  ")
 	row := strings.Join(items, sep)
-	return lipgloss.NewStyle().Width(o.width).Padding(0, 2).Render(row)
+	return lipgloss.NewStyle().Width(width).Padding(0, 2).Render(row)
 }
 
-func (o Overview) renderTopicPanel(height int) string {
+func (o Overview) renderTopicPanel(width, height int) string {
 	title := fmt.Sprintf(" %s %s %s",
 		lipgloss.NewStyle().Foreground(colText).Bold(true).Render(string(o.sess.Source)),
 		dimStyle.Render("·"),
@@ -306,8 +308,8 @@ func (o Overview) renderTopicPanel(height int) string {
 	if bodyH < 2 {
 		bodyH = len(o.topics)*3 + 10
 	}
-	body := o.renderTopicList(o.width-4, bodyH)
-	return panel(title, body, o.width, height)
+	body := o.renderTopicList(width-4, bodyH)
+	return panel(title, body, width, height)
 }
 
 func (o Overview) renderTopicList(width, bodyH int) string {
@@ -402,7 +404,7 @@ func formatTopicDuration(d time.Duration) string {
 	return fmt.Sprintf("%d min", int(d.Minutes()))
 }
 
-func (o Overview) renderFooter() string {
+func (o Overview) renderFooter(width int) string {
 	hints := joinHints(
 		kbd("↑↓/jk", "nav"),
 		kbd("enter", "expand"),
@@ -413,11 +415,11 @@ func (o Overview) renderFooter() string {
 		kbd("esc/q", "back"),
 	)
 	hintsW := lipgloss.Width(hints)
-	gap := (o.width - hintsW) / 2
+	gap := (width - hintsW) / 2
 	if gap < 2 {
 		gap = 2
 	}
-	return lipgloss.NewStyle().Width(o.width).Render(strings.Repeat(" ", gap) + hints)
+	return lipgloss.NewStyle().Width(width).Render(strings.Repeat(" ", gap) + hints)
 }
 
 // ReturnToPickerMsg tells the root app to swap back to the session picker.

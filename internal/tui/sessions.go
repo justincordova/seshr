@@ -235,11 +235,13 @@ func (p Picker) View() string {
 		return p.confirm.View()
 	}
 
-	header := p.renderHeader()
-	statsStrip := p.renderStats()
-	errLine := p.renderDeleteErr()
-	searchBar := p.search.View(p.width)
-	footer := p.renderFooter()
+	cw := contentWidth(p.width)
+
+	header := p.renderHeader(cw)
+	statsStrip := p.renderStats(cw)
+	errLine := p.renderDeleteErr(cw)
+	searchBar := p.search.View(cw)
+	footer := p.renderFooter(cw)
 
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
 		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
@@ -248,7 +250,7 @@ func (p Picker) View() string {
 	if mainH < 6 {
 		mainH = 6
 	}
-	main := p.renderSessionPanel(mainH)
+	main := p.renderSessionPanel(cw, mainH)
 
 	parts := []string{header, statsStrip, main}
 	if errLine != "" {
@@ -258,15 +260,15 @@ func (p Picker) View() string {
 		parts = append(parts, searchBar)
 	}
 	parts = append(parts, footer)
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), p.width)
 }
 
-func (p Picker) renderDeleteErr() string {
+func (p Picker) renderDeleteErr(width int) string {
 	if p.deleteErr == nil {
 		return ""
 	}
 	msg := lipgloss.NewStyle().Foreground(colRed).Render("delete failed: ") + p.deleteErr.Error()
-	return lipgloss.NewStyle().Width(p.width).Padding(0, 2).Render(msg)
+	return lipgloss.NewStyle().Width(width).Padding(0, 2).Render(msg)
 }
 
 func renderLogo() string {
@@ -280,22 +282,22 @@ func renderLogo() string {
 	return b.String()
 }
 
-func (p Picker) renderHeader() string {
+func (p Picker) renderHeader(width int) string {
 	logo := renderLogo()
 	ver := dimStyle.Render("v0.1")
 	left := logo + " " + ver
 
 	right := dimStyle.Render("↑↓ select · enter open · q quit")
 
-	gap := p.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 1 {
 		gap = 1
 	}
 	row := left + strings.Repeat(" ", gap) + right
-	return lipgloss.NewStyle().Width(p.width).Padding(0, 1).Render(row)
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(row)
 }
 
-func (p Picker) renderStats() string {
+func (p Picker) renderStats(width int) string {
 	sum := ComputeSummary(p.metas)
 	accents := p.theme.ProjectPalette
 	if len(accents) == 0 {
@@ -324,14 +326,14 @@ func (p Picker) renderStats() string {
 	row := strings.Join(parts, sep)
 
 	rowWidth := lipgloss.Width(row)
-	maxWidth := p.width - 4
+	maxWidth := width - 4
 	for rowWidth > maxWidth && len(parts) > 2 {
 		parts = parts[:len(parts)-1]
 		row = strings.Join(parts, sep)
 		rowWidth = lipgloss.Width(row)
 	}
 
-	return lipgloss.NewStyle().Width(p.width).Padding(0, 2).Render(row)
+	return lipgloss.NewStyle().Width(width).Padding(0, 2).Render(row)
 }
 
 func statInline(label, value string, valueColor lipgloss.TerminalColor) string {
@@ -340,17 +342,17 @@ func statInline(label, value string, valueColor lipgloss.TerminalColor) string {
 	return l + " " + v
 }
 
-func (p Picker) renderSessionPanel(height int) string {
+func (p Picker) renderSessionPanel(width, height int) string {
 	if len(p.metas) == 0 {
 		body := "\n" + textStyle.Render("No sessions found.") + "\n\n" +
 			dimStyle.Render("Place session JSONL files in ~/.claude/projects/")
 		title := " Sessions"
-		return panel(title, body, p.width, height)
+		return panel(title, body, width, height)
 	}
 
 	title := fmt.Sprintf(" Sessions %s", dimStyle.Render(fmt.Sprintf("(%d)", len(p.metas))))
-	body := p.renderGroupedList(p.width - 4)
-	return panel(title, body, p.width, height)
+	body := p.renderGroupedList(width - 4)
+	return panel(title, body, width, height)
 }
 
 func (p Picker) renderGroupedList(width int) string {
@@ -435,11 +437,8 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
 	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tok")
 
-	gap := width - lipgloss.Width(gutter) - lipgloss.Width(name) - lipgloss.Width(count) - lipgloss.Width(tokens) - 4
-	if gap < 1 {
-		gap = 1
-	}
-	line1 := gutter + " " + name + strings.Repeat(" ", gap) + count + "  " + tokens
+	const nameMetaGap = 4
+	line1 := gutter + " " + name + strings.Repeat(" ", nameMetaGap) + count + "  " + tokens
 	// Second line keeps the colored gutter so the project bar reads as a
 	// chunkier, taller block. Visually connects to the next row's gutter.
 	line2 := gutter
@@ -470,7 +469,7 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 		backup = "  " + successStyle.Render("↶")
 	}
 
-	if p.width >= 80 {
+	if width >= 80 {
 		age := dimStyle.Render(humanize.Time(m.ModifiedAt))
 		return gutter + "   " + glyph + " " + id + "  " + tokStr + "  " + age + backup
 	}
@@ -501,7 +500,7 @@ func (p *Picker) applySearchFilter() {
 	p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 }
 
-func (p Picker) renderFooter() string {
+func (p Picker) renderFooter(width int) string {
 	hints := []string{
 		kbdPill("↑↓/jk", "nav"),
 		kbdPill("enter", "open"),
@@ -512,7 +511,7 @@ func (p Picker) renderFooter() string {
 		kbdPill("/", "search"),
 		kbdPill("q", "quit"),
 	}
-	return renderCenteredFooter(hints, p.width)
+	return renderCenteredFooter(hints, width)
 }
 
 // bodyLines returns the number of text lines available inside the main

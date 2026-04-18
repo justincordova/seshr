@@ -116,3 +116,26 @@ func pill(label string, fg, bg lipgloss.TerminalColor) string {
 		Padding(0, 1).
 		Render(label)
 }
+
+const maxContentWidth = 100
+
+func contentWidth(termWidth int) int {
+	if termWidth < maxContentWidth {
+		return termWidth
+	}
+	return maxContentWidth
+}
+
+func centerBlock(s string, termWidth int) string {
+	cw := contentWidth(termWidth)
+	margin := (termWidth - cw) / 2
+	if margin <= 0 {
+		return s
+	}
+	pad := strings.Repeat(" ", margin)
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		lines[i] = pad + ln
+	}
+	return strings.Join(lines, "\n")
+}

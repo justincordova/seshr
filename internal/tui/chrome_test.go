@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
@@ -123,9 +124,28 @@ func TestWrapHints_Empty(t *testing.T) {
 }
 
 func TestPill(t *testing.T) {
-	// Act
 	got := pill("tag", lipgloss.AdaptiveColor{Dark: "#cba6f7", Light: "#8839ef"}, lipgloss.AdaptiveColor{Dark: "#313244", Light: "#ccd0da"})
-
-	// Assert
 	assert.NotEmpty(t, got)
+}
+
+func TestContentWidth_ClampsAtCap(t *testing.T) {
+	assert.Equal(t, 80, contentWidth(80))
+	assert.Equal(t, 100, contentWidth(100))
+	assert.Equal(t, 100, contentWidth(200))
+}
+
+func TestCenterBlock_AddsLeftMargin(t *testing.T) {
+	out := centerBlock("abc", 120)
+	assert.Equal(t, strings.Repeat(" ", 10)+"abc", out)
+}
+
+func TestCenterBlock_NarrowTerminalNoop(t *testing.T) {
+	out := centerBlock("abc", 80)
+	assert.Equal(t, "abc", out)
+}
+
+func TestCenterBlock_MultipleLines(t *testing.T) {
+	out := centerBlock("a\nbb", 120)
+	pad := strings.Repeat(" ", 10)
+	assert.Equal(t, pad+"a\n"+pad+"bb", out)
 }
