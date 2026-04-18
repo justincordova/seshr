@@ -111,7 +111,7 @@ func TestRenderToolResult_ShortResultNotTruncated(t *testing.T) {
 	s := tui.NewStyles(tui.CatppuccinMocha())
 	result := "line1\nline2\nline3"
 
-	got := tui.RenderToolResult(result, 60, s)
+	got := tui.RenderToolResult(result, false, 60, s)
 
 	assert.Contains(t, got, "line1")
 	assert.Contains(t, got, "line3")
@@ -126,12 +126,25 @@ func TestRenderToolResult_LongResultTruncated(t *testing.T) {
 	}
 	result := strings.Join(lines, "\n")
 
-	got := tui.RenderToolResult(result, 60, s)
+	got := tui.RenderToolResult(result, false, 60, s)
 
 	assert.Contains(t, got, "line1")
 	assert.Contains(t, got, "line20")
 	assert.NotContains(t, got, "line21")
 	assert.Contains(t, got, "more lines")
+}
+
+func TestRenderToolResult_ErrorShowsErrorTitle(t *testing.T) {
+	s := tui.NewStyles(tui.CatppuccinMocha())
+	got := tui.RenderToolResult("Exit code 1", true, 60, s)
+	assert.Contains(t, got, "error")
+}
+
+func TestRenderToolResult_SuccessShowsResultTitle(t *testing.T) {
+	s := tui.NewStyles(tui.CatppuccinMocha())
+	got := tui.RenderToolResult("ok", false, 60, s)
+	assert.Contains(t, got, "result")
+	assert.NotContains(t, got, "error")
 }
 
 func TestRenderSidebar_ActiveHighlighted(t *testing.T) {
@@ -149,4 +162,45 @@ func TestRenderSidebar_ActiveHighlighted(t *testing.T) {
 	assert.Contains(t, lines[1], "Auth")
 	assert.Contains(t, lines[0], "Setup")
 	assert.Contains(t, lines[2], "House")
+}
+
+func TestRenderAgentToolCall_ShowsDescription(t *testing.T) {
+	th := tui.CatppuccinMocha()
+	tc := parser.ToolCall{
+		Name:  "Agent",
+		Input: []byte(`{"description":"Fix replay scrolling","subagent_type":"code-reviewer","prompt":"do stuff"}`),
+	}
+
+	got := tui.RenderAgentToolCall(tc, 80, th)
+
+	assert.Contains(t, got, "AGENT")
+	assert.Contains(t, got, "Fix replay scrolling")
+	assert.NotContains(t, got, "background")
+}
+
+func TestRenderAgentToolCall_BackgroundTag(t *testing.T) {
+	th := tui.CatppuccinMocha()
+	tc := parser.ToolCall{
+		Name:  "Agent",
+		Input: []byte(`{"description":"Background task","run_in_background":true}`),
+	}
+
+	got := tui.RenderAgentToolCall(tc, 80, th)
+
+	assert.Contains(t, got, "AGENT")
+	assert.Contains(t, got, "Background task")
+	assert.Contains(t, got, "background")
+}
+
+func TestRenderAgentToolCall_FallbackToSubagentType(t *testing.T) {
+	th := tui.CatppuccinMocha()
+	tc := parser.ToolCall{
+		Name:  "Agent",
+		Input: []byte(`{"subagent_type":"code-reviewer"}`),
+	}
+
+	got := tui.RenderAgentToolCall(tc, 80, th)
+
+	assert.Contains(t, got, "AGENT")
+	assert.Contains(t, got, "code-reviewer")
 }

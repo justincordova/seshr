@@ -2,6 +2,7 @@ package parser_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/justincordova/agentlens/internal/parser"
@@ -118,4 +119,94 @@ func TestClaude_Parse_NonExistentFile_ReturnsError(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
+}
+
+func TestClaude_Parse_EmbeddedToolResult_AttachedToAssistant(t *testing.T) {
+	p := parser.NewClaude()
+	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	require.NoError(t, err)
+
+	var bashTurn *parser.Turn
+	for i := range s.Turns {
+		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_01" {
+			bashTurn = &s.Turns[i]
+			break
+		}
+	}
+	require.NotNil(t, bashTurn, "should find assistant turn with tool_use toolu_01")
+	require.Len(t, bashTurn.ToolResults, 1, "embedded tool result should be attached")
+	assert.Equal(t, "file1.txt\nfile2.txt", bashTurn.ToolResults[0].Content)
+	assert.False(t, bashTurn.ToolResults[0].IsError)
+}
+
+func TestClaude_Parse_EmbeddedToolResult_MultipleInOneRecord(t *testing.T) {
+	p := parser.NewClaude()
+	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	require.NoError(t, err)
+
+	var readTurn *parser.Turn
+	for i := range s.Turns {
+		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_02" {
+			readTurn = &s.Turns[i]
+			break
+		}
+	}
+	require.NotNil(t, readTurn, "should find assistant turn with tool_use toolu_02")
+	require.Len(t, readTurn.ToolResults, 2, "both tool results should attach")
+	assert.Equal(t, "hello world", readTurn.ToolResults[0].Content)
+	assert.Equal(t, "goodbye world", readTurn.ToolResults[1].Content)
+}
+
+func TestClaude_Parse_EmbeddedToolResult_ErrorResult(t *testing.T) {
+	p := parser.NewClaude()
+	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	require.NoError(t, err)
+
+	var errTurn *parser.Turn
+	for i := range s.Turns {
+		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_04" {
+			errTurn = &s.Turns[i]
+			break
+		}
+	}
+	require.NotNil(t, errTurn, "should find assistant turn with tool_use toolu_04")
+	require.Len(t, errTurn.ToolResults, 1)
+	assert.Equal(t, "Exit code 1", errTurn.ToolResults[0].Content)
+	assert.True(t, errTurn.ToolResults[0].IsError)
+}
+
+func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
+	p := parser.NewClaude()
+	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	require.NoError(t, err)
+
+	for _, turn := range s.Turns {
+		if turn.Role == parser.RoleUser {
+			assert.NotEmpty(t, turn.Content, "user turns with only tool_results should not appear as empty user turns")
+		}
+	}
+}
+
+func TestClaude_Parse_EmbeddedToolResult_BlockArrayContent(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/test.jsonl"
+	input := `{"type":"user","message":{"role":"user","content":"go"}}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]},"uuid":"a1","timestamp":"2025-01-01T00:00:00Z","sessionId":"s"}` + "\n" +
+		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"line one"},{"type":"text","text":"line two"}]}]}}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(input), 0o644))
+
+	p := parser.NewClaude()
+	s, err := p.Parse(context.Background(), path)
+	require.NoError(t, err)
+
+	var found *parser.Turn
+	for i := range s.Turns {
+		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "t1" {
+			found = &s.Turns[i]
+		}
+	}
+	require.NotNil(t, found)
+	require.Len(t, found.ToolResults, 1)
+	assert.Contains(t, found.ToolResults[0].Content, "line one")
+	assert.Contains(t, found.ToolResults[0].Content, "line two")
 }

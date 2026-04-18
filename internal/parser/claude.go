@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/justincordova/agentlens/internal/tokenizer"
 )
@@ -100,6 +101,9 @@ func parseLine(b []byte, lineNum int) (Turn, bool) {
 	switch rec.Type {
 	case "user":
 		t := userTurn(rec, lineNum)
+		if t.Role == RoleToolResult {
+			return t, len(t.ToolResults) > 0
+		}
 		if t.Content == "" {
 			return Turn{}, false
 		}
@@ -124,11 +128,54 @@ func parseLine(b []byte, lineNum int) (Turn, bool) {
 }
 
 // userTurn builds a Turn from a user JSONL record. Content may be a plain
-// string or an array of content blocks (some versions wrap tool_result
-// responses under type=user).
+// string or an array of content blocks. When blocks contain tool_result
+// entries (the standard pattern in Claude Code JSONL), those are extracted
+// and the turn is returned with RoleToolResult for attachment to the
+// originating assistant turn.
 func userTurn(rec rawRecord, lineNum int) Turn {
 	msg, _ := decodeMessage(rec.Message)
-	content := flattenContent(msg.Content)
+	blocks, _ := decodeBlocks(msg.Content)
+
+	if len(blocks) == 0 {
+		content := flattenContent(msg.Content)
+		return Turn{
+			Role:      RoleUser,
+			Timestamp: rec.Timestamp,
+			Content:   content,
+			RawIndex:  lineNum,
+			Tokens:    tokenizer.Estimate(content),
+		}
+	}
+
+	var toolResults []ToolResult
+	var textParts []string
+	for _, bl := range blocks {
+		switch bl.Type {
+		case "tool_result":
+			content := extractBlockContent(bl.Content)
+			toolResults = append(toolResults, ToolResult{
+				ID:      bl.ToolUseID,
+				Content: content,
+				IsError: bl.IsError,
+			})
+		case "text":
+			textParts = append(textParts, bl.Text)
+		}
+	}
+
+	if len(toolResults) > 0 && len(textParts) == 0 {
+		content := toolResults[0].Content
+		return Turn{
+			Role:        RoleToolResult,
+			Timestamp:   rec.Timestamp,
+			Content:     content,
+			ToolResults: toolResults,
+			RawIndex:    lineNum,
+			Tokens:      tokenizer.Estimate(content),
+		}
+	}
+
+	content := strings.Join(textParts, "\n\n")
 	return Turn{
 		Role:      RoleUser,
 		Timestamp: rec.Timestamp,
@@ -136,6 +183,32 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 		RawIndex:  lineNum,
 		Tokens:    tokenizer.Estimate(content),
 	}
+}
+
+// extractBlockContent decodes the content field of a tool_result block,
+// which may be a plain string or an array of text blocks.
+func extractBlockContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var blocks []rawBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return ""
+	}
+	var out string
+	for _, bl := range blocks {
+		if bl.Type == "text" && bl.Text != "" {
+			if out != "" {
+				out += "\n\n"
+			}
+			out += bl.Text
+		}
+	}
+	return out
 }
 
 // assistantTurn builds a Turn from an assistant record, extracting text,
@@ -209,25 +282,28 @@ func toolResultTurn(rec rawRecord, lineNum int) Turn {
 	}
 }
 
-// attachToolResult walks backwards through sess.Turns looking for an
-// assistant turn that issued rec.ToolUseID. Returns true if attached.
+// attachToolResult walks backwards through sess.Turns looking for assistant
+// turns that issued matching tool_use_ids. Returns true if ALL tool results
+// were attached.
 func attachToolResult(sess *Session, turn Turn) bool {
 	if len(turn.ToolResults) == 0 {
 		return false
 	}
-	id := turn.ToolResults[0].ID
+	attached := 0
 	for i := len(sess.Turns) - 1; i >= 0; i-- {
 		for _, tc := range sess.Turns[i].ToolCalls {
-			if tc.ID == id {
-				sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, turn.ToolResults[0])
-				sess.Turns[i].Tokens += turn.Tokens
-				sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
-				sess.TokenCount += turn.Tokens
-				return true
+			for _, tr := range turn.ToolResults {
+				if tc.ID == tr.ID {
+					sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, tr)
+					sess.Turns[i].Tokens += tokenizer.Estimate(tr.Content)
+					sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
+					sess.TokenCount += tokenizer.Estimate(tr.Content)
+					attached++
+				}
 			}
 		}
 	}
-	return false
+	return attached == len(turn.ToolResults)
 }
 
 func decodeMessage(raw []byte) (rawMessage, error) {

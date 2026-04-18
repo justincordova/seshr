@@ -498,11 +498,15 @@ func (m Replay) renderMain(width int) string {
 
 	for _, tc := range turn.ToolCalls {
 		b.WriteString("\n\n")
-		b.WriteString(RenderToolCall(tc, width, m.styles))
+		if tc.Name == "Agent" {
+			b.WriteString(RenderAgentToolCall(tc, width, m.theme))
+		} else {
+			b.WriteString(RenderToolCall(tc, width, m.styles))
+		}
 	}
 	for _, tr := range turn.ToolResults {
 		b.WriteString("\n\n")
-		b.WriteString(RenderToolResult(tr.Content, width, m.styles))
+		b.WriteString(RenderToolResult(tr.Content, tr.IsError, width, m.styles))
 	}
 
 	if m.showThinking && turn.Thinking != "" {

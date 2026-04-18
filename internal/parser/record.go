@@ -34,12 +34,16 @@ type rawMessage struct {
 	IsError bool `json:"is_error"`
 }
 
-// rawBlock is one entry in an assistant content array.
+// rawBlock is one entry in a content array. Fields cover text, thinking,
+// tool_use, and tool_result block types.
 type rawBlock struct {
-	Type     string          `json:"type"`
-	Text     string          `json:"text"`
-	Thinking string          `json:"thinking"`
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Input    json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
 }

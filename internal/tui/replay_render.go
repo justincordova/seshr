@@ -140,8 +140,35 @@ func RenderToolCall(tc parser.ToolCall, width int, s Styles) string {
 	return panel(fmt.Sprintf("tool: %s", tc.Name), pretty.String(), width, 0)
 }
 
+// RenderAgentToolCall renders an Agent (subagent) tool call with a distinct
+// badge and description extracted from the input JSON.
+func RenderAgentToolCall(tc parser.ToolCall, width int, th Theme) string {
+	var input struct {
+		Description     string `json:"description"`
+		SubagentType    string `json:"subagent_type"`
+		RunInBackground bool   `json:"run_in_background"`
+	}
+	if err := json.Unmarshal(tc.Input, &input); err != nil {
+		return RenderToolCall(tc, width, Styles{})
+	}
+
+	badge := pill("AGENT", th.AgentColor, th.Background)
+	label := input.Description
+	if label == "" {
+		label = input.SubagentType
+	}
+	if label == "" {
+		label = "subagent"
+	}
+	tag := ""
+	if input.RunInBackground {
+		tag = dimStyle.Render(" (background)")
+	}
+	return badge + " " + label + tag
+}
+
 // RenderToolResult renders tool result content, truncated to 20 lines.
-func RenderToolResult(result string, width int, s Styles) string {
+func RenderToolResult(result string, isError bool, width int, s Styles) string {
 	lines := strings.Split(result, "\n")
 	truncated := false
 	hidden := 0
@@ -154,7 +181,11 @@ func RenderToolResult(result string, width int, s Styles) string {
 	if truncated {
 		body += fmt.Sprintf("\n\n(+%d more lines — enter to expand)", hidden)
 	}
-	return panel("result", body, width, 0)
+	title := "result"
+	if isError {
+		title = "error"
+	}
+	return panel(title, body, width, 0)
 }
 
 // RenderSidebar renders the topic list column for Replay mode.

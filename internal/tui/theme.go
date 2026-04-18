@@ -28,6 +28,7 @@ type Theme struct {
 	AssistantColor  lipgloss.AdaptiveColor
 	ToolUseColor    lipgloss.AdaptiveColor
 	ToolResultColor lipgloss.AdaptiveColor
+	AgentColor      lipgloss.AdaptiveColor
 }
 
 // ThemeByName returns the Theme matching name (case-insensitive). Falls back
@@ -69,6 +70,7 @@ func CatppuccinMocha() Theme {
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#89b4fa"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#df8e1d", Dark: "#f9e2af"},
 		ToolResultColor: lipgloss.AdaptiveColor{Light: "#6c6f85", Dark: "#6c7086"},
+		AgentColor:      lipgloss.AdaptiveColor{Light: "#8839ef", Dark: "#cba6f7"},
 	}
 }
 
@@ -114,6 +116,7 @@ func Nord() Theme {
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#5E81AC", Dark: "#88C0D0"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#EBCB8B", Dark: "#EBCB8B"},
 		ToolResultColor: lipgloss.AdaptiveColor{Light: "#7B88A1", Dark: "#616E88"},
+		AgentColor:      lipgloss.AdaptiveColor{Light: "#B48EAD", Dark: "#B48EAD"},
 	}
 }
 
@@ -158,5 +161,6 @@ func Dracula() Theme {
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#6272A4", Dark: "#8BE9FD"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#FFB86C", Dark: "#FFB86C"},
 		ToolResultColor: lipgloss.AdaptiveColor{Light: "#7B6FBF", Dark: "#6272A4"},
+		AgentColor:      lipgloss.AdaptiveColor{Light: "#BD93F9", Dark: "#BD93F9"},
 	}
 }
