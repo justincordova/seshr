@@ -170,7 +170,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.vp.LineDown(1)
 					return m, nil
 				}
-			} else {
+			} else if !m.searchHasQuery {
 				switch msg.String() {
 				case "up", "k":
 					m.mainVP.LineUp(1)
@@ -269,9 +269,13 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.MouseWheelUp:
-			m.mainVP.LineUp(3)
+			if !m.searchHasQuery {
+				m.mainVP.LineUp(3)
+			}
 		case tea.MouseWheelDown:
-			m.mainVP.LineDown(3)
+			if !m.searchHasQuery {
+				m.mainVP.LineDown(3)
+			}
 		}
 	}
 	return m, nil
