@@ -242,15 +242,7 @@ func (o Overview) renderStatsPanel(width, height int) string {
 
 func (o Overview) renderHeader(width int) string {
 	logo := renderLogo()
-
-	right := dimStyle.Render("esc ") + keyStyle.Render("back")
-
-	gap := width - lipgloss.Width(logo) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	row := logo + strings.Repeat(" ", gap) + right
-	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(row)
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(logo)
 }
 
 func (o Overview) renderStatsStrip(width int) string {
