@@ -139,6 +139,7 @@ func topicStartTime(sess *parser.Session, top topics.Topic) time.Time {
 }
 
 func (o Overview) Cursor() int           { return o.cursor }
+func (o Overview) Offset() int           { return o.offset }
 func (o Overview) Expanded(i int) bool   { return o.expanded[i] }
 func (o Overview) StatsVisible() bool    { return o.stats }
 func (o Overview) IsSelected(i int) bool { return o.selected[i] }
@@ -218,6 +219,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		o.width = msg.Width
 		o.height = msg.Height
+		o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 		return o, nil
 	case PruneDoneMsg:
 		o.pruning = false
@@ -255,7 +257,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if o.cursor < 0 {
 					o.cursor = 0
 				}
-				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 				return o, nil
 			case "enter":
 				o.search.Commit()
@@ -283,17 +285,18 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, o.keys.Up):
 			if o.cursor > 0 {
 				o.cursor--
-				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 			}
 			return o, nil
 		case key.Matches(msg, o.keys.Down):
 			if o.cursor < len(o.topics)-1 {
 				o.cursor++
-				o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 			}
 			return o, nil
 		case key.Matches(msg, o.keys.Expand):
 			o.expanded[o.cursor] = !o.expanded[o.cursor]
+			o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 			return o, nil
 		case key.Matches(msg, o.keys.FoldAll):
 			// If any are expanded, collapse all. Otherwise expand all.
@@ -311,6 +314,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					o.expanded[i] = true
 				}
 			}
+			o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 			return o, nil
 		case key.Matches(msg, o.keys.Select):
 			o.selected[o.cursor] = !o.selected[o.cursor]
@@ -380,62 +384,104 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return o, nil
 }
 
-// topicVisibleCount returns the number of topic cards that fit in the main
-// panel body. Simulates the list render to get an exact count, accounting
-// for compact dividers and expanded topics that consume extra lines.
-func (o Overview) topicVisibleCount() int {
+// topicBodyHeight returns the line budget available to the topic list body,
+// i.e. the area inside the panel border (so excludes header, stats strip,
+// search bar, selection strip, footer, panel border, and panel title).
+func (o Overview) topicBodyHeight() int {
 	if o.height <= 0 || o.width <= 0 {
-		return len(o.topics)
+		return 20
 	}
 	cw := contentWidth(o.width)
 	header := o.renderHeader(cw)
 	statsStrip := o.renderStatsStrip(cw)
 	footer := o.renderFooter(cw)
 	selStrip := o.renderSelectionStrip(cw)
+	searchBar := o.search.View(cw)
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(footer) + lipgloss.Height(selStrip)
+		lipgloss.Height(footer) + lipgloss.Height(selStrip) + lipgloss.Height(searchBar)
 	mainH := o.height - fixedH
 	if mainH < 6 {
 		mainH = 6
 	}
-	// Panel border + title consume ~4 lines; body is what remains.
-	bodyH := mainH - 4
+	// Panel border (2) + title row (1) + spacing = 5 lines outside body.
+	// This matches renderTopicPanel: bodyH := height - 5.
+	bodyH := mainH - 5
 	if bodyH < 1 {
 		bodyH = 1
 	}
+	return bodyH
+}
 
-	// Walk the topic list the same way renderTopicList does, counting lines.
-	// Stop when we'd exceed bodyH and report how many topics fit.
+// topicsFittingFrom returns the number of topic cards whose 2-line header
+// will be rendered when rendering starts at fromIdx with bodyH available.
+// Mirrors the budget logic in renderTopicList: a card is "visible" if its
+// 2-line header fits (expansion clips gracefully inside the remainder).
+func (o Overview) topicsFittingFrom(fromIdx, bodyH int) int {
+	if len(o.topics) == 0 || bodyH <= 0 {
+		return 0
+	}
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
 	linesUsed := 0
 	count := 0
-	for i := range o.topics {
-		needed := 2 // 2 lines per collapsed card
+	for i := fromIdx; i < len(o.topics); i++ {
+		need := 2 // card body
 		if linesUsed > 0 {
-			needed++ // separator line before each card after the first
+			need++ // separator above the card
 		}
-		if linesUsed+needed > bodyH {
+		if linesUsed+need > bodyH {
 			break
 		}
-		linesUsed += needed
+		linesUsed += need
 		count++
-		// Account for expanded turns (rough: 1 line per turn + 1 trailing blank).
+		// Post-card content (expansion, divider) consumes budget for
+		// subsequent cards but does not gate visibility of *this* card.
 		if o.expanded[i] {
-			extraLines := len(o.topics[i].TurnIndices) + 1
-			if extraLines > maxExpandedPreviews+1 {
-				extraLines = maxExpandedPreviews + 1
+			linesUsed++ // blank line above expansion block
+			extra := len(o.topics[i].TurnIndices) + 1
+			if extra > maxExpandedPreviews+1 {
+				extra = maxExpandedPreviews + 1
 			}
-			linesUsed += extraLines
+			linesUsed += extra
+			if linesUsed > bodyH {
+				linesUsed = bodyH // clipped in real render
+			}
 		}
-		// Compact divider costs 2 extra lines.
 		if _, ok := dividerAfter[i]; ok {
 			linesUsed += 2
 		}
 	}
-	if count < 1 {
-		count = 1
-	}
 	return count
+}
+
+// clampTopicOffset returns the smallest offset in [0, cursor] such that the
+// cursor topic is fully visible when rendering starts at that offset and the
+// body has bodyH lines. Handles variable-height topics (expanded cards +
+// compact dividers) correctly, unlike the fixed-window clampOffset.
+func (o Overview) clampTopicOffset(cursor, offset, bodyH int) int {
+	if len(o.topics) == 0 || bodyH <= 0 {
+		return 0
+	}
+	if cursor < 0 {
+		return 0
+	}
+	// If cursor moved above the current scroll window, snap offset to cursor.
+	if cursor < offset {
+		return cursor
+	}
+	// Ensure cursor is within the window rendered from `offset`. If not,
+	// advance offset one topic at a time until it fits. Bounded by cursor:
+	// at worst we set offset == cursor, which always shows cursor first.
+	for offset <= cursor {
+		fit := o.topicsFittingFrom(offset, bodyH)
+		if offset+fit > cursor {
+			break
+		}
+		offset++
+	}
+	if offset > cursor {
+		offset = cursor
+	}
+	return offset
 }
 
 func (o *Overview) applyTopicSearchFilter() {
@@ -468,7 +514,7 @@ func (o *Overview) applyTopicSearchFilter() {
 	if o.cursor < 0 {
 		o.cursor = 0
 	}
-	o.offset = clampOffset(o.cursor, o.offset, len(o.topics), o.topicVisibleCount())
+	o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 }
 
 func (o Overview) View() string {
