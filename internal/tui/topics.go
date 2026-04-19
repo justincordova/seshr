@@ -417,51 +417,52 @@ func (o Overview) topicBodyHeight() int {
 	return bodyH
 }
 
-// topicsFittingFrom returns the number of topic cards whose 2-line header
-// will be rendered when rendering starts at fromIdx with bodyH available.
-// Mirrors the budget logic in renderTopicList: a card is "visible" if its
-// 2-line header fits (expansion clips gracefully inside the remainder).
-func (o Overview) topicsFittingFrom(fromIdx, bodyH int) int {
-	if len(o.topics) == 0 || bodyH <= 0 {
-		return 0
+// cursorVisibleFrom reports whether the cursor topic would be fully rendered
+// (2-line card + any expanded previews + a trailing blank) when the list is
+// drawn starting at fromIdx with bodyH available lines. This mirrors the
+// budget logic in renderTopicList exactly so scroll math tracks render math.
+func (o Overview) cursorVisibleFrom(fromIdx, cursor, bodyH int) bool {
+	if cursor < fromIdx || cursor >= len(o.topics) {
+		return false
 	}
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
 	linesUsed := 0
-	count := 0
-	for i := fromIdx; i < len(o.topics); i++ {
-		need := 2 // card body
+	for i := fromIdx; i <= cursor; i++ {
+		need := 2
 		if linesUsed > 0 {
 			need++ // separator above the card
 		}
 		if linesUsed+need > bodyH {
-			break
+			return false
 		}
 		linesUsed += need
-		count++
-		// Post-card content (expansion, divider) consumes budget for
-		// subsequent cards but does not gate visibility of *this* card.
 		if o.expanded[i] {
 			linesUsed++ // blank line above expansion block
 			extra := len(o.topics[i].TurnIndices) + 1
 			if extra > maxExpandedPreviews+1 {
 				extra = maxExpandedPreviews + 1
 			}
-			linesUsed += extra
-			if linesUsed > bodyH {
-				linesUsed = bodyH // clipped in real render
+			// For the cursor itself, require the whole expansion to fit so
+			// its turns are actually visible. For earlier topics an over-fill
+			// just pushes the cursor off-screen, which is the same failure.
+			if linesUsed+extra > bodyH {
+				return false
 			}
+			linesUsed += extra
 		}
 		if _, ok := dividerAfter[i]; ok {
-			linesUsed += 2
+			if i < cursor {
+				linesUsed += 2
+			}
 		}
 	}
-	return count
+	return true
 }
 
 // clampTopicOffset returns the smallest offset in [0, cursor] such that the
-// cursor topic is fully visible when rendering starts at that offset and the
-// body has bodyH lines. Handles variable-height topics (expanded cards +
-// compact dividers) correctly, unlike the fixed-window clampOffset.
+// cursor topic (and its expansion, if any) is fully visible when rendering
+// starts at that offset. Handles variable-height topics (expanded cards +
+// compact dividers) by walking the actual render budget, not a fixed window.
 func (o Overview) clampTopicOffset(cursor, offset, bodyH int) int {
 	if len(o.topics) == 0 || bodyH <= 0 {
 		return 0
@@ -473,18 +474,11 @@ func (o Overview) clampTopicOffset(cursor, offset, bodyH int) int {
 	if cursor < offset {
 		return cursor
 	}
-	// Ensure cursor is within the window rendered from `offset`. If not,
-	// advance offset one topic at a time until it fits. Bounded by cursor:
-	// at worst we set offset == cursor, which always shows cursor first.
-	for offset <= cursor {
-		fit := o.topicsFittingFrom(offset, bodyH)
-		if offset+fit > cursor {
-			break
-		}
+	// Advance offset until cursor fits in the render budget. Bounded by
+	// cursor: at worst offset == cursor shows the cursor card first, with
+	// whatever expansion budget remains.
+	for offset < cursor && !o.cursorVisibleFrom(offset, cursor, bodyH) {
 		offset++
-	}
-	if offset > cursor {
-		offset = cursor
 	}
 	return offset
 }

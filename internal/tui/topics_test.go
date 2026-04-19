@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -312,7 +313,8 @@ func TestOverview_SelectionStripShownInView(t *testing.T) {
 
 // manyTopicsSession builds a session with n topics, each with 8 turns, so
 // that expanding any topic makes it much taller than the viewport can hold
-// at a small terminal height.
+// at a small terminal height. Each turn's content uniquely identifies its
+// topic index so tests can assert which expansions were actually rendered.
 func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
 	base := time.Unix(1_700_000_000, 0)
 	turns := make([]parser.Turn, 0, n*8)
@@ -327,7 +329,7 @@ func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
 			turns = append(turns, parser.Turn{
 				Role:      role,
 				Timestamp: base.Add(time.Duration(i*10+j) * time.Minute),
-				Content:   "payload",
+				Content:   fmt.Sprintf("payload-t%d-j%d", i, j),
 				Tokens:    10,
 			})
 		}
@@ -336,7 +338,7 @@ func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
 			indices[j] = start + j
 		}
 		tops = append(tops, topics.Topic{
-			Label:       "topic",
+			Label:       fmt.Sprintf("topic-%d", i),
 			TurnIndices: indices,
 			TokenCount:  80,
 		})
@@ -435,6 +437,37 @@ func TestOverview_Scroll_MixedHeightsCursorAdvancesOffset(t *testing.T) {
 	assert.Equal(t, 10-1, o.Cursor(), "cursor should be at bottom")
 	assert.Greater(t, o.Offset(), 0, "offset must advance when expanded topics push cursor off screen")
 	assert.LessOrEqual(t, o.Offset(), o.Cursor())
+}
+
+func TestOverview_Scroll_LastTopicExpandedShowsItsTurns(t *testing.T) {
+	// Reproduces bug: 4 topics, cursor on the last one, user expands it but
+	// the expansion lines had no room and were clipped to zero. Scroll must
+	// advance so the expansion is actually visible.
+	s, tops := manyTopicsSession(4)
+	o := tui.NewOverview(s, tops)
+	// Tight terminal: only ~15 lines for the body.
+	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	o = next.(tui.Overview)
+
+	// Expand the first 3 topics to fill the viewport, then move to topic 4.
+	for i := 0; i < 3; i++ {
+		n, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		o = n.(tui.Overview)
+		n, _ = o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		o = n.(tui.Overview)
+	}
+	require.Equal(t, 3, o.Cursor())
+
+	// Expand the last topic. Its turns must actually render — not be clipped
+	// to zero because its card fit but the expansion budget was exhausted.
+	n, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	o = n.(tui.Overview)
+	require.True(t, o.Expanded(3))
+
+	out := o.View()
+	// Topic 3's unique preview content must appear — i.e. its expansion
+	// rendered at least one turn, proving the scroll math made room.
+	assert.Contains(t, out, "payload-t3", "expanded cursor topic must render its turns")
 }
 
 func TestOverview_Scroll_MovingUpScrollsBack(t *testing.T) {
