@@ -166,6 +166,22 @@ func TestPrune_RemovesAttachedToolResultLines(t *testing.T) {
 	assert.Contains(t, result[1], `"n":2`)
 }
 
+func TestPrune_SamePathAsSource_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "session.jsonl")
+	require.NoError(t, os.WriteFile(src, []byte(`{"type":"user"}`+"\n"), 0o644))
+
+	sess := &parser.Session{
+		Path:  src,
+		Turns: []parser.Turn{{RawIndex: 0}},
+	}
+
+	err := editor.Prune(sess, editor.Selection{Turns: map[int]bool{0: true}}, src)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must differ from source")
+}
+
 func TestPruneSession_EndToEndWithToolResult(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")

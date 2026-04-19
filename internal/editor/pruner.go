@@ -11,6 +11,9 @@ import (
 )
 
 func Prune(sess *parser.Session, selection Selection, dstPath string) error {
+	if dstPath == sess.Path {
+		return fmt.Errorf("destination must differ from source (%s)", dstPath)
+	}
 	pruned := map[int]bool{}
 	for idx := range selection.Turns {
 		if idx < 0 || idx >= len(sess.Turns) {
