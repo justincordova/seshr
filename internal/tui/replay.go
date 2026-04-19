@@ -422,7 +422,7 @@ func (m Replay) renderHeader() string {
 	}
 
 	center := indicatorStr
-	right := progress + "  " + dimStyle.Render("esc ") + keyStyle.Render("back")
+	right := progress
 
 	leftW := lipgloss.Width(left)
 	centerW := lipgloss.Width(center)
