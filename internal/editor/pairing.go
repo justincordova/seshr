@@ -47,6 +47,16 @@ func ExpandSelection(sess *parser.Session, ts []topics.Topic, in Selection) Sele
 	return out
 }
 
+// pullUserAssistantPartner ensures user and assistant turns are always deleted
+// as a pair. Given a turn at idx, it searches forward then backward for the
+// nearest partner of the opposite role (user↔assistant), stopping when it hits
+// another turn of the same role as idx. Tool result turns between them are
+// skipped over.
+//
+// Limitation: in sessions with non-sequential interleaving (e.g. parallel
+// subagent invocations sharing the same turn list), this adjacency-based search
+// may pull in a partner from a different conversation branch. This is acceptable
+// for v1 because Claude Code sessions are strictly sequential.
 func pullUserAssistantPartner(sess *parser.Session, idx int, sel map[int]bool) {
 	role := sess.Turns[idx].Role
 	var want parser.Role
