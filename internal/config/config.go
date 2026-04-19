@@ -12,21 +12,18 @@ import (
 // Config holds user preferences loaded from ~/.seshr/config.json.
 // See SPEC §4.3. Unknown fields are ignored on load and dropped on save.
 type Config struct {
-	Theme                string   `json:"theme"`
-	GapThresholdSeconds  int      `json:"gap_threshold_seconds"`
-	SessionDirs          []string `json:"session_dirs"`
-	DefaultContextWindow int      `json:"default_context_window"`
-	SchemaVersion        int      `json:"schema_version"`
+	Theme               string   `json:"theme"`
+	GapThresholdSeconds int      `json:"gap_threshold_seconds"`
+	SessionDirs         []string `json:"session_dirs"`
+	SchemaVersion       int      `json:"schema_version"`
 }
 
-// Default returns a Config populated with v1 defaults (SPEC §4.3).
 func Default() Config {
 	return Config{
-		Theme:                "catppuccin",
-		GapThresholdSeconds:  3 * 60,
-		SessionDirs:          nil,
-		DefaultContextWindow: 200_000,
-		SchemaVersion:        1,
+		Theme:               "catppuccin-mocha",
+		GapThresholdSeconds: 3 * 60,
+		SessionDirs:         nil,
+		SchemaVersion:       1,
 	}
 }
 
@@ -86,9 +83,6 @@ func Load() (Config, error) {
 	}
 	if cfg.GapThresholdSeconds == 0 {
 		cfg.GapThresholdSeconds = d.GapThresholdSeconds
-	}
-	if cfg.DefaultContextWindow == 0 {
-		cfg.DefaultContextWindow = d.DefaultContextWindow
 	}
 	if cfg.SchemaVersion == 0 {
 		cfg.SchemaVersion = d.SchemaVersion

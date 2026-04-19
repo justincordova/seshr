@@ -12,8 +12,6 @@ type Theme struct {
 	Foreground lipgloss.AdaptiveColor
 	Accent     lipgloss.AdaptiveColor
 	Muted      lipgloss.AdaptiveColor
-	TokenBar   lipgloss.AdaptiveColor
-	TokenEmpty lipgloss.AdaptiveColor
 	Error      lipgloss.AdaptiveColor
 
 	// Palette entries used by replay styles.
@@ -52,8 +50,6 @@ func CatppuccinMocha() Theme {
 		Foreground: colText,
 		Accent:     colBlue,
 		Muted:      colOverlay0,
-		TokenBar:   colGreen,
-		TokenEmpty: colSurface0,
 		Error:      colRed,
 
 		Overlay1: colOverlay1,
@@ -80,8 +76,6 @@ func Nord() Theme {
 	fg := lipgloss.AdaptiveColor{Dark: "#D8DEE9", Light: "#2E3440"}
 	accent := lipgloss.AdaptiveColor{Dark: "#88C0D0", Light: "#5E81AC"}
 	muted := lipgloss.AdaptiveColor{Dark: "#4C566A", Light: "#9EACBA"}
-	green := lipgloss.AdaptiveColor{Dark: "#A3BE8C", Light: "#A3BE8C"}
-	surface := lipgloss.AdaptiveColor{Dark: "#3B4252", Light: "#E5E9F0"}
 	surface1 := lipgloss.AdaptiveColor{Dark: "#434C5E", Light: "#D8DEE9"}
 	overlay1 := lipgloss.AdaptiveColor{Dark: "#616E88", Light: "#7B88A1"}
 	subtext := lipgloss.AdaptiveColor{Dark: "#A0AABB", Light: "#4C566A"}
@@ -99,8 +93,6 @@ func Nord() Theme {
 		Foreground: fg,
 		Accent:     accent,
 		Muted:      muted,
-		TokenBar:   green,
-		TokenEmpty: surface,
 		Error:      errCol,
 
 		Overlay1: overlay1,
@@ -126,8 +118,6 @@ func Dracula() Theme {
 	fg := lipgloss.AdaptiveColor{Dark: "#F8F8F2", Light: "#282A36"}
 	accent := lipgloss.AdaptiveColor{Dark: "#8BE9FD", Light: "#6272A4"}
 	muted := lipgloss.AdaptiveColor{Dark: "#6272A4", Light: "#9AACCE"}
-	green := lipgloss.AdaptiveColor{Dark: "#50FA7B", Light: "#50FA7B"}
-	surface := lipgloss.AdaptiveColor{Dark: "#44475A", Light: "#E8E8F0"}
 	surface1 := lipgloss.AdaptiveColor{Dark: "#383A59", Light: "#D8D8E8"}
 	overlay1 := lipgloss.AdaptiveColor{Dark: "#BD93F9", Light: "#7B6FBF"}
 	subtext := lipgloss.AdaptiveColor{Dark: "#BFBFCF", Light: "#44475A"}
@@ -138,8 +128,6 @@ func Dracula() Theme {
 		Foreground: fg,
 		Accent:     accent,
 		Muted:      muted,
-		TokenBar:   green,
-		TokenEmpty: surface,
 		Error:      errCol,
 
 		Overlay1: overlay1,

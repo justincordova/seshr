@@ -66,33 +66,6 @@ func TestOverview_DownKey_AtBottomStays(t *testing.T) {
 	assert.Equal(t, len(tops)-1, o.Cursor())
 }
 
-func TestTokenBar_HalfFull(t *testing.T) {
-	got := tui.TokenBar(50, 100, 8)
-	assert.Equal(t, "████░░░░", got)
-}
-
-func TestTokenBar_Full(t *testing.T) {
-	got := tui.TokenBar(100, 100, 8)
-	assert.Equal(t, "████████", got)
-}
-
-func TestTokenBar_Empty(t *testing.T) {
-	got := tui.TokenBar(0, 100, 8)
-	assert.Equal(t, "░░░░░░░░", got)
-}
-
-func TestTokenBar_ZeroSessionTotal_RendersEmpty(t *testing.T) {
-	got := tui.TokenBar(0, 0, 8)
-	assert.Equal(t, "░░░░░░░░", got)
-}
-
-func TestOverview_View_ContainsTokenBar(t *testing.T) {
-	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
-	out := o.View()
-	assert.Contains(t, out, "█")
-}
-
 func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops)

@@ -97,7 +97,6 @@ func TestSettings_View_ContainsAllFields(t *testing.T) {
 	out := s.View()
 	assert.Contains(t, out, "Theme")
 	assert.Contains(t, out, "Gap threshold")
-	assert.Contains(t, out, "context window")
 }
 
 // ── Log viewer ────────────────────────────────────────────────────────────────

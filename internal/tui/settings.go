@@ -21,14 +21,12 @@ type fieldID int
 const (
 	fieldTheme fieldID = iota
 	fieldGap
-	fieldContext
 	fieldCount // sentinel
 )
 
 var fieldLabels = [fieldCount]string{
-	fieldTheme:   "Theme",
-	fieldGap:     "Gap threshold (seconds)",
-	fieldContext: "Default context window (tokens)",
+	fieldTheme: "Theme",
+	fieldGap:   "Gap threshold (seconds)",
 }
 
 var availableThemes = []string{"catppuccin-mocha", "nord", "dracula"}
@@ -139,12 +137,6 @@ func (s *Settings) applyInput() error {
 			return fmt.Errorf("must be a non-negative integer")
 		}
 		s.cfg.GapThresholdSeconds = n
-	case fieldContext:
-		var n int
-		if _, err := fmt.Sscanf(val, "%d", &n); err != nil || n <= 0 {
-			return fmt.Errorf("must be a positive integer")
-		}
-		s.cfg.DefaultContextWindow = n
 	}
 	return nil
 }
@@ -155,8 +147,6 @@ func (s Settings) fieldValue(f fieldID) string {
 		return s.cfg.Theme
 	case fieldGap:
 		return fmt.Sprintf("%d", s.cfg.GapThresholdSeconds)
-	case fieldContext:
-		return fmt.Sprintf("%d", s.cfg.DefaultContextWindow)
 	}
 	return ""
 }

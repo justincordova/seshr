@@ -262,21 +262,9 @@ func (o Overview) renderStatsStrip(width int) string {
 		}
 	}
 
-	pct := 0.0
-	if defaultContextWindow > 0 {
-		pct = 100.0 * float64(s.TokenCount) / float64(defaultContextWindow)
-	}
-
-	tokenColor := colGreen
-	if pct > 80 {
-		tokenColor = colRed
-	} else if pct > 50 {
-		tokenColor = colLavender
-	}
-
 	items := []string{
 		statInline("TURNS", fmt.Sprintf("%d", len(s.Turns)), colGreen),
-		statInline("TOKENS", fmt.Sprintf("~%s", humanize.Comma(int64(s.TokenCount))), tokenColor),
+		statInline("TOKENS", fmt.Sprintf("~%s", humanize.Comma(int64(s.TokenCount))), colGreen),
 		statInline("TOPICS", fmt.Sprintf("%d", len(o.topics)), colMauve),
 		statInline("DURATION", dur.String(), colLavender),
 	}
@@ -357,10 +345,9 @@ func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	}
 
 	num := dimStyle.Render(fmt.Sprintf("%2d.", i+1))
-	tokenBar := TokenBar(top.TokenCount, o.sess.TokenCount, 8)
 	tokens := dimStyle.Render(fmt.Sprintf("~%s", humanize.Comma(int64(top.TokenCount))))
 
-	line1 := fmt.Sprintf("%s %s %s  %s  %s", bar, num, label, tokenBar, tokens)
+	line1 := fmt.Sprintf("%s %s %s  %s", bar, num, label, tokens)
 
 	turnRange := dimStyle.Render(fmt.Sprintf("turns %d–%d",
 		firstTurnIdx(top.TurnIndices)+1,
@@ -423,23 +410,6 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
-}
-
-// TokenBar renders an 8-cell block-char progress bar: █ filled, ░ empty.
-func TokenBar(tokens, total, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	filled := 0
-	if total > 0 {
-		filled = int(float64(tokens) / float64(total) * float64(width))
-		if filled > width {
-			filled = width
-		}
-	}
-	barFill := lipgloss.NewStyle().Foreground(colGreen).Render(strings.Repeat("█", filled))
-	barEmpty := lipgloss.NewStyle().Foreground(colSurface0).Render(strings.Repeat("░", width-filled))
-	return barFill + barEmpty
 }
 
 func firstTurnIdx(ix []int) int {
@@ -520,8 +490,6 @@ func firstLine(s string) string {
 	return ""
 }
 
-const defaultContextWindow = 200_000
-
 func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	roleCounts := map[parser.Role]int{}
 	roleTokens := map[parser.Role]int{}
@@ -544,14 +512,10 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 			dur = time.Second
 		}
 	}
-	pct := 0.0
-	if defaultContextWindow > 0 {
-		pct = 100.0 * float64(sess.TokenCount) / float64(defaultContextWindow)
-	}
 	lines := []string{
 		"── stats ──",
-		fmt.Sprintf("total: ~%s tokens (%.1f%% of %s ctx)",
-			humanize.Comma(int64(sess.TokenCount)), pct, humanize.Comma(int64(defaultContextWindow))),
+		fmt.Sprintf("total: ~%s tokens",
+			humanize.Comma(int64(sess.TokenCount))),
 		fmt.Sprintf("user: %d turns / ~%s tok",
 			roleCounts[parser.RoleUser], humanize.Comma(int64(roleTokens[parser.RoleUser]))),
 		fmt.Sprintf("assistant: %d turns / ~%s tok",

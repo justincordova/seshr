@@ -42,9 +42,8 @@ func TestLoad_MissingFile_ReturnsDefaults(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	assert.Equal(t, "catppuccin", cfg.Theme)
+	assert.Equal(t, "catppuccin-mocha", cfg.Theme)
 	assert.Equal(t, 3*60, cfg.GapThresholdSeconds)
-	assert.Equal(t, 200_000, cfg.DefaultContextWindow)
 }
 
 func TestLoadSave_RoundTrip_PreservesValues(t *testing.T) {

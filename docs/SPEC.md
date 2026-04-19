@@ -42,13 +42,23 @@ seshr/
 │       └── main.go            # CLI entry point (Cobra)
 ├── internal/
 │   ├── parser/
-│   │   ├── parser.go          # SessionParser interface
+│   │   ├── parser.go          # SessionParser interface (Parse)
 │   │   ├── claude.go          # Claude Code JSONL parser
+│   │   ├── scan.go            # Directory scanning and session discovery
+│   │   ├── record.go          # JSONL record types and decoding
 │   │   └── types.go           # Shared types: Turn, ToolCall, Session
 │   ├── topics/
-│   │   └── cluster.go         # Topic clustering algorithm
+│   │   ├── cluster.go         # Topic clustering algorithm
+│   │   ├── signals.go         # Clustering signals (time gap, file shift, etc.)
+│   │   ├── label.go           # Topic label generation
+│   │   ├── stopwords.go       # Stopword list for keyword extraction
+│   │   └── fileset.go         # File set extraction from tool calls
 │   ├── editor/
-│   │   └── pruner.go          # JSONL rewriting with safe message pairing
+│   │   ├── pruner.go          # JSONL rewriting with safe message pairing
+│   │   ├── pairing.go         # Turn pair enforcement rules
+│   │   ├── backup.go          # .bak file creation and restore
+│   │   ├── lock.go            # Advisory file locking (flock)
+│   │   └── load.go            # Session loading helper
 │   ├── tokenizer/
 │   │   └── estimate.go        # Token count estimation
 │   ├── config/
@@ -58,23 +68,28 @@ seshr/
 │   ├── version/
 │   │   └── version.go         # const Version, injected via ldflags on release
 │   └── tui/
-│       ├── app.go             # Root Bubbletea model, screen routing
-│       ├── sessions.go        # Session picker view
+│       ├── app.go             # Root Bubbletea model, screen routing, global overlays
+│       ├── sessions.go        # Session picker view (grouped by project)
+│       ├── picker_groups.go   # Project grouping, row flattening, summary stats
 │       ├── topics.go          # Topic overview view (shared foundation)
 │       ├── replay.go          # Replay mode view
+│       ├── replay_autoplay.go # Auto-play state machine
+│       ├── replay_render.go   # Replay turn rendering (markdown, tool blocks, search)
 │       ├── editor.go          # Editor mode view
+│       ├── editor_render.go   # Editor turn rendering
+│       ├── confirm.go         # Confirmation dialog component (delete, prune, restore)
 │       ├── help.go            # Help overlay component (? key)
 │       ├── search.go          # Fuzzy search bar component (/ key)
 │       ├── settings.go        # Settings popup (, key)
 │       ├── logviewer.go       # Log viewer (L key)
-│       ├── theme.go           # Color scheme definitions
+│       ├── theme.go           # Color scheme definitions (Catppuccin, Nord, Dracula)
 │       ├── keys.go            # Keybinding definitions per screen
 │       ├── styles.go          # Lipgloss style constants
 │       └── chrome.go          # Shared layout primitives: header/footer bars, pill, panel, kbd, hRule
 ├── testdata/
 │   ├── simple.jsonl           # Simple Claude Code session fixture
 │   ├── multi_topic.jsonl      # Multi-topic session with tool calls
-│   └── chained.jsonl          # Session continuation chain
+│   └── embedded_tool_results.jsonl  # Session with embedded tool results
 ├── go.mod
 └── go.sum
 ```
@@ -85,10 +100,11 @@ seshr/
 Session file(s) on disk
        │
        ▼
-  parser.Parse()          →  []Turn (ordered list of messages)
+  parser.Scan()            →  []SessionMeta (discovery)
+  parser.Parse()           →  *Session ([]Turn, tool calls, metadata)
        │
        ▼
-  topics.Cluster()        →  []Topic (grouped turns with labels)
+  topics.Cluster()         →  []Topic (grouped turns with labels)
        │
        ▼
   tui renders Topic Overview
@@ -99,7 +115,7 @@ Session file(s) on disk
  Mode     Mode
             │
             ▼
-  pruner.Prune()          →  Rewritten file (selected turns removed)
+  pruner.Prune()           →  Rewritten file (selected turns removed)
 ```
 
 ---
@@ -108,31 +124,26 @@ Session file(s) on disk
 
 ### 3.1 Session Picker
 
-The entry point of the application. On launch, Seshr scans the default directory for Claude Code (`~/.claude/projects/`) sessions. Users can also pass a custom path via CLI flag.
+The entry point of the application. On launch, Seshr scans the default directory for Claude Code (`~/.claude/projects/`) sessions. Users can also pass a custom path via `--dir` flag.
 
-**Displayed per session:** project name (derived from directory), source badge (Claude Code), total token count (approximate), turn count, topic count, last modified timestamp.
+Sessions are **grouped by project** into collapsible groups with colored gutters. The header shows a logo. A stats strip shows aggregate SESSIONS · PROJECTS · TOKENS · SIZE · LATEST. Each session row shows a truncated session ID, token count (compact format like `15.7M`), and relative timestamp.
 
 ```
-┌─ Seshr ───────────────────────────────────────────────────┐
-│  Sessions (4 found)                                      │
-│──────────────────────────────────────────────────────────│
-│                                                          │
-│  ▸ REST API project             ~47k tok      2h ago     │
-│    12 topics · 34 turns · Claude Code                    │
-│                                                          │
-│    Auth refactor                ~23k tok      1d ago     │
-│    6 topics · 18 turns · Claude Code                     │
-│                                                          │
-│    Bug hunt #442                ~91k tok      3d ago     │
-│    15 topics · 67 turns · Claude Code                    │
-│                                                          │
-│    Feature planning             ~12k tok      5d ago     │
-│    3 topics · 11 turns · Claude Code                     │
-│                                                          │
-│──────────────────────────────────────────────────────────│
-│  j/k Navigate  enter Open  r Replay  e Edit  d Delete    │
-│  / Search  , Settings  L Logs  ? Help  q Quit            │
-└──────────────────────────────────────────────────────────┘
+┌─ ◆ Seshr v0.1 ──────────────────────────────────────────────────────────────┐
+│  SESSIONS 10 · PROJECTS 7 · TOKENS 381,449,721 · SIZE 53 MiB · LATEST 3s ago│
+│                                                                              │
+│  ▌ JUSTIN                                     ▾ 1 session  15.7M tok       │
+│  ▌   ▸ 146a51d6-ade8-42df-…                          15.7M  2 minutes ago  │
+│                                                                              │
+│  ▌ BOOT                                       ▾ 1 session  65.8M tok       │
+│  ▌   ▸ bb859dee-0744-44f1-…                          65.8M  2 minutes ago  │
+│                                                                              │
+│  ▌ DARTLY                                     ▾ 2 sessions  25.7M tok      │
+│  ▌   ▸ d29d5ec6-e19d-4362-…                          14.4M  2 minutes ago  │
+│  ▌   ▸ 323f0680-89be-497f-…                          11.2M  2 minutes ago  │
+│                                                                              │
+│  ↑↓/jk nav · enter open · d delete · / search · q quit                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Session Picker Keybindings
@@ -145,46 +156,35 @@ The entry point of the application. On launch, Seshr scans the default directory
 | `e`            | Open directly in Edit Mode    | Skips topic overview                   |
 | `d`            | Delete session                | Confirmation dialog before deleting    |
 | `R`            | Restore from `.bak`           | Only if a `.bak` sibling exists (§4.5) |
-| `/`            | Fuzzy search/filter sessions  | Inline filter bar, fuzzy matching      |
-| `,`            | Open settings                 | Popup with current config              |
-| `L`            | Open log viewer               | Shows ~/.seshr/debug.log            |
-| `?`            | Show help overlay             | Context-sensitive keybinding reference |
-| `q`            | Quit application              |                                        |
+| `/`            | Fuzzy search/filter sessions  | Matches project name + session ID      |
+
+Global overlays (handled by root app model): `,` settings, `L` log viewer, `?` help, `q` quit.
 
 #### Session Deletion
 
-When a user presses `d`, a confirmation dialog appears with the session summary and a warning that this is permanent. On confirmation:
+When a user presses `d`, a confirmation dialog appears with the session display name and project path, warning that this cannot be undone. On confirmation:
 
-- **Claude Code:** Deletes the `.jsonl` file from `~/.claude/projects/<project-dir>/`. If the project directory is now empty, the empty directory is also cleaned up.
+- **Claude Code:** Deletes the `.jsonl` file from `~/.claude/projects/<project-dir>/`. Also removes any `.bak` and `.lock` siblings. If the project directory is now empty, the empty directory is also cleaned up.
 
 ### 3.2 Topic Overview (Shared View)
 
-The core screen and shared foundation for both Replay and Edit modes. Displays the parsed session as a list of auto-detected topics, each showing a label, token count, turn count, tool call count, and duration. Topics are collapsible — expanding reveals individual turns with role badges and message previews.
+The core screen and shared foundation for both Replay and Edit modes. Displays the parsed session as a list of auto-detected topics, each showing a label, token count, turn range, tool call count, and duration.
 
 ```
-┌─ REST API project ───────────────────────────────────────┐
-│  34 turns · ~47,231 tokens · 2 hours                     │
-│──────────────────────────────────────────────────────────│
-│                                                          │
-│  1. Project setup & Express init         ██░░   ~12.4k   │
-│     turns 1-5 · 8 tool calls · 12 min                    │
-│                                                          │
-│  2. Authentication with JWT              █░░░    ~8.2k   │
-│     turns 6-11 · 4 tool calls · 9 min                    │
-│                                                          │
-│  3. Where to buy a house                 ▏░░░    ~2.1k   │
-│     turns 12-13 · 0 tool calls · 2 min                   │
-│                                                          │
-│  4. Rate limiting implementation         ██░░    ~9.8k   │
-│     turns 14-22 · 11 tool calls · 15 min                 │
-│                                                          │
-│  5. Error handling & validation          ███░   ~14.7k   │
-│     turns 23-34 · 9 tool calls · 18 min                  │
-│                                                          │
-│──────────────────────────────────────────────────────────│
-│  j/k Navigate  enter/→ Expand  r Replay  e Edit          │
-│  / Search  tab Stats  ? Help  esc Back                    │
-└──────────────────────────────────────────────────────────┘
+┌─ ◆ Seshr ───────────────────────────────────────────────────────────────────┐
+│  TURNS 34 │ TOKENS ~47,231 │ TOPICS 5 │ DURATION 2 hours                    │
+│                                                                              │
+│  ▌  1. Project setup & Express init                    ~12,400               │
+│       turns 1–5 · 8 tool calls · 12 min · 1 week ago                        │
+│                                                                              │
+│  ▌  2. Authentication with JWT                        ~8,200                 │
+│       turns 6–11 · 4 tool calls · 9 min · 6 days ago                        │
+│                                                                              │
+│  ▌  3. Where to buy a house                           ~2,100                 │
+│       turns 12–13 · 0 tool calls · 2 min · 5 days ago                       │
+│                                                                              │
+│  ↑↓/jk nav · enter expand · r replay · e edit · tab stats · / search · esc back │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Topic Overview Keybindings
@@ -192,58 +192,61 @@ The core screen and shared foundation for both Replay and Edit modes. Displays t
 | Key            | Action                      | Notes                         |
 | -------------- | --------------------------- | ----------------------------- |
 | `↑/↓` or `j/k` | Navigate topics             |                               |
-| `enter` or `→` | Expand/collapse topic       | Shows individual turns within |
+| `enter` or `→` or `l` | Expand/collapse topic | Shows individual turns within |
 | `r`            | Enter Replay Mode           | Starts from selected topic    |
 | `e`            | Enter Edit Mode             | Enables selection checkboxes  |
-| `/`            | Fuzzy search within session | Searches turn content         |
+| `/`            | Fuzzy search within session | Searches topic labels + turn content |
 | `tab`          | Toggle stats panel          | Right-side aggregate stats    |
-| `?`            | Show help overlay           |                               |
-| `esc` or `q`   | Back to Session Picker      |                               |
+| `esc`          | Back to Session Picker      |                               |
 
 #### Stats Panel
 
-When toggled on, the right side shows: total token count and percentage of context window (200k / 1M), breakdown by message type (user, assistant, tool_use, tool_result, thinking), number of topics detected, total session duration, and number of unique files touched.
+When toggled on, the right side shows: total token count, breakdown by role (user turns/tokens, assistant turns/tokens), tool call and tool result counts, number of topics detected, total session duration, and number of unique files touched.
 
 ### 3.3 Replay Mode
 
 Split-pane view. Left sidebar shows the topic list with the current position highlighted. Main pane shows the full content of the current turn.
 
 ```
-┌─ Replay ─────────────────────────────────────────────────┐
-│  Topics         │  Turn 7/34 · ~890 tok                  │
-│─────────────────┼────────────────────────────────────────│
-│                 │                                        │
-│  1. Setup       │  ● ASSISTANT              +3m 22s      │
-│ ▸ 2. Auth  ◂    │                                        │
-│  3. House       │  I'll add JWT authentication to the    │
-│  4. Rate lim    │  Express app. First, let me install    │
-│  5. Errors      │  the dependency:                       │
-│                 │                                        │
-│                 │  ┌─ Tool: Bash ──────────────────┐     │
-│                 │  │ npm install jsonwebtoken       │     │
-│                 │  └────────────────────────────────┘     │
-│                 │                                        │
-│                 │  Then I'll create the auth             │
-│                 │  middleware in `src/middleware/`...     │
-│                 │                                        │
-│─────────────────┴────────────────────────────────────────│
-│  ←/h Prev  →/l Next  space Auto-play  1-9 Speed          │
-│  ]/n Next topic  [/p Prev topic  t Thinking  ? Help       │
-│  w Wrap  / Search  esc Back                               │
-└──────────────────────────────────────────────────────────┘
+┌─ Replay ────────────────────────────────────────────────────────────────────┐
+│  Topics         │  Turn 7/34 · ~890 tok                                    │
+│─────────────────┼──────────────────────────────────────────────────────────│
+│                 │                                                          │
+│  1. Setup       │  ● ASSISTANT              +3m 22s                        │
+│ ▸ 2. Auth  ◂    │                                                          │
+│  3. House       │  I'll add JWT authentication to the                      │
+│  4. Rate lim    │  Express app. First, let me install                      │
+│  5. Errors      │  the dependency:                                         │
+│                 │                                                          │
+│                 │  ┌─ Tool: Bash ──────────────────┐                       │
+│                 │  │ npm install jsonwebtoken       │                       │
+│                 │  └────────────────────────────────┘                       │
+│                 │                                                          │
+│─────────────────┴──────────────────────────────────────────────────────────│
+│  ←→/hl turns · space auto · [/] topics · tab sidebar · t think · c compact │
+│  / search · esc back                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Turn Display
 
 Each turn in replay shows:
 
-- **Role badge:** Colored label — User (green), Assistant (blue), Tool Use (yellow), Tool Result (dim)
+- **Role badge:** Colored label — User (green), Assistant (blue), Tool Use (yellow), Tool Result (dim), Agent (purple)
 - **Timestamp delta:** Time elapsed since previous turn
 - **Token count:** Approximate tokens for this turn
-- **Full message content:** Rendered with glamour for markdown formatting and chroma for syntax-highlighted code blocks
+- **Full message content:** Rendered with glamour for markdown formatting including code blocks
 - **Tool calls:** Tool name in a bordered box, input parameters as formatted JSON
 - **Tool results:** Truncated to 20 lines by default. Press `enter` on a tool result to expand it in a full-screen viewport. Press `esc` to return.
 - **Thinking blocks:** Collapsed by default, toggled with `t`. Rendered in dim text.
+
+#### Compact Mode
+
+Press `c` to toggle compact mode, which hides non-Agent tool calls and tool results. This lets you focus on the conversation flow without tool noise. An indicator badge appears in the header when active.
+
+#### Sidebar Focus
+
+Press `tab` to toggle focus between the main content and the topic sidebar. When the sidebar is focused, `↑/↓` navigates the topic list and `enter` jumps to the first turn of that topic.
 
 #### Replay Keybindings
 
@@ -252,37 +255,32 @@ Each turn in replay shows:
 | `→` or `l` | Next turn              |                                        |
 | `←` or `h` | Previous turn          |                                        |
 | `space`    | Toggle auto-play       | Steps at configurable speed            |
-| `1-9`      | Set auto-play speed    | 1 = slow (2s), 9 = fast (0.1s)         |
-| `]` or `n` | Jump to next topic     |                                        |
-| `[` or `p` | Jump to previous topic |                                        |
+| `+` / `-`  | Adjust auto-play speed | Only during auto-play                  |
+| `]`        | Jump to next topic     |                                        |
+| `[`        | Jump to previous topic |                                        |
 | `t`        | Toggle thinking blocks | Show/hide extended thinking            |
-| `w`        | Toggle word wrap       | Wrap vs horizontal scroll              |
+| `c`        | Toggle compact mode    | Hide non-Agent tool calls/results      |
+| `tab`      | Toggle sidebar focus   | Navigate topic list in sidebar         |
 | `enter`    | Expand tool result     | Full-screen viewport for large results |
-| `/`        | Search within session  | Fuzzy search, jumps to matching turn   |
-| `?`        | Show help overlay      |                                        |
-| `esc`      | Back to Topic Overview | Or close expanded tool result          |
+| `/`        | Search within session  | Shows results panel, jumps on enter    |
+| `esc`      | Back to Topic Overview | Or close expanded tool result / search |
 
 ### 3.4 Edit Mode
 
-Adds selection controls to the Topic Overview. Users can select entire topics or individual turns within expanded topics. Footer shows a running count of selected items and estimated tokens freed.
+Adds selection controls to the Topic Overview. Users select entire topics to prune. Footer shows a running count of selected items and estimated tokens freed.
 
 ```
-┌─ REST API project ─── EDIT MODE ─────────────────────────┐
-│  Select topics or turns to prune                         │
-│──────────────────────────────────────────────────────────│
-│                                                          │
-│  [ ] 1. Project setup & Express init          ~12.4k     │
-│  [ ] 2. Authentication with JWT                ~8.2k     │
-│  [x] 3. Where to buy a house                   ~2.1k     │
-│  [ ] 4. Rate limiting implementation           ~9.8k     │
-│  [ ] 5. Error handling & validation           ~14.7k     │
-│                                                          │
-│──────────────────────────────────────────────────────────│
-│  1 topic selected · ~2,100 tokens freed                  │
-│──────────────────────────────────────────────────────────│
-│  space Select  a All  A None  p Prune  enter Expand      │
-│  / Search  ? Help  esc Cancel                             │
-└──────────────────────────────────────────────────────────┘
+┌─ ◆ Seshr ─── EDIT MODE ─────────────────────────────────────────────────────┐
+│  Select topics or turns to prune                                             │
+│                                                                              │
+│  [ ] 1. Project setup & Express init          ~12.4k                        │
+│  [ ] 2. Authentication with JWT                ~8.2k                        │
+│  [x] 3. Where to buy a house                   ~2.1k                        │
+│  [ ] 4. Rate limiting implementation           ~9.8k                        │
+│  [ ] 5. Error handling & validation           ~14.7k                        │
+│                                                                              │
+│  space select · a all · A none · enter expand · p prune · esc cancel        │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Edit Mode Keybindings
@@ -293,14 +291,14 @@ Adds selection controls to the Topic Overview. Users can select entire topics or
 | `a`     | Select all            |                                              |
 | `A`     | Deselect all          |                                              |
 | `p`     | Prune selected        | Shows confirmation with token savings        |
-| `enter` | Expand/collapse topic | View individual turns for granular selection |
-| `/`     | Search                | Filter topics/turns                          |
-| `?`     | Show help overlay     |                                              |
+| `enter` | Expand/collapse topic | View individual turns within the topic       |
 | `esc`   | Cancel and return     | Discards selections                          |
+
+Selection is at the topic level. Individual turn selection within a topic is not supported in v1.
 
 #### Prune Confirmation
 
-When `p` is pressed, a confirmation dialog shows: number of turns/topics selected, estimated tokens freed, and a reminder that this rewrites the file and that the user should type `/clear` in Claude Code then resume the session for changes to take effect. The dialog also warns this cannot be undone, though the tool creates a `.bak` backup automatically.
+When `p` is pressed, a confirmation dialog shows: number of topics selected, number of turns to be removed, estimated tokens freed. The body text explains that this rewrites the file and creates a `.bak` backup, and that the user should type `/clear` in Claude Code then resume the session for changes to take effect. Confirmation uses `y/n` keys.
 
 #### Concurrent Access
 
@@ -319,11 +317,11 @@ The pruner enforces strict pairing rules to prevent invalid session files:
 
 ## 4. Global Keybindings & Overlays
 
-These keybindings are available on every screen.
+These keybindings are available on every screen, handled by the root app model.
 
 ### 4.1 Help Overlay (`?`)
 
-Pressing `?` on any screen displays a centered overlay showing all keybindings for the current view. Follows the pattern used by GitHub's dashboard and lazygit. Dismisses on any keypress. Implemented as a reusable Bubbletea component using `bubbles/help` and `bubbles/key`.
+Pressing `?` on any screen displays a centered overlay showing all keybindings for the current view. Dismisses on any keypress. Built on `bubbles/key` binding definitions, rendered with custom formatting.
 
 ```
 ┌──────────────────────────────────────┐
@@ -351,47 +349,40 @@ Pressing `?` on any screen displays a centered overlay showing all keybindings f
 └──────────────────────────────────────┘
 ```
 
-Each screen renders its own help content dynamically via a `KeyMap` interface. The help component reads the active screen's `KeyMap` and renders it.
-
 ### 4.2 Fuzzy Search (`/`)
 
-Pressing `/` on any list screen opens an inline filter bar at the top of the list. As the user types, items are fuzzy-matched in real time and the list filters to show only matching items. Press `esc` to clear the filter and restore the full list. Press `enter` to select the highlighted result and close the filter.
+Pressing `/` on any list screen opens an inline filter bar at the top of the list. As the user types, items are fuzzy-matched in real time and the list filters to show only matching items. Press `esc` to clear the filter and restore the full list.
 
 Uses `github.com/sahilm/fuzzy` for matching. Search targets vary by screen:
 
-- **Session Picker:** Matches against project name and first user message
+- **Session Picker:** Matches against project name and session ID
 - **Topic Overview:** Matches against topic labels and turn content
-- **Replay Mode:** Matches against turn content, jumps to the matching turn
+- **Replay Mode:** Matches against turn content, tool call input, and tool result content. Shows a results panel with excerpts; `enter` jumps to the selected turn.
 
 ### 4.3 Settings (`,`)
 
-Opens a centered popup showing current configuration values. Editable inline with `enter` to confirm changes. Saves to `~/.seshr/config.json`.
+Opens a centered popup showing current configuration values. Editable inline with `enter` or `space` to cycle values. Saves to `~/.seshr/config.json`.
 
 Settings for v1:
 
-| Setting                  | Default         | Description                                 |
-| ------------------------ | --------------- | ------------------------------------------- |
-| `theme`                  | `catppuccin`    | Color scheme                                |
-| `gap_threshold`          | `3m`            | Time gap for topic boundary detection       |
-| `session_dirs`           | (auto-detected) | Additional directories to scan for sessions |
-| `default_context_window` | `200000`        | Context window size for percentage display  |
+| Setting         | Default           | Description                                 |
+| --------------- | ----------------- | ------------------------------------------- |
+| `theme`         | `catppuccin-mocha`| Color scheme (catppuccin-mocha, nord, dracula) |
+| `gap_threshold` | `180`             | Time gap in seconds for topic boundary detection |
 
-**Schema evolution rule:** Unknown fields in the config file are ignored with a `warn` log entry. Missing fields are filled with defaults on load and written back on next save. There is no explicit migration step; adding a field is always backwards-compatible. Removing a field requires bumping a `schema_version` integer (absent → 1) and documenting the change in the release notes.
+**Schema evolution rule:** Unknown fields in the config file are ignored with a `warn` log entry. Missing fields are filled with defaults on load and written back on next save. There is no explicit migration step; adding a field is always backwards-compatible.
 
 ### 4.4 Log Viewer (`L`)
 
-Opens a full-screen viewport showing the tail of `~/.seshr/debug.log`. Scrollable with `j/k` and `g/G` (top/bottom). Press `esc` to close. Useful for debugging parser issues or seeing why a session failed to load.
+Opens a full-screen viewport showing the last 1000 lines of `~/.seshr/debug.log`. Scrollable with `j/k` and `g/G` (top/bottom). Press `esc` or `q` to close. Useful for debugging parser issues or seeing why a session failed to load.
 
 ### 4.5 Backup Restore
 
 Every prune operation writes a `.bak` sibling file next to the original (e.g. `session.jsonl.bak`). If a pruned session fails to resume in Claude Code, the user can restore from backup:
 
-- In the Session Picker, a session with a `.bak` sibling shows a small `↶` indicator next to the token count.
-- Pressing `R` (shift-r) on such a session opens a confirmation dialog: "Restore from backup? This will overwrite the current session file with `<filename>.bak`."
-- On confirm, the `.bak` is copied over the original and the backup is preserved until the next successful prune.
-- If the user prunes again, the old `.bak` is replaced with a fresh one from the pre-prune state.
-
-The restore action is also surfaced in the prune confirmation dialog's success message: "Session pruned. If resume fails, press R on this session to restore."
+- In the Session Picker, a session with a `.bak` sibling shows a small `↶` indicator.
+- Pressing `R` (shift-r) on such a session opens a confirmation dialog: "Restore from backup? This will overwrite the current session file."
+- On confirm, the `.bak` is copied over the original. The backup is preserved until the next prune overwrites it.
 
 ---
 
@@ -401,17 +392,19 @@ Topic clustering is the core intelligence of the tool. It takes a flat list of t
 
 ### 5.1 Clustering Signals
 
-**Time gaps (strongest signal):** If more than 3 minutes elapse between consecutive turns, a new topic boundary is created. Threshold is configurable via settings (`gap_threshold`).
+Each signal produces a score between 0 and its weight. The total score is compared against a boundary threshold (default 0.5).
 
-**File context shifts:** If the set of files referenced in tool calls changes significantly between turns (Jaccard similarity below 0.3 between consecutive file sets), this suggests a topic change.
+**Time gaps (weight 0.45):** If more than the configured gap threshold elapses between consecutive turns, the time-gap signal fires. This is the strongest signal.
 
-**Explicit markers:** User messages containing phrases like "let's move on", "new topic", "switching to", "actually, can you", or "unrelated but" are treated as strong topic boundary signals.
+**File context shifts (weight 0.25):** If the set of files referenced in tool calls changes significantly between turns (Jaccard similarity below 0.3 between consecutive file sets), this suggests a topic change.
 
-**Keyword divergence (weak signal):** Extract the top 5 keywords from each turn using simple frequency analysis. If keyword overlap with the previous turn drops below 20%, this contributes to a boundary score. Only used to confirm boundaries suggested by other signals.
+**Explicit markers (weight 0.15):** User messages containing phrases like "let's move on", "new topic", "switching to", "actually, can you", "switching gears", "change of topic", "different question", "next topic", or "unrelated but" are treated as strong topic boundary signals.
+
+**Keyword divergence (weight 0.15):** Extract keywords from each turn using frequency analysis. If keyword overlap with the previous turn drops below 20%, this contributes to the boundary score. Only used to confirm boundaries suggested by other signals.
 
 ### 5.2 Topic Labels
 
-Generated by extracting the most frequent meaningful keywords from the turns in each topic. For example, if a topic's turns heavily reference "auth", "JWT", and "middleware", the label might be "JWT auth middleware." The first user message is used as a fallback label if keyword extraction produces nothing useful.
+Generated by extracting the top 3 meaningful keywords from the turns in each topic. The first user message content is used as a fallback label if keyword extraction produces nothing useful. Final fallback is "Topic N".
 
 ---
 
@@ -421,19 +414,11 @@ Generated by extracting the most frequent meaningful keywords from the turns in 
 
 ```go
 type SessionParser interface {
-    // Parse reads a session from the given path and returns structured data
-    Parse(path string) (*Session, error)
-
-    // Write writes a modified session back to disk
-    Write(path string, session *Session) error
-
-    // Detect returns true if this parser can handle the given path
-    Detect(path string) bool
-
-    // Source returns a human-readable source name ("Claude Code", "OpenCode")
-    Source() string
+    Parse(ctx context.Context, path string) (*Session, error)
 }
 ```
+
+The Claude parser also provides `Detect(path) bool` and `Source() string` as methods on the concrete type, but these are not part of the interface.
 
 ### 6.2 Claude Code JSONL Format
 
@@ -447,21 +432,17 @@ Each line in a Claude Code JSONL session file is a JSON object with a `type` fie
 | `system`      | System/compaction messages | `message.content`, `isCompactSummary`                                   |
 | `summary`     | Session summary            | Summary text, generated asynchronously                                  |
 
-The parser should ignore unknown types gracefully and log a warning via slog.
+The parser ignores unknown types (e.g. `file-history-snapshot`, `progress`, `hook`) and logs a warning via slog.
 
-#### Session Continuation Chains
+#### Embedded Tool Results
 
-Claude Code sessions can span multiple JSONL files when a session is continued after compaction. To reconstruct a complete conversation:
+Tool results can appear either as top-level records or embedded within assistant message content blocks (with `type: "tool_result"`). The parser extracts embedded tool results and attaches them to the parent assistant turn.
 
-1. Parse all JSONL files in a project directory
-2. For each file, extract the session ID from the filename (strip `.jsonl`)
-3. If the first `sessionId` in the file differs from the filename ID, the first ID is the parent session
-4. Build a parent → child map and follow the chain chronologically
-5. Skip records where `isCompactSummary` is true (synthetic summaries)
+### 6.3 Session Scanning
 
-The parser should present chained sessions as a single logical session in the UI, with a note showing "continued across N files."
+`parser.Scan()` discovers session files by walking the Claude Code projects directory. For each `.jsonl` file, it reads metadata (session ID, project, timestamps, token count, file size) without fully parsing the file. Sessions are grouped by project directory name.
 
-### 6.3 Adding Future Parsers
+### 6.4 Adding Future Parsers
 
 The parser interface is designed so additional formats can be added without modifying existing code. To add a new parser: implement the `SessionParser` interface, add detection logic, and register it in the parser registry. The registry tries each parser's `Detect` method in order until one matches.
 
@@ -469,9 +450,9 @@ The parser interface is designed so additional formats can be added without modi
 
 ## 7. Token Estimation
 
-Seshr estimates token counts for display purposes using a character-based heuristic: divide character count by 3.5 for English text. This gives an approximation within 10-15% of actual Claude tokenization. All token counts are prefixed with `~` in the UI to indicate they are approximate.
+Seshr estimates token counts for display purposes using a character-based heuristic: divide rune count by 3.5 for English text. This gives an approximation within 10-15% of actual Claude tokenization. All token counts are prefixed with `~` in the UI to indicate they are approximate.
 
-If the JSONL records contain actual token usage data (some Claude Code versions include usage fields in assistant messages), the parser should prefer those values over the heuristic.
+If the JSONL records contain actual token usage data (some Claude Code versions include `usage` fields in assistant messages with `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`), the parser prefers those values over the heuristic.
 
 ---
 
@@ -479,56 +460,22 @@ If the JSONL records contain actual token usage data (some Claude Code versions 
 
 ### 8.1 Default Theme: Catppuccin Mocha
 
-Seshr uses Catppuccin Mocha as the default color scheme. It's the most widely adopted terminal color scheme, has excellent contrast, and looks professional across different terminal emulators.
+Seshr uses Catppuccin Mocha as the default color scheme. Three themes are available: `catppuccin-mocha` (default), `nord`, and `dracula`. All colors are defined using `lipgloss.AdaptiveColor` so they degrade gracefully on light terminal backgrounds.
 
-All colors are defined using `lipgloss.AdaptiveColor` so they degrade gracefully on light terminal backgrounds.
-
-```go
-// internal/tui/theme.go
-var Theme = struct {
-    Text        lipgloss.AdaptiveColor // Primary text
-    Subtext     lipgloss.AdaptiveColor // Secondary/dim text
-    Accent      lipgloss.AdaptiveColor // Highlights, active items
-    Surface     lipgloss.AdaptiveColor // Selected row background
-    Overlay     lipgloss.AdaptiveColor // Help overlay background
-    Border      lipgloss.AdaptiveColor // Box borders
-    UserBadge   lipgloss.AdaptiveColor // User message badge
-    AsstBadge   lipgloss.AdaptiveColor // Assistant message badge
-    ToolBadge   lipgloss.AdaptiveColor // Tool call badge
-    ErrorColor  lipgloss.AdaptiveColor // Errors, delete actions
-    TokenBar    lipgloss.AdaptiveColor // Token usage bar fill
-    TokenEmpty  lipgloss.AdaptiveColor // Token usage bar empty
-}{
-    Text:       lipgloss.AdaptiveColor{Light: "#4C4F69", Dark: "#CDD6F4"},
-    Subtext:    lipgloss.AdaptiveColor{Light: "#6C6F85", Dark: "#A6ADC8"},
-    Accent:     lipgloss.AdaptiveColor{Light: "#1E66F5", Dark: "#89B4FA"},
-    Surface:    lipgloss.AdaptiveColor{Light: "#E6E9EF", Dark: "#313244"},
-    Overlay:    lipgloss.AdaptiveColor{Light: "#DCE0E8", Dark: "#1E1E2E"},
-    Border:     lipgloss.AdaptiveColor{Light: "#ACB0BE", Dark: "#585B70"},
-    UserBadge:  lipgloss.AdaptiveColor{Light: "#40A02B", Dark: "#A6E3A1"},
-    AsstBadge:  lipgloss.AdaptiveColor{Light: "#1E66F5", Dark: "#89B4FA"},
-    ToolBadge:  lipgloss.AdaptiveColor{Light: "#DF8E1D", Dark: "#F9E2AF"},
-    ErrorColor: lipgloss.AdaptiveColor{Light: "#D20F39", Dark: "#F38BA8"},
-    TokenBar:   lipgloss.AdaptiveColor{Light: "#1E66F5", Dark: "#89B4FA"},
-    TokenEmpty: lipgloss.AdaptiveColor{Light: "#E6E9EF", Dark: "#313244"},
-}
-```
+The `Theme` struct holds: Background, Foreground, Accent, Muted, Error, plus role badge colors (UserColor, AssistantColor, ToolUseColor, ToolResultColor, AgentColor), palette entries for project gutters (ProjectPalette), and overlay/surface colors for UI elements.
 
 ### 8.2 Theme Switching
 
-Themes are selectable via the settings popup (`,`) or `--theme` CLI flag. v1 ships with three themes: `catppuccin` (default), `nord`, and `dracula`. Themes are defined as structs implementing the same shape as above. The active theme is stored in `~/.seshr/config.json`.
+Themes are selectable via the settings popup (`,`) or `--theme` CLI flag. The active theme is stored in `~/.seshr/config.json`.
 
 ### 8.3 Style Constants
 
-Define all styles in `internal/tui/styles.go` using the theme colors. Never use hardcoded color values in view code — always reference the theme struct. Key styles:
+Base styles are defined in `internal/tui/styles.go` using the Catppuccin Mocha palette. Key styles:
 
-- **Title bar:** Bold, accent foreground, border bottom
-- **Selected row:** Surface background, accent foreground, bold
-- **Role badges:** Colored background with white text, 1-char padding, rounded
-- **Token bars:** Block characters (`█` for filled, `░` for empty) using TokenBar/TokenEmpty colors
-- **Borders:** Rounded border style (`lipgloss.RoundedBorder()`) using Border color
-- **Help overlay:** Overlay background, centered, rounded border, accent-colored header
-- **Footer:** Subtext color, keybinding keys in bold accent
+- **Box borders:** Rounded border style (`lipgloss.RoundedBorder()`) using Surface1 color
+- **Role badges:** Colored foreground with bold text
+- **Selected row:** Project-colored gutter with bold/bright text
+- **Footer:** Dim text for descriptions, accent-colored keys
 
 ---
 
@@ -540,20 +487,20 @@ The TUI must adapt to different terminal sizes. Use `tea.WindowSizeMsg` to detec
 
 **Replay split pane:** The topic sidebar takes 20% of width (minimum 16 columns, maximum 24 columns). The main pane takes the remainder. If the terminal is narrower than 80 columns, hide the sidebar and show topics as a header bar instead.
 
-**Long content:** Use `bubbles/viewport` for scrollable content in the replay main pane and log viewer. Handle word wrapping with `muesli/reflow` based on available width.
+**Long content:** Use `bubbles/viewport` for scrollable content in the replay main pane and log viewer. Word wrapping based on available width.
 
-**Loading states:** Large sessions take time to parse. Show a `bubbles/spinner` with "Parsing session..." while loading. For sessions over 10,000 lines, show a progress indicator.
+**Loading states:** Large sessions take time to parse. Show a `bubbles/spinner` with "Parsing session..." while loading.
 
 ---
 
 ## 9.5 Error UX Standard
 
-All user-facing errors go through a single channel so the app feels consistent.
+Errors are surfaced inline within the current screen:
 
-- **Non-blocking errors** (parse warning, fuzzy search no-match, clipboard failure) → one-line toast at the bottom of the screen for 3 seconds, `ErrorColor` foreground, dismissible with any key. Implemented once in `internal/tui/toast.go` and reused by all screens.
-- **Blocking errors** (file write failed, prune validation failed, config save failed) → centered modal with the error message, a `What happened` / `What to do` pair of lines, and an `[ OK ]` button. Modal state is owned by the root app model.
-- **Log correlation:** Every displayed error writes a matching `error`-level slog entry with the same message and an `err` field. Users can cross-reference in `L` log viewer.
-- **Never** use `fmt.Println` or `log.Fatal` from TUI code — the terminal is owned. Use `tea.Println` only for post-exit output.
+- **Delete errors:** Shown as a red error line below the session list in the picker. Auto-clears.
+- **Prune errors:** Shown in the confirmation dialog or as inline status text in the editor.
+- **Session load errors:** Full-screen error state with the error message and an `esc` to go back prompt.
+- **Log correlation:** Every displayed error writes a matching `error`-level slog entry with the same message and an `err` field.
 
 ---
 
@@ -572,10 +519,8 @@ Seshr uses Cobra for CLI argument parsing.
 | Command / Flag          | Description                    | Default                |
 | ----------------------- | ------------------------------ | ---------------------- |
 | `seshr`                | Launch TUI with session picker | Scans default dirs     |
-| `seshr <file>`         | Open a specific JSONL file     | Goes to Topic Overview |
 | `--dir <path>`          | Scan a custom directory        | Auto-detected          |
-| `--gap-threshold <dur>` | Time gap for topic boundaries  | `3m`                   |
-| `--theme <name>`        | Color theme                    | `catppuccin`           |
+| `--theme <name>`        | Color theme                    | `catppuccin-mocha`     |
 | `--debug`               | Enable debug logging           | `false`                |
 | `--version`             | Print version and exit         |                        |
 
@@ -587,28 +532,20 @@ Seshr uses Cobra for CLI argument parsing.
 
 Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` file should specify `go 1.26`.
 
-> **Note on import paths:** Current Charm library releases use `charm.land/bubbletea/v2` and `charm.land/lipgloss/v2` module paths. Check the latest Charm documentation at release time — if the `charm.land` paths are stable, use those. Otherwise fall back to `github.com/charmbracelet/*`. Pin to specific versions in `go.mod`.
-
 ### 11.2 Dependencies
 
 | Package                           | Purpose                                                             |
 | --------------------------------- | ------------------------------------------------------------------- |
-| `charmbracelet/bubbletea v2`      | TUI framework, application model and event loop                     |
-| `charmbracelet/lipgloss v2`       | Terminal styling, colors, borders, layout                           |
-| `charmbracelet/bubbles`           | Pre-built components: viewport, list, help, key, textinput, spinner |
+| `charmbracelet/bubbletea`         | TUI framework, application model and event loop                     |
+| `charmbracelet/lipgloss`          | Terminal styling, colors, borders, layout                           |
+| `charmbracelet/bubbles`           | Pre-built components: viewport, textinput, spinner, key             |
 | `charmbracelet/glamour`           | Markdown rendering for Claude's responses in replay view            |
-| `muesli/termenv`                  | Terminal capability detection (color depth, background)             |
-| `muesli/reflow`                   | Word wrapping and text truncation                                   |
-| `github.com/spf13/cobra v1`       | CLI argument parsing and subcommands                                |
-| `github.com/stretchr/testify v1`  | Testing: `assert`, `require`, `mock` packages — standard everywhere |
+| `github.com/spf13/cobra`          | CLI argument parsing and subcommands                                |
+| `github.com/stretchr/testify`     | Testing: `assert`, `require` packages — standard everywhere         |
 | `log/slog` (stdlib)               | Structured logging to file (TUI owns stdout)                        |
 | `github.com/sahilm/fuzzy`         | Fuzzy string matching for `/` search                                |
-| `github.com/alecthomas/chroma/v2` | Syntax highlighting for code blocks in replay                       |
 | `github.com/dustin/go-humanize`   | Human-friendly formatting: "2h ago", "47k", "1.2 MB"                |
-| `github.com/fsnotify/fsnotify v1` | OS-native filesystem notifications (future live watching)           |
-| `github.com/gofrs/flock`          | Advisory file locking during prune (SPEC §3.4 concurrent access)    |
-
-**Shared with dotcor:** bubbletea, bubbles, lipgloss, termenv, reflow, sahilm/fuzzy, testify, go-humanize — reuse versions/patterns from there where applicable.
+| `github.com/gofrs/flock`          | Advisory file locking during prune                                  |
 
 **Explicitly not used:** no third-party logging library (stdlib `log/slog` is sufficient), no YAML (config is JSON), no pty/clipboard/diff libraries (not needed for v1 scope).
 
@@ -622,46 +559,20 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - **Levels:** `info` by default, `debug` when `--debug` is passed. `warn` for recoverable parser issues (unknown JSONL types, malformed records skipped). `error` for failures the user should see (file read errors, prune validation failures) — these also surface in the UI, never only in the log.
 - **Structured fields:** Use key/value pairs, not formatted strings. Prefer `slog.Info("parsed session", "path", p, "turns", n)` over `slog.Info(fmt.Sprintf(...))`.
 - **Standard keys:** `path` (file path), `session_id`, `turns`, `topics`, `duration_ms`, `err`. Keep keys consistent across the codebase so log grep works.
-- **Logger passing:** Create once at startup, set via `slog.SetDefault`. Packages call `slog.Info/Debug` directly — no per-struct logger fields unless a package needs a scoped logger with preset attrs.
 - **No secrets or full message content:** log metadata (turn counts, IDs, sizes), not the raw conversation. Session content can include sensitive data from the user's work.
-
-```go
-logFile, _ := os.OpenFile(
-    filepath.Join(home, ".seshr", "debug.log"),
-    os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644,
-)
-handler := slog.NewTextHandler(logFile, &slog.HandlerOptions{
-    Level: slog.LevelInfo,
-})
-slog.SetDefault(slog.New(handler))
-```
 
 ### 11.4 Testing
 
-**Framework:** `github.com/stretchr/testify` is the project's testing library. All tests use it — do not mix in other assertion libraries or write raw `if got != want { t.Fatalf(...) }` style checks. Consistency matters more than the specific choice.
+**Framework:** `github.com/stretchr/testify` is the project's testing library. All tests use it — do not mix in other assertion libraries or write raw `if got != want { t.Fatalf(...) }` style checks.
 
 **Conventions:**
 
 - `testify/require` for assertions that must pass before continuing (fail-fast: parse succeeded, file exists, no error returned).
 - `testify/assert` for non-critical checks where the test should keep running to surface multiple failures.
-- `testify/mock` for mocking the `SessionParser` interface and other boundaries.
 - Table-driven tests for parser and clustering logic — each case gets a `name` field used as the subtest name.
 - Test files sit next to the code they test (`claude_test.go` beside `claude.go`).
 - `testdata/` holds sample JSONL fixtures. Fixtures are checked in, not generated.
 - Run tests with `go test ./...` before any commit (see CLAUDE.md pre-commit gate).
-
-```go
-func TestClaudeParser_ParseUserMessage(t *testing.T) {
-    require := require.New(t)
-
-    session, err := parser.Parse("testdata/simple.jsonl")
-    require.NoError(err)
-    require.Len(session.Turns, 4)
-
-    assert.Equal(t, "user", session.Turns[0].Role)
-    assert.Contains(t, session.Turns[0].Content, "build a REST API")
-}
-```
 
 ### 11.5 Go Best Practices
 
@@ -676,70 +587,7 @@ func TestClaudeParser_ParseUserMessage(t *testing.T) {
 
 ---
 
-## 12. Implementation Roadmap
-
-Phases are executed sequentially by AI agents. Each phase must be fully complete (including tests) before moving to the next. Plan files in `docs/plans/` use the same numbering — `PHASE_1_SCAFFOLDING.md` through `PHASE_7_LAUNCH.md`.
-
-### Phase 1: Scaffolding
-
-- Set up Go project with Bubbletea boilerplate
-- Set up slog logging and config file
-- Project skeleton, tooling, empty stub packages
-
-### Phase 2: Foundation (Parser & Picker)
-
-- Implement Claude Code JSONL parser (`types.go`, `claude.go`)
-- Implement token estimation (`estimate.go`) — prefer `usage` fields when present, fall back to char heuristic
-- Build Session Picker screen with session scanning
-- Session deletion with confirmation dialog
-
-### Phase 3: Topic Clustering
-
-- Implement time-gap based clustering
-- Add file-context shift detection
-- Add explicit marker detection
-- Implement topic labeling
-- Build Topic Overview screen
-- Add loading spinner for large sessions
-
-### Phase 4: Replay Mode
-
-- Build split-pane replay view with topic sidebar
-- Add syntax highlighting via chroma
-- Add markdown rendering via glamour
-- Implement auto-play with configurable speed
-- Add topic jumping and thinking block toggle
-- Add expandable tool results viewport
-
-### Phase 5: Edit Mode
-
-- Add selection checkboxes to Topic Overview
-- Implement safe message pairing logic
-- Build pruner with JSONL rewriting
-- Add `.bak` backup file creation
-- Add confirmation dialog with token savings
-- Add backup restore flow (see §4.5)
-
-### Phase 6: Polish & Global Features
-
-- Implement `?` help overlay component
-- Implement `/` fuzzy search with sahilm/fuzzy
-- Implement `,` settings popup
-- Implement `L` log viewer
-- Add Catppuccin, Nord, Dracula themes
-- Add responsive layout handling
-
-### Phase 7: Launch
-
-- Write README with screenshots and GIF demos
-- Create goreleaser config and Homebrew formula
-- Add session continuation chain support for Claude Code
-- Submit to awesome-claude-code list
-- Write launch blog post / social thread
-
----
-
-## 13. Future Features (Post-Launch)
+## 12. Future Features (Post-Launch)
 
 These are explicitly out of scope for v1 but are natural extensions:
 
@@ -748,19 +596,19 @@ These are explicitly out of scope for v1 but are natural extensions:
 - **Additional parsers:** LangChain traces, Cursor conversation logs, generic JSONL agent logs.
 - **Session comparison:** Side-by-side diff of two sessions to understand how different approaches played out.
 - **Export:** Generate clean markdown or HTML reports from sessions for documentation or sharing.
-- **Token budget visualization:** Show how token usage maps against different model context windows (200k, 1M).
-- **PreCompact hook integration:** Optionally install a Claude Code hook that injects a "deprioritize" instruction for topics marked for pruning.
+- **Session continuation chains:** Reconstruct multi-file sessions from Claude Code's compaction continuation chains.
+- **Individual turn selection in editor:** Allow selecting specific turns within a topic for more granular pruning.
+- **Word wrap toggle in replay:** Toggle between wrapped and horizontal-scroll display of long lines.
 
 ---
 
-## 14. Risks & Mitigations
+## 13. Risks & Mitigations
 
 | Risk                                        | Impact                               | Mitigation                                                                                                              |
 | ------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| JSONL format changes in Claude Code updates | Parser breaks, sessions fail to load | Pin parser to known format versions. Add format detection with fallback to raw display. Monitor Claude Code changelogs. |
-| Large session files (100k+ lines)           | Slow parsing, high memory usage      | Stream-parse JSONL instead of loading entire file. Show spinner/progress during parse. Paginate displayed turns.        |
-| Accidental deletion of important sessions   | Data loss                            | Require confirmation dialog. Create `.bak` backup before any write. Show undo hint after deletion.                      |
+| JSONL format changes in Claude Code updates | Parser breaks, sessions fail to load | Pin parser to known format types. Ignore unknown types gracefully with warning logs. Monitor Claude Code changelogs.    |
+| Large session files (100k+ lines)           | Slow parsing, high memory usage      | Stream-parse JSONL instead of loading entire file. Show spinner during parse. Paginate displayed turns.                 |
+| Accidental deletion of important sessions   | Data loss                            | Require confirmation dialog. Create `.bak` backup before any write.                                                      |
 | Invalid JSONL after pruning breaks resume   | Session cannot be resumed            | Enforce strict message pairing rules. Validate output structure before writing. Always keep `.bak`.                     |
 | Topic clustering produces poor groupings    | Confusing UI                         | Make clustering configurable (`gap_threshold`). Allow manual topic boundary insertion in future version.                |
 | Charm library import path migration         | Build failures                       | Pin exact versions in go.mod. Document which import paths are used.                                                     |
-
