@@ -373,6 +373,10 @@ func (p Picker) renderGroupedList(width int) string {
 			meta := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
 			g := p.groups[row.GroupIdx]
 			b.WriteString(p.renderSessionRow(meta, g.Color, i == p.cursor, width))
+			if i+1 < len(p.flatRows) && p.flatRows[i+1].Kind == RowGroup {
+				b.WriteByte('\n')
+				linesUsed++
+			}
 		}
 		linesUsed += h
 	}
@@ -384,9 +388,6 @@ func (p Picker) renderGroupedList(width int) string {
 // 1 line. Gutters line up vertically across adjacent rows so a whole project
 // visually reads as one connected bar on the left.
 func rowHeight(kind RowKind) int {
-	if kind == RowGroup {
-		return 2
-	}
 	return 1
 }
 
@@ -433,10 +434,7 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 		gap = 4
 	}
 	line1 := left + strings.Repeat(" ", gap) + right
-	// Second line keeps the colored gutter so the project bar reads as a
-	// chunkier, taller block. Visually connects to the next row's gutter.
-	line2 := gutter
-	return line1 + "\n" + line2
+	return line1
 }
 
 func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
