@@ -35,3 +35,11 @@ func Init(debug bool) error {
 	slog.SetDefault(slog.New(handler))
 	return nil
 }
+
+// Close flushes and closes the log file. Safe to call multiple times.
+func Close() {
+	if logFile != nil {
+		_ = logFile.Close()
+		logFile = nil
+	}
+}

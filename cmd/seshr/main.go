@@ -37,6 +37,7 @@ func main() {
 			if err := logging.Init(debug); err != nil {
 				return fmt.Errorf("init logger: %w", err)
 			}
+			defer logging.Close()
 			slog.Info("seshr starting", "version", version.Version, "debug", debug)
 
 			cfg, err := config.Load()
