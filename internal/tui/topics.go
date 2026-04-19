@@ -958,27 +958,85 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 			dur = time.Second
 		}
 	}
-	lines := []string{
-		"── stats ──",
-		fmt.Sprintf("total: ~%s tokens",
-			humanize.Comma(int64(sess.TokenCount))),
-		fmt.Sprintf("user: %d turns / ~%s tok",
-			roleCounts[parser.RoleUser], humanize.Comma(int64(roleTokens[parser.RoleUser]))),
-		fmt.Sprintf("assistant: %d turns / ~%s tok",
-			roleCounts[parser.RoleAssistant], humanize.Comma(int64(roleTokens[parser.RoleAssistant]))),
-		fmt.Sprintf("tool calls: %d · tool results: %d", tools, roleCounts[parser.RoleToolResult]),
-		fmt.Sprintf("%s · %s session · %d topic files",
-			countLabel(len(tops), "topic"), dur, len(fileSet)),
+	if dur < 0 {
+		dur = -dur
 	}
+
+	totalTok := sess.TokenCount
+	if totalTok == 0 {
+		totalTok = 1
+	}
+
+	// Visual token distribution bar using Unicode block characters.
+	const barWidth = 30
+	userW := (roleTokens[parser.RoleUser] * barWidth) / totalTok
+	asstW := (roleTokens[parser.RoleAssistant] * barWidth) / totalTok
+	toolW := barWidth - userW - asstW
+	if toolW < 0 {
+		toolW = 0
+	}
+
+	bar := lipgloss.NewStyle().Foreground(colGreen).Render(strings.Repeat("█", userW)) +
+		lipgloss.NewStyle().Foreground(colBlue).Render(strings.Repeat("█", asstW)) +
+		lipgloss.NewStyle().Foreground(colLavender).Render(strings.Repeat("█", toolW))
+
+	var lines []string
+	lines = append(lines, "")
+	lines = append(lines, fmt.Sprintf("  total: ~%s tokens · %d turns · %s",
+		humanize.Comma(int64(totalTok)), len(sess.Turns), dur))
+	lines = append(lines, "  "+bar)
+	lines = append(lines, fmt.Sprintf("  %s user · %s assistant · %s tool results",
+		lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleUser])))),
+		lipgloss.NewStyle().Foreground(colBlue).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleAssistant])))),
+		lipgloss.NewStyle().Foreground(colLavender).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleToolResult])))),
+	))
+
+	lines = append(lines, "")
+	lines = append(lines, fmt.Sprintf("  %s · %d tool calls · %d files",
+		countLabel(len(tops), "topic"), tools, len(fileSet)))
+
 	if n := len(sess.CompactBoundaries); n > 0 {
 		last := sess.CompactBoundaries[n-1]
-		compLine := fmt.Sprintf("compactions: %d (last: %s", n, last.Trigger)
+		compLine := fmt.Sprintf("  compactions: %d (last: %s", n, last.Trigger)
 		if last.PreTokens > 0 {
 			compLine += fmt.Sprintf(", %s tok", humanize.Comma(int64(last.PreTokens)))
 		}
 		compLine += ")"
 		lines = append(lines, compLine)
 	}
+
+	// Top topics by token count — helps the user decide what to prune.
+	if len(tops) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, dimStyle.Render("  ── top topics ──"))
+		sorted := make([]topics.Topic, len(tops))
+		copy(sorted, tops)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].TokenCount > sorted[j].TokenCount
+		})
+		limit := len(sorted)
+		if limit > 5 {
+			limit = 5
+		}
+		maxTok := sorted[0].TokenCount
+		if maxTok == 0 {
+			maxTok = 1
+		}
+		const topicBarWidth = 16
+		for _, t := range sorted[:limit] {
+			barW := (t.TokenCount * topicBarWidth) / maxTok
+			if barW < 1 {
+				barW = 1
+			}
+			tokBar := lipgloss.NewStyle().Foreground(colMauve).Render(strings.Repeat("■", barW))
+			lines = append(lines, fmt.Sprintf("  %-30s %s ~%s",
+				truncate(t.Label, 30),
+				tokBar,
+				humanize.Comma(int64(t.TokenCount)),
+			))
+		}
+	}
+
 	return st.Hint.Render(strings.Join(lines, "\n"))
 }
 
