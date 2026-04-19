@@ -458,7 +458,7 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 	}
 	id := idStyle.Render(truncate(m.ID, 20))
 
-	sessMetaStyle := lipgloss.NewStyle().Foreground(colOverlay1)
+	sessMetaStyle := lipgloss.NewStyle().Foreground(colSubtext0)
 	tokStr := sessMetaStyle.Render(humanizeTokens(int64(m.TokenCount)))
 
 	backup := ""
