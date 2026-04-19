@@ -437,7 +437,11 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
 	// Faint project-colored gutter carries through into session rows so the
 	// whole project reads as one connected bar on the left.
-	gutter := lipgloss.NewStyle().Foreground(projectColor).Faint(true).Render("▌")
+	gutterStyle := lipgloss.NewStyle().Foreground(projectColor).Bold(true)
+	if !selected {
+		gutterStyle = lipgloss.NewStyle().Foreground(projectColor).Faint(true)
+	}
+	gutter := gutterStyle.Render("▌")
 
 	glyphStyle := lipgloss.NewStyle().Foreground(colOverlay1)
 	if selected {
