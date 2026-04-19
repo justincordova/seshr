@@ -408,9 +408,10 @@ func (o Overview) topicBodyHeight() int {
 	if mainH < 6 {
 		mainH = 6
 	}
-	// Panel border (2) + title row (1) + spacing = 5 lines outside body.
-	// This matches renderTopicPanel: bodyH := height - 5.
-	bodyH := mainH - 5
+	// Panel consumes: title row (1) + top border (1) + bottom border (1) = 3.
+	// The remaining `mainH - 3` lines are the box interior available to the
+	// topic list. Must match renderTopicPanel exactly.
+	bodyH := mainH - 3
 	if bodyH < 1 {
 		bodyH = 1
 	}
@@ -657,7 +658,9 @@ func (o Overview) renderTopicPanel(width, height int) string {
 		dimStyle.Render("·"),
 		dimStyle.Render(shortID(o.sess.ID)),
 	)
-	bodyH := height - 5
+	// Panel uses: title (1) + top border (1) + bottom border (1) = 3 lines.
+	// Remaining lines are the box interior available to the topic list.
+	bodyH := height - 3
 	if bodyH < 2 {
 		bodyH = len(o.topics)*3 + 10
 	}
