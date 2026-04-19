@@ -4,8 +4,6 @@ import "github.com/charmbracelet/lipgloss"
 
 // Theme holds the color palette used across the TUI. All styles must reference
 // a Theme field — no hardcoded colors elsewhere.
-//
-// TODO(phase-6): add Nord and Dracula variants; wire selection via settings.
 type Theme struct {
 	Name       string
 	Background lipgloss.AdaptiveColor
