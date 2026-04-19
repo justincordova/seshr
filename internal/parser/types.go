@@ -22,29 +22,40 @@ const (
 	RoleSummary    Role = "summary"
 )
 
+// CompactBoundary marks where a /compact call occurred. Turns before the
+// boundary are inactive context — Claude Code ignores them on resume.
+type CompactBoundary struct {
+	TurnIndex  int    // index of the first turn AFTER this boundary
+	Trigger    string // "manual" or "auto"
+	PreTokens  int    // token count before compaction
+	DurationMs int    // how long compaction took
+}
+
 // Session is a parsed agent conversation. See SPEC.md §6.
 type Session struct {
-	ID           string
-	Path         string
-	Source       Source
-	CreatedAt    time.Time
-	ModifiedAt   time.Time
-	TokenCount   int
-	Turns        []Turn
-	ChainedFiles []string // populated only when continuation chains are reconstructed (Phase 7)
+	ID                string
+	Path              string
+	Source            Source
+	CreatedAt         time.Time
+	ModifiedAt        time.Time
+	TokenCount        int
+	Turns             []Turn
+	ChainedFiles      []string          // populated only when continuation chains are reconstructed (Phase 7)
+	CompactBoundaries []CompactBoundary // one per /compact call, ordered by position
 }
 
 // Turn is a single role-tagged exchange within a session.
 type Turn struct {
-	Role             Role
-	Timestamp        time.Time
-	Content          string     // flattened text (assistant text blocks joined; user raw)
-	ToolCalls        []ToolCall // tool_use blocks within an assistant turn
-	ToolResults      []ToolResult
-	Thinking         string // extended-thinking block text, empty if none
-	RawIndex         int    // 0-based index of the originating JSONL line; used by pruner
-	ExtraLineIndices []int  // file line numbers of attached tool_result records
-	Tokens           int    // from message.usage when present, else heuristic
+	Role                  Role
+	Timestamp             time.Time
+	Content               string     // flattened text (assistant text blocks joined; user raw)
+	ToolCalls             []ToolCall // tool_use blocks within an assistant turn
+	ToolResults           []ToolResult
+	Thinking              string // extended-thinking block text, empty if none
+	RawIndex              int    // 0-based index of the originating JSONL line; used by pruner
+	ExtraLineIndices      []int  // file line numbers of attached tool_result records
+	Tokens                int    // from message.usage when present, else heuristic
+	IsCompactContinuation bool   // true for the "This session is being continued..." message
 }
 
 // ToolCall is a single tool_use block within an assistant turn.

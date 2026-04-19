@@ -144,6 +144,71 @@ func TestCluster_SystemAndSummaryTurns_Excluded(t *testing.T) {
 	assert.Equal(t, []int{0, 2}, got[0].TurnIndices)
 }
 
+func TestCluster_CompactBoundary_ForcesHardSplit(t *testing.T) {
+	// Arrange: two turns very close together in time (would normally be one topic),
+	// but a compact boundary sits between them.
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "set up express", 10),
+		asstTurn(base.Add(1*time.Second), "express done", 8),
+		userTurn(base.Add(2*time.Second), "add rate limiting", 10),
+		asstTurn(base.Add(3*time.Second), "rate limiting added", 8),
+	)
+	// Compact boundary between index 1 and index 2 (TurnIndex=2)
+	s.CompactBoundaries = []parser.CompactBoundary{
+		{TurnIndex: 2, Trigger: "manual", PreTokens: 1000},
+	}
+
+	// Act
+	got := topics.Cluster(s, topics.DefaultOptions())
+
+	// Assert: must split at boundary regardless of scores
+	require.Len(t, got, 2)
+	assert.Equal(t, []int{0, 1}, got[0].TurnIndices)
+	assert.Equal(t, []int{2, 3}, got[1].TurnIndices)
+}
+
+func TestCluster_CompactBoundary_DoesNotSplitWithinSameGroup(t *testing.T) {
+	// A boundary at TurnIndex=0 should not create an empty group —
+	// if it points to the very first turn it's a no-op for splitting.
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "hello", 5),
+		asstTurn(base.Add(1*time.Second), "hi", 3),
+	)
+	s.CompactBoundaries = []parser.CompactBoundary{
+		{TurnIndex: 0, Trigger: "manual"},
+	}
+
+	got := topics.Cluster(s, topics.DefaultOptions())
+	// TurnIndex 0 is the first element in indices; the loop starts at k=1,
+	// so the boundary only triggers splits for k > 0. With TurnIndex=0
+	// nothing is split by the boundary.
+	require.Len(t, got, 1)
+}
+
+func TestCluster_MultipleCompactBoundaries_MultipleSplits(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	s := session(
+		userTurn(base, "topic a", 5),
+		asstTurn(base.Add(1*time.Second), "done a", 3),
+		userTurn(base.Add(2*time.Second), "topic b", 5),
+		asstTurn(base.Add(3*time.Second), "done b", 3),
+		userTurn(base.Add(4*time.Second), "topic c", 5),
+		asstTurn(base.Add(5*time.Second), "done c", 3),
+	)
+	s.CompactBoundaries = []parser.CompactBoundary{
+		{TurnIndex: 2, Trigger: "manual"},
+		{TurnIndex: 4, Trigger: "auto"},
+	}
+
+	got := topics.Cluster(s, topics.DefaultOptions())
+	require.Len(t, got, 3)
+	assert.Equal(t, []int{0, 1}, got[0].TurnIndices)
+	assert.Equal(t, []int{2, 3}, got[1].TurnIndices)
+	assert.Equal(t, []int{4, 5}, got[2].TurnIndices)
+}
+
 func TestCluster_MultiTopicFixture_ThreeBoundaries(t *testing.T) {
 	// Arrange
 	p := parser.NewClaude()

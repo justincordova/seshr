@@ -73,6 +73,25 @@ func (m Editor) tokensFreed() int {
 	return sum
 }
 
+// selectionContext classifies selected topics as pre-compact or active.
+// Returns (preCompactCount, preCompactTokens, activeCount, activeTokens).
+func (m Editor) selectionContext() (preCount, preTok, activeCount, activeTok int) {
+	for i, sel := range m.selected {
+		if !sel || i < 0 || i >= len(m.topics) {
+			continue
+		}
+		top := m.topics[i]
+		if isPreCompact(m.sess, top) {
+			preCount++
+			preTok += top.TokenCount
+		} else {
+			activeCount++
+			activeTok += top.TokenCount
+		}
+	}
+	return
+}
+
 func (m Editor) currentSelection() editor.Selection {
 	sel := editor.Selection{Topics: map[int]bool{}}
 	for i, v := range m.selected {
@@ -158,11 +177,32 @@ func (m Editor) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		sel := m.currentSelection()
-		body := fmt.Sprintf("%d topics · %d turns · ~%s tokens freed\n\nThis rewrites the file and creates a .bak backup.\nType /clear in Claude Code then resume for changes to take effect.",
-			m.selectedCount(), len(sel.Turns), humanize.Comma(int64(m.tokensFreed())))
+		preCount, preTok, activeCount, activeTok := m.selectionContext()
+		var confirmTitle, confirmBody string
+		if activeCount == 0 {
+			// All pre-compact
+			confirmTitle = fmt.Sprintf("Prune %d pre-compact topics?", preCount)
+			confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n✓ These are not in the active context and can be safely removed.\nA .bak backup will be created automatically.",
+				len(sel.Turns), humanize.Comma(int64(preTok)))
+		} else {
+			confirmTitle = fmt.Sprintf("Prune %d topics?", m.selectedCount())
+			if preCount > 0 {
+				// Mixed
+				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
+					len(sel.Turns),
+					humanize.Comma(int64(m.tokensFreed())),
+					humanize.Comma(int64(activeTok)))
+			} else {
+				// All active
+				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
+					len(sel.Turns),
+					humanize.Comma(int64(activeTok)),
+					humanize.Comma(int64(activeTok)))
+			}
+		}
 		m.confirm = &Confirm{
-			title:  "Prune selected topics?",
-			body:   body,
+			title:  confirmTitle,
+			body:   confirmBody,
 			styles: m.styles,
 		}
 		return m, nil
@@ -242,11 +282,51 @@ func (m Editor) renderTopicList(width, maxLines int) string {
 
 func (m Editor) renderDetailPanel(width, height int) string {
 	sel := m.currentSelection()
-	title := dimStyle.Render(
-		fmt.Sprintf("%d topics · %d turns · ~%s tokens freed",
-			m.selectedCount(), len(sel.Turns), humanize.Comma(int64(m.tokensFreed()))),
-	)
-	body := "\n" + title + "\n"
+	preCount, preTok, activeCount, activeTok := m.selectionContext()
+	total := m.selectedCount()
+
+	// Line 1: counts and tokens
+	var line1 string
+	if total == 0 {
+		line1 = fmt.Sprintf("%d topics selected · ~0 tokens freed", total)
+	} else if preCount > 0 && activeCount > 0 {
+		// Mixed selection
+		line1 = fmt.Sprintf("%d topics selected · ~%s tokens freed (~%s pre-compact, ~%s active)",
+			total,
+			humanize.Comma(int64(m.tokensFreed())),
+			humanize.Comma(int64(preTok)),
+			humanize.Comma(int64(activeTok)),
+		)
+	} else {
+		noun := "topics"
+		if total == 1 {
+			noun = "topic"
+		}
+		line1 = fmt.Sprintf("%d %s selected · ~%s tokens freed",
+			total, noun, humanize.Comma(int64(m.tokensFreed())))
+		_ = len(sel.Turns) // suppress unused warning
+	}
+
+	// Line 2: safety indicator
+	var line2 string
+	switch {
+	case total == 0:
+		line2 = ""
+	case activeCount == 0:
+		// All pre-compact — safe
+		line2 = successStyle.Render("✓ Safe to prune — not in active context")
+	case preCount == 0:
+		// All active — warn
+		line2 = m.styles.Error.Render("⚠ Warning: these turns are in the active context")
+	default:
+		// Mixed
+		line2 = m.styles.Error.Render("⚠ Includes active context turns — requires /clear before resume")
+	}
+
+	body := "\n" + dimStyle.Render(line1) + "\n"
+	if line2 != "" {
+		body += line2 + "\n"
+	}
 	if m.status != "" {
 		if m.pruning || strings.HasPrefix(m.status, "pruned") {
 			body += successStyle.Render(m.status)

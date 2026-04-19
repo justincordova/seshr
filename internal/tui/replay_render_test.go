@@ -155,7 +155,7 @@ func TestRenderSidebar_ActiveHighlighted(t *testing.T) {
 		{Label: "House"},
 	}
 
-	got := tui.RenderSidebar(topicsList, 1, 20, th)
+	got := tui.RenderSidebar(nil, topicsList, 1, 20, th)
 
 	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
 	require.Len(t, lines, 3)

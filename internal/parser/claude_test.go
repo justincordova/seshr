@@ -187,6 +187,55 @@ func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
 	}
 }
 
+func TestClaude_Parse_CompactBoundary_Detected(t *testing.T) {
+	// Arrange
+	p := parser.NewClaude()
+
+	// Act
+	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, s.CompactBoundaries, 1)
+	cb := s.CompactBoundaries[0]
+	assert.Equal(t, 2, cb.TurnIndex, "boundary should point to first turn after compaction")
+	assert.Equal(t, "manual", cb.Trigger)
+	assert.Equal(t, 141000, cb.PreTokens)
+	assert.Equal(t, 142000, cb.DurationMs)
+}
+
+func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
+	// Arrange
+	p := parser.NewClaude()
+
+	// Act
+	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
+
+	// Assert
+	require.NoError(t, err)
+	var found bool
+	for _, turn := range s.Turns {
+		if turn.IsCompactContinuation {
+			found = true
+			assert.Equal(t, parser.RoleUser, turn.Role)
+			assert.Contains(t, turn.Content, "This session is being continued")
+		}
+	}
+	assert.True(t, found, "one turn should be marked as compact continuation")
+}
+
+func TestClaude_Parse_NoCompactBoundary_EmptySlice(t *testing.T) {
+	// Arrange
+	p := parser.NewClaude()
+
+	// Act
+	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
+
+	// Assert
+	require.NoError(t, err)
+	assert.Empty(t, s.CompactBoundaries)
+}
+
 func TestClaude_Parse_EmbeddedToolResult_BlockArrayContent(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/test.jsonl"

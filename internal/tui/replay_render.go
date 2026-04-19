@@ -250,10 +250,12 @@ func wrapLine(line string, contentW int) string {
 
 // RenderSidebar renders the topic list column for Replay mode.
 // active is the index of the currently-playing topic; -1 for none.
-func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
+// sess is used to determine compact boundary positions for dividers.
+func RenderSidebar(sess *parser.Session, ts []topics.Topic, active, width int, th Theme) string {
 	if width < 4 {
 		width = 4
 	}
+	dividerAfter := compactDividerAfter(sess, ts)
 	var b strings.Builder
 	for i, t := range ts {
 		label := fmt.Sprintf("%d. %s", i+1, t.Label)
@@ -263,6 +265,10 @@ func RenderSidebar(ts []topics.Topic, active, width int, th Theme) string {
 			b.WriteString(dimStyle.Render(truncate("  "+label, width)))
 		}
 		b.WriteByte('\n')
+		if _, ok := dividerAfter[i]; ok {
+			b.WriteString(lipgloss.NewStyle().Foreground(th.Accent).Render(strings.Repeat("─", width)))
+			b.WriteByte('\n')
+		}
 	}
 	return b.String()
 }

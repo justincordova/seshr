@@ -199,9 +199,28 @@ The core screen and shared foundation for both Replay and Edit modes. Displays t
 | `tab`          | Toggle stats panel          | Right-side aggregate stats    |
 | `esc`          | Back to Session Picker      |                               |
 
+#### Compact Boundary Dividers
+
+When a session contains one or more `/compact` calls, a divider is inserted in the topic list between the last pre-compact topic and the first post-compact topic:
+
+```
+  1. Project setup & Express init         ░
+     turns 1–5 · 8 tool calls · 12 min
+
+  2. Authentication with JWT              ░
+     turns 6–11 · 4 tool calls · 9 min
+
+  ── compacted ─ manual · 141,000 tok · 2m 22s ──────────────
+
+  3. Where to buy a house
+     turns 12–13 · 0 tool calls · 2 min
+```
+
+Pre-compact topics (those whose turns all precede the earliest boundary) are rendered dimmed with an `░` right-margin indicator. They remain selectable and expandable. The compact divider is styled with the theme accent color. Multiple `/compact` calls each produce their own divider.
+
 #### Stats Panel
 
-When toggled on, the right side shows: total token count, breakdown by role (user turns/tokens, assistant turns/tokens), tool call and tool result counts, number of topics detected, total session duration, and number of unique files touched.
+When toggled on, the right side shows: total token count, breakdown by role (user turns/tokens, assistant turns/tokens), tool call and tool result counts, number of topics detected, total session duration, and number of unique files touched. If the session has compact boundaries, a `Compactions: N (last: trigger, tok)` line is also shown.
 
 ### 3.3 Replay Mode
 
@@ -240,9 +259,18 @@ Each turn in replay shows:
 - **Tool results:** Truncated to 20 lines by default. Press `enter` on a tool result to expand it in a full-screen viewport. Press `esc` to return.
 - **Thinking blocks:** Collapsed by default, toggled with `t`. Rendered in dim text.
 
-#### Compact Mode
+#### Slim Mode
 
-Press `c` to toggle compact mode, which hides non-Agent tool calls and tool results. This lets you focus on the conversation flow without tool noise. An indicator badge appears in the header when active.
+Press `c` to toggle slim mode (previously called "compact mode"), which hides non-Agent tool calls and tool results. This lets you focus on the conversation flow without tool noise. An indicator badge (`slim`) appears in the header when active.
+
+#### Pre-compact Badges and Continuation Summary
+
+- **Pre-compact turns:** Each turn whose index falls before the earliest compact boundary shows a dim `pre-compact` label in the turn header.
+- **Continuation summary:** The user message that begins with "This session is being continued from a previous conversation…" is rendered collapsed by default with a `continuation summary` badge instead of the normal USER badge. Press `enter` to expand the full summary in a viewport.
+
+#### Sidebar Compact Dividers
+
+The topic sidebar in wide mode inserts an accent-colored horizontal rule between the last pre-compact topic and the first post-compact topic, matching the Topic Overview divider style.
 
 #### Sidebar Focus
 
@@ -250,20 +278,20 @@ Press `tab` to toggle focus between the main content and the topic sidebar. When
 
 #### Replay Keybindings
 
-| Key        | Action                 | Notes                                  |
-| ---------- | ---------------------- | -------------------------------------- |
-| `→` or `l` | Next turn              |                                        |
-| `←` or `h` | Previous turn          |                                        |
-| `space`    | Toggle auto-play       | Steps at configurable speed            |
-| `+` / `-`  | Adjust auto-play speed | Only during auto-play                  |
-| `]`        | Jump to next topic     |                                        |
-| `[`        | Jump to previous topic |                                        |
-| `t`        | Toggle thinking blocks | Show/hide extended thinking            |
-| `c`        | Toggle compact mode    | Hide non-Agent tool calls/results      |
-| `tab`      | Toggle sidebar focus   | Navigate topic list in sidebar         |
-| `enter`    | Expand tool result     | Full-screen viewport for large results |
-| `/`        | Search within session  | Shows results panel, jumps on enter    |
-| `esc`      | Back to Topic Overview | Or close expanded tool result / search |
+| Key        | Action                 | Notes                                            |
+| ---------- | ---------------------- | ------------------------------------------------ |
+| `→` or `l` | Next turn              |                                                  |
+| `←` or `h` | Previous turn          |                                                  |
+| `space`    | Toggle auto-play       | Steps at configurable speed                      |
+| `+` / `-`  | Adjust auto-play speed | Only during auto-play                            |
+| `]`        | Jump to next topic     |                                                  |
+| `[`        | Jump to previous topic |                                                  |
+| `t`        | Toggle thinking blocks | Show/hide extended thinking                      |
+| `c`        | Toggle slim mode       | Hide non-Agent tool calls/results                |
+| `tab`      | Toggle sidebar focus   | Navigate topic list in sidebar                   |
+| `enter`    | Expand tool/summary    | Full-screen viewport for tool results or continuation summary |
+| `/`        | Search within session  | Shows results panel, jumps on enter              |
+| `esc`      | Back to Topic Overview | Or close expanded tool result / search           |
 
 ### 3.4 Edit Mode
 
@@ -296,9 +324,36 @@ Adds selection controls to the Topic Overview. Users select entire topics to pru
 
 Selection is at the topic level. Individual turn selection within a topic is not supported in v1.
 
+#### Context-Aware Footer
+
+The selection detail panel shows two lines:
+
+1. Count and token breakdown. If the selection includes both pre-compact and active topics: `3 topics selected · ~30,200 tokens freed (~20,600 pre-compact, ~9,600 active)`.
+2. Safety indicator:
+   - `✓ Safe to prune — not in active context` (all pre-compact)
+   - `⚠ Warning: these turns are in the active context` (all active)
+   - `⚠ Includes active context turns — requires /clear before resume` (mixed)
+
 #### Prune Confirmation
 
-When `p` is pressed, a confirmation dialog shows: number of topics selected, number of turns to be removed, estimated tokens freed. The body text explains that this rewrites the file and creates a `.bak` backup, and that the user should type `/clear` in Claude Code then resume the session for changes to take effect. Confirmation uses `y/n` keys.
+When `p` is pressed, a context-aware confirmation dialog appears:
+
+**All pre-compact selection:**
+```
+  Prune 2 pre-compact topics?
+  Turns removed: 11 (~20,600 tokens)
+  ✓ These are not in the active context and can be safely removed.
+  A .bak backup will be created automatically.
+```
+
+**Includes active context:**
+```
+  Prune 3 topics?
+  Turns removed: 15 (~30,200 tokens)
+  ⚠ ~9,600 of these tokens are in the active context window.
+  Type /clear in Claude Code before resuming this session.
+  A .bak backup will be created automatically.
+```
 
 #### Concurrent Access
 
@@ -394,6 +449,8 @@ Topic clustering is the core intelligence of the tool. It takes a flat list of t
 
 Each signal produces a score between 0 and its weight. The total score is compared against a boundary threshold (default 0.5).
 
+**Compact boundaries (hard split):** If a compact boundary (`/compact` call) falls between two consecutive turns, a topic split is forced unconditionally. This overrides all other signals — no topic may span a compact boundary.
+
 **Time gaps (weight 0.45):** If more than the configured gap threshold elapses between consecutive turns, the time-gap signal fires. This is the strongest signal.
 
 **File context shifts (weight 0.25):** If the set of files referenced in tool calls changes significantly between turns (Jaccard similarity below 0.3 between consecutive file sets), this suggests a topic change.
@@ -429,10 +486,21 @@ Each line in a Claude Code JSONL session file is a JSON object with a `type` fie
 | `user`        | User message               | `message.role`, `message.content`, `timestamp`                          |
 | `assistant`   | Claude response            | `message.content` (array of text/tool_use/thinking blocks), `timestamp` |
 | `tool_result` | Result of a tool call      | `message.content`, `tool_use_id`                                        |
-| `system`      | System/compaction messages | `message.content`, `isCompactSummary`                                   |
+| `system`      | System/compaction messages | `message.content`, `isCompactSummary`, `subtype`, `compactMetadata`     |
 | `summary`     | Session summary            | Summary text, generated asynchronously                                  |
 
 The parser ignores unknown types (e.g. `file-history-snapshot`, `progress`, `hook`) and logs a warning via slog.
+
+#### Compact Boundary Records
+
+`system` records with `subtype: "compact_boundary"` mark where a `/compact` call occurred. The parser extracts these into `Session.CompactBoundaries []CompactBoundary` (ordered by position). Each boundary carries:
+
+- `TurnIndex int` — index of the first turn after this boundary
+- `Trigger string` — `"manual"` or `"auto"`
+- `PreTokens int` — token count before compaction
+- `DurationMs int` — compaction duration in milliseconds
+
+User turns whose content starts with `"This session is being continued"` are marked with `Turn.IsCompactContinuation = true`. These are the continuation summaries Claude Code injects after compaction.
 
 #### Embedded Tool Results
 
@@ -476,6 +544,8 @@ Base styles are defined in `internal/tui/styles.go` using the Catppuccin Mocha p
 - **Role badges:** Colored foreground with bold text
 - **Selected row:** Project-colored gutter with bold/bright text
 - **Footer:** Dim text for descriptions, accent-colored keys
+- **Compact divider:** Accent (`Theme.Accent`) colored horizontal rule, rendered between pre-compact and post-compact topics in the Topic Overview and Replay sidebar
+- **Pre-compact indicator:** `░` marker and dimmed text (`colSurface1` / `dimStyle`) on pre-compact topic cards and turn headers
 
 ---
 

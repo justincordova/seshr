@@ -66,6 +66,12 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 		if sess.ID == "" {
 			sess.ID = turnSessionID(b)
 		}
+		// Detect compact_boundary system records before the normal turn parse
+		// path, since parseLine drops all system records.
+		if cb, ok := parseCompactBoundary(b, len(sess.Turns)); ok {
+			sess.CompactBoundaries = append(sess.CompactBoundaries, cb)
+			continue
+		}
 		turn, ok := parseLine(b, lineNum)
 		if !ok {
 			continue
@@ -87,6 +93,26 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 
 	slog.Info("parsed session", "path", path, "turns", len(sess.Turns), "tokens", sess.TokenCount)
 	return sess, nil
+}
+
+// parseCompactBoundary checks whether b is a system record with
+// subtype "compact_boundary". If so it returns the boundary and ok=true.
+// nextTurnIndex is the length of sess.Turns at the point this line was read,
+// which becomes the first-turn-after-boundary index.
+func parseCompactBoundary(b []byte, nextTurnIndex int) (CompactBoundary, bool) {
+	var rec rawRecord
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return CompactBoundary{}, false
+	}
+	if rec.Type != "system" || rec.Subtype != "compact_boundary" {
+		return CompactBoundary{}, false
+	}
+	return CompactBoundary{
+		TurnIndex:  nextTurnIndex,
+		Trigger:    rec.CompactMetadata.Trigger,
+		PreTokens:  rec.CompactMetadata.PreTokens,
+		DurationMs: rec.CompactMetadata.DurationMs,
+	}, true
 }
 
 // parseLine converts one JSONL line into a Turn. Returns ok=false when the
@@ -139,11 +165,12 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 	if len(blocks) == 0 {
 		content := flattenContent(msg.Content)
 		return Turn{
-			Role:      RoleUser,
-			Timestamp: rec.Timestamp,
-			Content:   content,
-			RawIndex:  lineNum,
-			Tokens:    tokenizer.Estimate(content),
+			Role:                  RoleUser,
+			Timestamp:             rec.Timestamp,
+			Content:               content,
+			RawIndex:              lineNum,
+			Tokens:                tokenizer.Estimate(content),
+			IsCompactContinuation: strings.HasPrefix(content, "This session is being continued"),
 		}
 	}
 
@@ -177,11 +204,12 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 
 	content := strings.Join(textParts, "\n\n")
 	return Turn{
-		Role:      RoleUser,
-		Timestamp: rec.Timestamp,
-		Content:   content,
-		RawIndex:  lineNum,
-		Tokens:    tokenizer.Estimate(content),
+		Role:                  RoleUser,
+		Timestamp:             rec.Timestamp,
+		Content:               content,
+		RawIndex:              lineNum,
+		Tokens:                tokenizer.Estimate(content),
+		IsCompactContinuation: strings.HasPrefix(content, "This session is being continued"),
 	}
 }
 

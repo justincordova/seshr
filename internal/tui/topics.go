@@ -14,6 +14,76 @@ import (
 	"github.com/justincordova/seshr/internal/topics"
 )
 
+// compactDividerAfter returns a set of topic indices after which a compact
+// divider should be rendered. For each compact boundary, the divider goes
+// after the last topic whose turns all precede the boundary TurnIndex.
+func compactDividerAfter(sess *parser.Session, tops []topics.Topic) map[int]parser.CompactBoundary {
+	if sess == nil || len(sess.CompactBoundaries) == 0 {
+		return nil
+	}
+	result := make(map[int]parser.CompactBoundary, len(sess.CompactBoundaries))
+	for _, cb := range sess.CompactBoundaries {
+		// Find the last topic index whose last turn falls before cb.TurnIndex.
+		dividerAfter := -1
+		for i, top := range tops {
+			if len(top.TurnIndices) == 0 {
+				continue
+			}
+			lastTurn := top.TurnIndices[len(top.TurnIndices)-1]
+			if lastTurn < cb.TurnIndex {
+				dividerAfter = i
+			}
+		}
+		if dividerAfter >= 0 {
+			result[dividerAfter] = cb
+		}
+	}
+	return result
+}
+
+// isPreCompact returns true when all of a topic's turns fall before the
+// earliest compact boundary in the session (i.e. they are inactive context).
+func isPreCompact(sess *parser.Session, top topics.Topic) bool {
+	if sess == nil || len(sess.CompactBoundaries) == 0 || len(top.TurnIndices) == 0 {
+		return false
+	}
+	// Find the earliest boundary.
+	earliest := sess.CompactBoundaries[0].TurnIndex
+	for _, cb := range sess.CompactBoundaries[1:] {
+		if cb.TurnIndex < earliest {
+			earliest = cb.TurnIndex
+		}
+	}
+	return top.TurnIndices[len(top.TurnIndices)-1] < earliest
+}
+
+// renderCompactDivider renders the accent-colored rule shown between pre-compact
+// and post-compact topics.
+func renderCompactDivider(cb parser.CompactBoundary, width int) string {
+	var meta string
+	if cb.Trigger != "" {
+		meta = cb.Trigger
+		if cb.PreTokens > 0 {
+			meta += fmt.Sprintf(" · %s tok", humanize.Comma(int64(cb.PreTokens)))
+		}
+		if cb.DurationMs > 0 {
+			dur := time.Duration(cb.DurationMs) * time.Millisecond
+			meta += fmt.Sprintf(" · %s", dur.Round(time.Second))
+		}
+	}
+	label := "── compacted"
+	if meta != "" {
+		label += " ─ " + meta
+	}
+	// Pad with dashes to fill width.
+	labelRunes := []rune(label)
+	remaining := width - len(labelRunes)
+	if remaining > 0 {
+		label += " " + strings.Repeat("─", remaining-1)
+	}
+	return lipgloss.NewStyle().Foreground(colBlue).Render(truncate(label, width))
+}
+
 // Overview is the Topic Overview Bubbletea model per SPEC §3.2.
 type Overview struct {
 	sess      *parser.Session
@@ -292,6 +362,8 @@ func (o Overview) renderTopicList(width, bodyH int) string {
 	var b strings.Builder
 	linesUsed := 0
 
+	dividerAfter := compactDividerAfter(o.sess, o.topics)
+
 	for i := o.offset; i < len(o.topics); i++ {
 		top := o.topics[i]
 
@@ -321,16 +393,26 @@ func (o Overview) renderTopicList(width, bodyH int) string {
 			written := renderExpandedCapped(&b, o.styles, o.sess, top, remaining)
 			linesUsed += written
 		}
+
+		// Insert compact divider after this topic if a boundary falls here.
+		if cb, ok := dividerAfter[i]; ok && linesUsed < bodyH {
+			b.WriteByte('\n')
+			b.WriteString(renderCompactDivider(cb, width))
+			linesUsed += 2
+		}
 	}
 	return b.String()
 }
 
 func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	selected := i == o.cursor
+	preCompact := isPreCompact(o.sess, top)
 
 	barStyle := lipgloss.NewStyle().Foreground(colSurface1)
 	if selected {
 		barStyle = lipgloss.NewStyle().Foreground(colMauve).Bold(true)
+	} else if preCompact {
+		barStyle = lipgloss.NewStyle().Foreground(colSurface1)
 	}
 	bar := barStyle.Render("▌")
 
@@ -338,14 +420,30 @@ func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	// fmt %-Ns counts ANSI escape bytes, which misaligns styled strings.
 	rawLabel := padRightRaw(truncate(top.Label, 40), 40)
 	var label string
-	if selected {
+	switch {
+	case selected:
 		label = lipgloss.NewStyle().Foreground(colText).Bold(true).Render(rawLabel)
-	} else {
+	case preCompact:
+		label = dimStyle.Render(rawLabel)
+	default:
 		label = textStyle.Render(rawLabel)
 	}
 
-	num := dimStyle.Render(fmt.Sprintf("%2d.", i+1))
-	tokens := dimStyle.Render(fmt.Sprintf("~%s", humanize.Comma(int64(top.TokenCount))))
+	numStyle := dimStyle
+	tokenStyle := dimStyle
+	if preCompact {
+		numStyle = lipgloss.NewStyle().Foreground(colSurface1)
+		tokenStyle = lipgloss.NewStyle().Foreground(colSurface1)
+	}
+
+	num := numStyle.Render(fmt.Sprintf("%2d.", i+1))
+	tokStr := fmt.Sprintf("~%s", humanize.Comma(int64(top.TokenCount)))
+	// Pre-compact topics get an ░ right-margin indicator.
+	inactiveMarker := ""
+	if preCompact {
+		inactiveMarker = " " + lipgloss.NewStyle().Foreground(colSurface1).Render("░")
+	}
+	tokens := tokenStyle.Render(tokStr) + inactiveMarker
 
 	line1 := fmt.Sprintf("%s %s %s  %s", bar, num, label, tokens)
 
@@ -523,6 +621,15 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		fmt.Sprintf("tool calls: %d · tool results: %d", tools, roleCounts[parser.RoleToolResult]),
 		fmt.Sprintf("%s · %s session · %d topic files",
 			countLabel(len(tops), "topic"), dur, len(fileSet)),
+	}
+	if n := len(sess.CompactBoundaries); n > 0 {
+		last := sess.CompactBoundaries[n-1]
+		compLine := fmt.Sprintf("compactions: %d (last: %s", n, last.Trigger)
+		if last.PreTokens > 0 {
+			compLine += fmt.Sprintf(", %s tok", humanize.Comma(int64(last.PreTokens)))
+		}
+		compLine += ")"
+		lines = append(lines, compLine)
 	}
 	return st.Hint.Render(strings.Join(lines, "\n"))
 }

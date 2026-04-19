@@ -25,7 +25,7 @@ type Replay struct {
 	topicsList         []topics.Topic
 	cursor             int
 	expandedTool       int
-	compact            bool
+	slim               bool
 	showThinking       bool
 	autoPlay           bool
 	speed              int
@@ -189,7 +189,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Next):
 			if m.cursor < len(m.sess.Turns)-1 {
 				m.cursor++
-				if m.compact {
+				if m.slim {
 					m.skipInvisibleForward()
 				}
 				m.mainVP.GotoTop()
@@ -197,7 +197,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Prev):
 			if m.cursor > 0 {
 				m.cursor--
-				if m.compact {
+				if m.slim {
 					m.skipInvisibleBackward()
 				}
 				m.mainVP.GotoTop()
@@ -208,8 +208,8 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = m.prevTopicStart()
 		case key.Matches(msg, m.keys.ToggleThinking):
 			m.showThinking = !m.showThinking
-		case key.Matches(msg, m.keys.ToggleCompact):
-			m.compact = !m.compact
+		case key.Matches(msg, m.keys.ToggleSlim):
+			m.slim = !m.slim
 		case key.Matches(msg, m.keys.SpeedUp):
 			if m.autoPlay {
 				m.speed++
@@ -234,7 +234,10 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Expand):
 			if m.cursor >= 0 && m.cursor < len(m.sess.Turns) {
 				curTurn := m.sess.Turns[m.cursor]
-				if len(curTurn.ToolResults) > 0 {
+				if curTurn.IsCompactContinuation && curTurn.Content != "" {
+					m.expandedTool = 0
+					m.vp.SetContent(curTurn.Content)
+				} else if len(curTurn.ToolResults) > 0 {
 					m.expandedTool = 0
 					m.vp.SetContent(curTurn.ToolResults[0].Content)
 				}
@@ -262,7 +265,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cursor++
-		if m.compact {
+		if m.slim {
 			m.skipInvisibleForward()
 		}
 		return m, AutoPlayCmd(SpeedToDelay(m.speed))
@@ -411,8 +414,8 @@ func (m Replay) renderHeader() string {
 	if m.showThinking {
 		indicators = append(indicators, lipgloss.NewStyle().Foreground(colLavender).Bold(true).Render("thinking"))
 	}
-	if m.compact {
-		indicators = append(indicators, lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("compact"))
+	if m.slim {
+		indicators = append(indicators, lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("slim"))
 	}
 	indicatorStr := strings.Join(indicators, " ")
 
@@ -450,7 +453,7 @@ func (m Replay) renderFooter() string {
 	}
 	hints = append(hints,
 		kbdPill("t", "think"),
-		kbdPill("c", "compact"),
+		kbdPill("c", "slim"),
 		kbdPill("/", "search"),
 	)
 	if m.autoPlay {
@@ -515,12 +518,27 @@ func (m Replay) renderTopicHeaderBar() string {
 	return strings.Join(parts, " ")
 }
 
+// turnIsPreCompact returns true if the turn at turnIdx falls entirely before
+// any compact boundary (i.e. it is inactive context).
+func (m Replay) turnIsPreCompact(turnIdx int) bool {
+	if m.sess == nil || len(m.sess.CompactBoundaries) == 0 {
+		return false
+	}
+	earliest := m.sess.CompactBoundaries[0].TurnIndex
+	for _, cb := range m.sess.CompactBoundaries[1:] {
+		if cb.TurnIndex < earliest {
+			earliest = cb.TurnIndex
+		}
+	}
+	return turnIdx < earliest
+}
+
 func (m Replay) renderMain(width int) string {
 	if m.cursor < 0 || m.cursor >= len(m.sess.Turns) {
 		return ""
 	}
 	turn := m.sess.Turns[m.cursor]
-	if m.compact && !m.turnVisible(turn) {
+	if m.slim && !m.turnVisible(turn) {
 		return ""
 	}
 	prev := time.Time{}
@@ -528,8 +546,30 @@ func (m Replay) renderMain(width int) string {
 		prev = m.sess.Turns[m.cursor-1].Timestamp
 	}
 
+	preCompact := m.turnIsPreCompact(m.cursor)
+
 	var b strings.Builder
-	b.WriteString(RenderTurnHeader(turn, prev, width, m.styles, m.theme))
+
+	// Continuation summary turns render collapsed with a special badge.
+	if turn.IsCompactContinuation {
+		badge := pill("continuation summary", colBase, colBlue)
+		tokens := m.styles.Hint.Render(fmt.Sprintf("~%d tok", turn.Tokens))
+		gap := width - lipgloss.Width(badge) - lipgloss.Width(tokens)
+		if gap < 1 {
+			gap = 1
+		}
+		b.WriteString(badge + strings.Repeat(" ", gap) + tokens)
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("(press enter to expand)"))
+		return b.String()
+	}
+
+	header := RenderTurnHeader(turn, prev, width, m.styles, m.theme)
+	if preCompact {
+		badge := lipgloss.NewStyle().Foreground(colSurface1).Render(" pre-compact")
+		header = header + badge
+	}
+	b.WriteString(header)
 	b.WriteString("\n")
 
 	if turn.Content != "" {
@@ -537,7 +577,7 @@ func (m Replay) renderMain(width int) string {
 		b.WriteString(strings.TrimRight(body, "\n"))
 	}
 
-	if !m.compact {
+	if !m.slim {
 		for _, tc := range turn.ToolCalls {
 			b.WriteString("\n\n")
 			if tc.Name == "Agent" {
@@ -578,7 +618,7 @@ func (m Replay) turnVisible(turn parser.Turn) bool {
 			return true
 		}
 	}
-	if !m.compact {
+	if !m.slim {
 		return len(turn.ToolCalls) > 0 || len(turn.ToolResults) > 0
 	}
 	return false
@@ -601,7 +641,7 @@ func (m Replay) renderSidebarPanel(ts []topics.Topic, active, width, height int,
 	if focused {
 		style = activeBoxStyle.Width(width - 2).Height(height - 2)
 	}
-	body := RenderSidebar(ts, active, width-4, m.theme)
+	body := RenderSidebar(m.sess, ts, active, width-4, m.theme)
 	return style.Render(body)
 }
 

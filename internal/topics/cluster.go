@@ -36,7 +36,20 @@ func DefaultOptions() Options {
 	}
 }
 
+// compactBoundarySet returns a set of turn indices that begin a new compact
+// segment. A compact boundary at TurnIndex n means: if indices[k] == n (or the
+// previous index was < n and current is >= n), force a split.
+func compactBoundarySet(sess *parser.Session) map[int]struct{} {
+	m := make(map[int]struct{}, len(sess.CompactBoundaries))
+	for _, cb := range sess.CompactBoundaries {
+		m[cb.TurnIndex] = struct{}{}
+	}
+	return m
+}
+
 // Cluster groups sess.Turns into topics. System and summary turns are excluded.
+// Compact boundaries (from /compact calls) are treated as hard splits —
+// no topic may span a compact boundary regardless of other signal scores.
 func Cluster(sess *parser.Session, opts Options) []Topic {
 	if sess == nil || len(sess.Turns) == 0 {
 		return nil
@@ -52,10 +65,20 @@ func Cluster(sess *parser.Session, opts Options) []Topic {
 		return nil
 	}
 
+	boundaries := compactBoundarySet(sess)
+
 	groups := [][]int{{indices[0]}}
 	for k := 1; k < len(indices); k++ {
 		prev := sess.Turns[indices[k-1]]
 		cur := sess.Turns[indices[k]]
+
+		// Hard split: compact boundary falls at or before this turn index
+		// and after the previous turn index.
+		if _, isBoundary := boundaries[indices[k]]; isBoundary {
+			groups = append(groups, []int{indices[k]})
+			continue
+		}
+
 		score := TimeGapScore(prev, cur, opts) +
 			ExplicitMarkerScore(prev, cur) +
 			FileShiftScore(ExtractFiles(prev.ToolCalls), ExtractFiles(cur.ToolCalls), opts) +
