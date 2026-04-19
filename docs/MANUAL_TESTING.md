@@ -32,7 +32,7 @@ tail -f ~/.seshr/debug.log
 ## Phase 2 — Parser & Session Picker
 
 - [ ] Real sessions from `~/.claude/projects/` appear in the picker
-- [ ] Token counts are reasonable (same order of magnitude as Claude Code's own count)
+- [ ] Token counts are in the right ballpark (estimated from file size in picker; exact on open)
 - [ ] Timestamps show "2h ago", "1d ago" (not raw RFC3339)
 - [ ] `j/k` navigation wraps or clamps without crashing at list boundaries
 - [ ] `d` on a throwaway session → confirmation dialog → file is deleted
@@ -44,31 +44,35 @@ tail -f ~/.seshr/debug.log
 
 - [ ] Multi-topic session shows sensible topic boundaries (spot-check 3 real sessions)
 - [ ] Topic labels are meaningful, not empty, not truncated mid-word
-- [ ] Token bars render using block characters, colors match the theme
-- [ ] `enter`/`→` expands a topic inline; `esc` collapses
+- [ ] Token counts per topic render correctly; pre-compact topics show ░ indicator
+- [ ] `enter`/`→`/`l` expands a topic inline showing turn previews
+- [ ] `f` folds/unfolds all expanded topics
+- [ ] `space` toggles topic selection; selection strip updates with token count and safety indicator
+- [ ] `a` toggles select all/deselect all
+- [ ] `p` shows confirmation with token savings and context-aware safety message
 - [ ] `tab` toggles stats panel; numbers sum to session totals (±1%)
-- [ ] Clustering a 100+ turn session shows a spinner, then completes in < 2s
+- [ ] `/` fuzzy-searches topic labels and turn content
+- [ ] Clustering a 100+ turn session completes in < 2s
 
 ## Phase 4 — Replay Mode
 
 - [ ] Markdown renders (headings, code fences, lists, bold/italic)
-- [ ] Code blocks are syntax-highlighted per language
-- [ ] Role badges are colored correctly (user green, assistant blue, tool yellow)
-- [ ] `→/←` step forward/back without flicker
-- [ ] `space` toggles auto-play; `1-9` changes speed audibly (visibly)
+- [ ] Code blocks render in a bordered panel with formatted JSON
+- [ ] Role badges are colored correctly (user green, assistant blue, tool result lavender)
+- [ ] `→/←` or `l/h` step forward/back without flicker
+- [ ] `space` toggles auto-play; `+/-` adjusts speed during auto-play
 - [ ] `]`/`[` jump to next/prev topic
 - [ ] `t` toggles thinking blocks (collapsed by default)
-- [ ] `enter` on a long tool result opens full-screen viewport; `esc` returns
-- [ ] `w` toggles word wrap without losing position
+- [ ] `c` toggles slim mode (hides non-Agent tool calls/results)
+- [ ] `enter` on a long tool result or continuation summary opens full-screen viewport; `esc` returns
+- [ ] `tab` toggles sidebar focus; `j/k` navigates topic list; `enter` jumps to topic
 - [ ] Resizing mid-replay reflows text without corruption
 
-## Phase 5 — Edit Mode + Restore
+## Phase 5 — Prune + Restore
 
-- [ ] `e` enters edit mode; checkboxes appear on topics
-- [ ] `space` toggles; footer updates "N selected · ~X tokens freed" live
-- [ ] `a` selects all, `A` deselects all
-- [ ] Selecting a topic containing a `tool_use` also auto-selects its `tool_result`, visibly
-- [ ] `p` shows confirmation with token savings and pair-expansion explanation
+- [ ] `space` selects a topic; selection strip shows token savings and safety indicator
+- [ ] Selecting a topic containing a `tool_use` also auto-selects its `tool_result`
+- [ ] `p` shows confirmation with context-aware safety message (pre-compact vs active vs mixed)
 - [ ] After prune: `.bak` file exists next to original
 - [ ] After prune: reopen the pruned session in Claude Code (`claude --resume`) — it resumes without error
 - [ ] Session Picker shows `↶` indicator on sessions with a `.bak` sibling
@@ -78,7 +82,7 @@ tail -f ~/.seshr/debug.log
 ## Phase 6 — Polish
 
 - [ ] `?` on each screen shows the correct context-sensitive keybindings
-- [ ] `/` search filters in real time; `esc` clears; `enter` selects
+- [ ] `/` search filters in real time; `esc` clears; `enter` commits
 - [ ] `,` settings popup reads current config and writes changes to `~/.seshr/config.json`
 - [ ] `L` log viewer shows tail of debug.log; `j/k`, `g/G` work
 - [ ] Theme switch (`--theme nord` / `--theme dracula`) changes all colors
