@@ -460,7 +460,8 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 	}
 	id := idStyle.Render(truncate(m.ID, 20))
 
-	tokStr := dimStyle.Render(humanizeTokens(int64(m.TokenCount)) + " tok")
+	sessMetaStyle := lipgloss.NewStyle().Foreground(colOverlay1)
+	tokStr := sessMetaStyle.Render(humanizeTokens(int64(m.TokenCount)))
 
 	backup := ""
 	if m.HasBackup {
@@ -468,7 +469,7 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 	}
 
 	if width >= 80 {
-		age := dimStyle.Render(humanize.Time(m.ModifiedAt))
+		age := sessMetaStyle.Render(humanize.Time(m.ModifiedAt))
 		left := gutter + "   " + glyph + " " + id
 		right := tokStr + "  " + age + backup
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
