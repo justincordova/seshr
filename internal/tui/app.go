@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -88,11 +86,11 @@ type App struct {
 	restoreModal Confirm
 	prevState    appState
 	autoReplay   bool
-	// overlay fields
-	overlay  overlayKind
-	help     Help
-	logView  LogViewer
-	settings Settings
+	scanRoot     string
+	overlay      overlayKind
+	help         Help
+	logView      LogViewer
+	settings     Settings
 }
 
 // overlayActive reports whether any overlay is currently shown.
@@ -121,30 +119,32 @@ func (a App) State() string {
 // AppInOverview returns an App pre-seeded in stateOverview, useful for tests.
 func AppInOverview(sess *parser.Session, ts []topics.Topic) App {
 	th := CatppuccinMocha()
+	cfg := config.Default()
 	return App{
 		state:       stateOverview,
 		session:     sess,
 		topicsCache: ts,
-		overview:    NewOverview(sess, ts),
+		overview:    NewOverview(sess, ts, th, cfg.GapThresholdSeconds),
 		styles:      NewStyles(th),
 		theme:       th,
-		cfg:         config.Default(),
+		cfg:         cfg,
 	}
 }
 
 // NewApp returns the root model with a pre-populated session list.
 // cfg is the loaded user configuration; pass config.Default() in tests.
-func NewApp(metas []parser.SessionMeta, cfg config.Config) App {
+func NewApp(metas []parser.SessionMeta, cfg config.Config, scanRoot string) App {
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return App{
-		state:   stateList,
-		picker:  NewPicker(metas, th),
-		spinner: sp,
-		styles:  NewStyles(th),
-		theme:   th,
-		cfg:     cfg,
+		state:    stateList,
+		picker:   NewPicker(metas, th),
+		spinner:  sp,
+		styles:   NewStyles(th),
+		theme:    th,
+		cfg:      cfg,
+		scanRoot: scanRoot,
 	}
 }
 
@@ -225,23 +225,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case OpenSessionMsg:
 		a.state = stateLoading
 		a.loading = m.Meta.Path
-		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
+		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path, a.cfg.GapThresholdSeconds))
 	case OpenSessionAndReplayMsg:
 		a.state = stateLoading
 		a.loading = m.Meta.Path
 		a.autoReplay = true
-		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
+		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path, a.cfg.GapThresholdSeconds))
 	case SessionLoadedMsg:
 		a.session = m.Session
 		a.topicsCache = m.Topics
-		a.overview = NewOverview(m.Session, m.Topics)
+		a.overview = NewOverview(m.Session, m.Topics, a.theme, a.cfg.GapThresholdSeconds)
 		if a.width > 0 {
 			om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
 			a.overview = om.(Overview)
 		}
 		if a.autoReplay {
 			a.autoReplay = false
-			a.replay = NewReplay(m.Session, m.Topics)
+			a.replay = NewReplay(m.Session, m.Topics, a.theme)
 			a.replay = a.replay.SetSize(a.width, a.height).(Replay)
 			a.state = stateReplay
 			return a, a.replay.Init()
@@ -257,7 +257,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateList
 		return a, nil
 	case OpenReplayMsg:
-		a.replay = NewReplay(a.session, a.topicsCache)
+		a.replay = NewReplay(a.session, a.topicsCache, a.theme)
 		a.replay = a.replay.SetSize(a.width, a.height).(Replay)
 		a.state = stateReplay
 		return a, a.replay.Init()
@@ -270,9 +270,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateConfirmRestore
 		return a, nil
 	case RestoreDoneMsg:
-		a.overview = NewOverview(a.session, a.topicsCache)
+		a.overview = NewOverview(a.session, a.topicsCache, a.theme, a.cfg.GapThresholdSeconds)
 		a.state = stateList
-		return a, rescanCmd()
+		return a, rescanCmd(a.scanRoot)
 	case RestoreErrMsg:
 		a.lastErr = m.Err.Error()
 		a.prevState = a.state
@@ -395,13 +395,9 @@ func restoreCmd(path string) tea.Cmd {
 	}
 }
 
-func rescanCmd() tea.Cmd {
+func rescanCmd(scanRoot string) tea.Cmd {
 	return func() tea.Msg {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return RescanDoneMsg{}
-		}
-		metas, _ := parser.Scan(filepath.Join(home, ".claude", "projects"))
+		metas, _ := parser.Scan(scanRoot)
 		return RescanDoneMsg{Metas: metas}
 	}
 }

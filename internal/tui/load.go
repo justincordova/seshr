@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/seshr/internal/parser"
@@ -22,7 +23,8 @@ type SessionLoadErrMsg struct {
 }
 
 // LoadSessionCmd returns a tea.Cmd that parses and clusters the session at path.
-func LoadSessionCmd(path string) tea.Cmd {
+// gapSeconds configures the topic clustering time-gap threshold (0 uses default).
+func LoadSessionCmd(path string, gapSeconds int) tea.Cmd {
 	return func() tea.Msg {
 		p := parser.NewClaude()
 		sess, err := p.Parse(context.Background(), path)
@@ -30,7 +32,11 @@ func LoadSessionCmd(path string) tea.Cmd {
 			slog.Error("load session failed", "path", path, "err", err)
 			return SessionLoadErrMsg{Path: path, Err: err}
 		}
-		tops := topics.Cluster(sess, topics.DefaultOptions())
+		opts := topics.DefaultOptions()
+		if gapSeconds > 0 {
+			opts.GapThreshold = time.Duration(gapSeconds) * time.Second
+		}
+		tops := topics.Cluster(sess, opts)
 		slog.Info("clustered session", "path", path, "turns", len(sess.Turns), "topics", len(tops))
 		return SessionLoadedMsg{Session: sess, Topics: tops}
 	}

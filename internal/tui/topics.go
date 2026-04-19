@@ -104,12 +104,14 @@ type Overview struct {
 	height    int
 	keys      OverviewKeys
 	styles    Styles
+	theme     Theme
 	search    SearchBar
+	gapSec    int
 }
 
 // NewOverview constructs the screen from a parsed session and its topics.
 // Topics are displayed in chronological order (oldest first).
-func NewOverview(sess *parser.Session, tops []topics.Topic) Overview {
+func NewOverview(sess *parser.Session, tops []topics.Topic, th Theme, gapSec int) Overview {
 	sorted := make([]topics.Topic, len(tops))
 	copy(sorted, tops)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -122,8 +124,10 @@ func NewOverview(sess *parser.Session, tops []topics.Topic) Overview {
 		expanded:  map[int]bool{},
 		selected:  map[int]bool{},
 		keys:      DefaultOverviewKeys(),
-		styles:    NewStyles(CatppuccinMocha()),
+		styles:    NewStyles(th),
+		theme:     th,
 		search:    NewSearchBar(),
+		gapSec:    gapSec,
 	}
 }
 
@@ -225,7 +229,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o.pruning = false
 		o.status = fmt.Sprintf("pruned %d turns", msg.RemovedTurns)
 		o.selected = map[int]bool{}
-		return o, tea.Batch(LoadSessionCmd(o.sess.Path), clearStatusCmd())
+		return o, tea.Batch(LoadSessionCmd(o.sess.Path, o.gapSec), clearStatusCmd())
 	case PruneErrMsg:
 		o.pruning = false
 		o.status = msg.Err.Error()

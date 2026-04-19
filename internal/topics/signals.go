@@ -8,7 +8,7 @@ import (
 
 const (
 	weightTimeGap        = 0.45
-	weightExplicitMarker = 0.40
+	weightExplicitMarker = 0.15
 	weightFileShift      = 0.25
 	weightKeyword        = 0.15
 )

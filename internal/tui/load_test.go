@@ -20,7 +20,7 @@ func TestLoadSession_ValidFile_ReturnsLoadedMsg(t *testing.T) {
 	), 0o644))
 
 	// Act
-	cmd := tui.LoadSessionCmd(path)
+	cmd := tui.LoadSessionCmd(path, 0)
 	msg := cmd()
 
 	// Assert
@@ -33,7 +33,7 @@ func TestLoadSession_ValidFile_ReturnsLoadedMsg(t *testing.T) {
 
 func TestLoadSession_InvalidFile_ReturnsErrMsg(t *testing.T) {
 	// Act
-	cmd := tui.LoadSessionCmd("/nonexistent/path.jsonl")
+	cmd := tui.LoadSessionCmd("/nonexistent/path.jsonl", 0)
 	msg := cmd()
 
 	// Assert

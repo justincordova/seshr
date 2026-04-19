@@ -45,8 +45,7 @@ type Replay struct {
 }
 
 // NewReplay constructs a Replay model with sensible defaults.
-func NewReplay(sess *parser.Session, ts []topics.Topic) Replay {
-	th := CatppuccinMocha()
+func NewReplay(sess *parser.Session, ts []topics.Topic, th Theme) Replay {
 	return Replay{
 		sess:         sess,
 		topicsList:   ts,

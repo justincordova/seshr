@@ -36,7 +36,7 @@ func demoSessionAndTopics() (*parser.Session, []topics.Topic) {
 
 func TestOverview_New_InitialState(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	require.Len(t, tops, 2, "fixture must produce 2 topics")
 	assert.Equal(t, 0, o.Cursor())
 	assert.False(t, o.Expanded(0))
@@ -45,21 +45,21 @@ func TestOverview_New_InitialState(t *testing.T) {
 
 func TestOverview_View_ContainsTopicLabel(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	out := o.View()
 	assert.Contains(t, out, tops[0].Label)
 }
 
 func TestOverview_DownKey_MovesCursor(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	assert.Equal(t, 1, next.(tui.Overview).Cursor())
 }
 
 func TestOverview_DownKey_AtBottomStays(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	for i := 0; i < 5; i++ {
 		next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 		o = next.(tui.Overview)
@@ -69,7 +69,7 @@ func TestOverview_DownKey_AtBottomStays(t *testing.T) {
 
 func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	oo := next.(tui.Overview)
@@ -82,7 +82,7 @@ func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 
 func TestOverview_ExpandedView_ShowsPreviews(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	o = next.(tui.Overview)
 	out := o.View()
@@ -91,7 +91,7 @@ func TestOverview_ExpandedView_ShowsPreviews(t *testing.T) {
 
 func TestOverview_TabKey_TogglesStats(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyTab})
 	oo := next.(tui.Overview)
@@ -104,7 +104,7 @@ func TestOverview_TabKey_TogglesStats(t *testing.T) {
 
 func TestOverview_Stats_ContainsBreakdownNumbers(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyTab})
 	o = next.(tui.Overview)
 	out := o.View()
@@ -117,7 +117,7 @@ func TestOverview_Stats_ContainsBreakdownNumbers(t *testing.T) {
 func TestOverview_UpKey_MovesCursorUp(t *testing.T) {
 	// Arrange — start at bottom
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	o = next.(tui.Overview)
 	require.Equal(t, 1, o.Cursor())
@@ -131,7 +131,7 @@ func TestOverview_UpKey_MovesCursorUp(t *testing.T) {
 
 func TestOverview_UpKey_AtTopStays(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 
@@ -141,7 +141,7 @@ func TestOverview_UpKey_AtTopStays(t *testing.T) {
 func TestOverview_Topics_SortedOldestFirst(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	require.Len(t, tops, 2)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	out := o.View()
 
@@ -157,7 +157,7 @@ func TestOverview_Topics_SortedOldestFirst(t *testing.T) {
 func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
 	// Arrange
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	// Act — tab on to stats view
 	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -184,7 +184,7 @@ func TestOverview_ZeroTimestamp_OmitsRelativeTime(t *testing.T) {
 	}
 	tops := topics.Cluster(s, topics.DefaultOptions())
 	require.NotEmpty(t, tops)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	// Act
 	out := o.View()
@@ -195,7 +195,7 @@ func TestOverview_ZeroTimestamp_OmitsRelativeTime(t *testing.T) {
 
 func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	_, cmd := o.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -208,7 +208,7 @@ func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {
 func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
 	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
-	m := tui.NewOverview(sess, ts)
+	m := tui.NewOverview(sess, ts, tui.CatppuccinMocha(), 0)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
@@ -221,7 +221,7 @@ func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
 func TestOverview_SpaceSelectsTopic(t *testing.T) {
 	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
-	m := tui.NewOverview(sess, ts)
+	m := tui.NewOverview(sess, ts, tui.CatppuccinMocha(), 0)
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	assert.True(t, next.(tui.Overview).IsSelected(0))
@@ -233,7 +233,7 @@ func TestOverview_SpaceSelectsTopic(t *testing.T) {
 
 func TestOverview_ToggleAll_SelectsAndDeselects(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	m := tui.NewOverview(s, tops)
+	m := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	require.Len(t, tops, 2)
 
 	// 'a' with none selected → select all
@@ -251,7 +251,7 @@ func TestOverview_ToggleAll_SelectsAndDeselects(t *testing.T) {
 
 func TestOverview_FoldAll_ExpandsAndCollapses(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	m := tui.NewOverview(s, tops)
+	m := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	// 'f' with none expanded → expand all
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -290,7 +290,7 @@ func TestOverview_MultipleCompactBoundaries_MiddleTopicsAreSafeToprune(t *testin
 		{Label: "Between boundaries", TurnIndices: []int{2, 3}},
 		{Label: "After last", TurnIndices: []int{4, 5}},
 	}
-	m := tui.NewOverview(sess, tops)
+	m := tui.NewOverview(sess, tops, tui.CatppuccinMocha(), 0)
 
 	// Select first two topics (pre-compact) and verify safe indicator
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace}) // select topic 0
@@ -303,7 +303,7 @@ func TestOverview_MultipleCompactBoundaries_MiddleTopicsAreSafeToprune(t *testin
 
 func TestOverview_SelectionStripShownInView(t *testing.T) {
 	s, tops := demoSessionAndTopics()
-	m := tui.NewOverview(s, tops)
+	m := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 
 	// Select first topic then check view contains token summary
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -357,7 +357,7 @@ func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
 
 func TestOverview_Scroll_CursorStaysVisibleWithCollapsedTopics(t *testing.T) {
 	s, tops := manyTopicsSession(20)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
 
@@ -373,7 +373,7 @@ func TestOverview_Scroll_CursorStaysVisibleWithCollapsedTopics(t *testing.T) {
 
 func TestOverview_Scroll_CursorStaysVisibleWhenAllExpanded(t *testing.T) {
 	s, tops := manyTopicsSession(20)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
 
@@ -396,7 +396,7 @@ func TestOverview_Scroll_CursorStaysVisibleWhenAllExpanded(t *testing.T) {
 
 func TestOverview_Scroll_ExpandingCursorTopicKeepsItVisible(t *testing.T) {
 	s, tops := manyTopicsSession(10)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
 
@@ -419,7 +419,7 @@ func TestOverview_Scroll_MixedHeightsCursorAdvancesOffset(t *testing.T) {
 	// clampOffset computed "visible" from index 0 and under-scrolled, leaving
 	// the cursor off-screen.
 	s, tops := manyTopicsSession(10)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
 
@@ -444,7 +444,7 @@ func TestOverview_Scroll_LastTopicExpandedShowsItsTurns(t *testing.T) {
 	// the expansion lines had no room and were clipped to zero. Scroll must
 	// advance so the expansion is actually visible.
 	s, tops := manyTopicsSession(4)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	// Tight terminal: only ~15 lines for the body.
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
@@ -475,7 +475,7 @@ func TestOverview_Scroll_ExpandAllDoesNotExceedTerminalHeight(t *testing.T) {
 	// terminal, which made the terminal auto-scroll and hide the top rows
 	// (including the first topic's card indicator).
 	s, tops := manyTopicsSession(15)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	const termH = 55
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 170, Height: termH})
 	o = next.(tui.Overview)
@@ -496,7 +496,7 @@ func TestOverview_Scroll_ExpandAllDoesNotExceedTerminalHeight(t *testing.T) {
 
 func TestOverview_Scroll_MovingUpScrollsBack(t *testing.T) {
 	s, tops := manyTopicsSession(20)
-	o := tui.NewOverview(s, tops)
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
 	next, _ := o.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	o = next.(tui.Overview)
 

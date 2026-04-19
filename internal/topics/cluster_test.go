@@ -99,8 +99,8 @@ func TestCluster_ExplicitMarker_SplitsOnMarker(t *testing.T) {
 	s := session(
 		userTurn(base, "set up express", 10),
 		asstTurn(base.Add(2*time.Second), "done", 3),
-		userTurn(base.Add(4*time.Second), "actually, can you write a recipe instead", 10),
-		asstTurn(base.Add(6*time.Second), "recipe coming up", 5),
+		userTurn(base.Add(10*time.Minute), "actually, can you write a recipe instead", 10),
+		asstTurn(base.Add(10*time.Minute+2*time.Second), "recipe coming up", 5),
 	)
 	got := topics.Cluster(s, topics.DefaultOptions())
 	assert.Len(t, got, 2)

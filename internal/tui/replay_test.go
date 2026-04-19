@@ -31,7 +31,7 @@ func sampleTopics() []topics.Topic {
 }
 
 func TestReplay_NewDefaults(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	assert.Equal(t, 0, m.Cursor())
 	assert.False(t, m.ThinkingVisible())
@@ -39,7 +39,7 @@ func TestReplay_NewDefaults(t *testing.T) {
 }
 
 func TestReplay_NextAdvancesCursor(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	r, ok := updated.(tui.Replay)
@@ -49,7 +49,7 @@ func TestReplay_NextAdvancesCursor(t *testing.T) {
 }
 
 func TestReplay_PrevAtZeroStays(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 
@@ -57,7 +57,7 @@ func TestReplay_PrevAtZeroStays(t *testing.T) {
 }
 
 func TestReplay_NextAtEndStays(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	u2, _ := u1.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	r := u2.(tui.Replay)
@@ -69,7 +69,7 @@ func TestReplay_NextAtEndStays(t *testing.T) {
 }
 
 func TestReplay_NextTopicJumps(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 
@@ -77,7 +77,7 @@ func TestReplay_NextTopicJumps(t *testing.T) {
 }
 
 func TestReplay_PrevTopicFromMidTopicJumpsToStart(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	r := u1.(tui.Replay)
 	require.Equal(t, 1, r.Cursor())
@@ -88,7 +88,7 @@ func TestReplay_PrevTopicFromMidTopicJumpsToStart(t *testing.T) {
 }
 
 func TestReplay_ToggleThinking(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 
@@ -96,7 +96,7 @@ func TestReplay_ToggleThinking(t *testing.T) {
 }
 
 func TestReplay_SpaceStartsAutoPlay(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 
@@ -105,7 +105,7 @@ func TestReplay_SpaceStartsAutoPlay(t *testing.T) {
 }
 
 func TestReplay_SpaceAgainStopsAutoPlay(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	on, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 
 	off, _ := on.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -114,7 +114,7 @@ func TestReplay_SpaceAgainStopsAutoPlay(t *testing.T) {
 }
 
 func TestReplay_TickAdvancesCursorWhenPlaying(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	on, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 
 	after, cmd := on.(tui.Replay).Update(tui.TickMsg{})
@@ -124,7 +124,7 @@ func TestReplay_TickAdvancesCursorWhenPlaying(t *testing.T) {
 }
 
 func TestReplay_TickIgnoredWhenNotPlaying(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	after, cmd := m.Update(tui.TickMsg{})
 
@@ -133,7 +133,7 @@ func TestReplay_TickIgnoredWhenNotPlaying(t *testing.T) {
 }
 
 func TestReplay_TickAtEndStopsPlaying(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	u2, _ := u1.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	on, _ := u2.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -145,7 +145,7 @@ func TestReplay_TickAtEndStopsPlaying(t *testing.T) {
 }
 
 func TestReplay_SpeedUpClampsTo9(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	r1 := u1.(tui.Replay)
 
@@ -158,7 +158,7 @@ func TestReplay_SpeedUpClampsTo9(t *testing.T) {
 }
 
 func TestReplay_SpeedDownClampsTo1(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	r1 := u1.(tui.Replay)
 
@@ -171,7 +171,7 @@ func TestReplay_SpeedDownClampsTo1(t *testing.T) {
 }
 
 func TestReplay_SpeedKeysNoOpWhenNotAutoplaying(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	require.False(t, m.AutoPlaying())
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
@@ -180,7 +180,7 @@ func TestReplay_SpeedKeysNoOpWhenNotAutoplaying(t *testing.T) {
 }
 
 func TestReplay_ThinkingIndicatorInHeader(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	m = m.SetSize(120, 40).(tui.Replay)
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -201,7 +201,7 @@ func TestReplay_EnterOnToolResultTurnExpands(t *testing.T) {
 		},
 	}
 	ts := []topics.Topic{{Label: "T", TurnIndices: []int{0, 1}}}
-	m := tui.NewReplay(sess, ts)
+	m := tui.NewReplay(sess, ts, tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}) // cursor=1
 
 	u2, _ := u1.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -218,7 +218,7 @@ func TestReplay_EscWhileExpandedCollapses(t *testing.T) {
 			},
 		},
 	}
-	m := tui.NewReplay(sess, []topics.Topic{{TurnIndices: []int{0}}})
+	m := tui.NewReplay(sess, []topics.Topic{{TurnIndices: []int{0}}}, tui.CatppuccinMocha())
 	u1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	require.True(t, u1.(tui.Replay).ToolExpanded())
 
@@ -229,7 +229,7 @@ func TestReplay_EscWhileExpandedCollapses(t *testing.T) {
 }
 
 func TestReplay_EscWhileCollapsedEmitsReturn(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -240,7 +240,7 @@ func TestReplay_EscWhileCollapsedEmitsReturn(t *testing.T) {
 }
 
 func TestReplay_View_SidebarVisibleAtWideWidth(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	m = m.SetSize(120, 40).(tui.Replay)
 
 	out := m.View()
@@ -249,7 +249,7 @@ func TestReplay_View_SidebarVisibleAtWideWidth(t *testing.T) {
 }
 
 func TestReplay_View_NarrowHidesSidebar(t *testing.T) {
-	m := tui.NewReplay(sampleSession(), sampleTopics())
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	m = m.SetSize(60, 20).(tui.Replay)
 
 	out := m.View()
@@ -263,7 +263,7 @@ func TestReplay_View_ExpandedShowsOnlyViewport(t *testing.T) {
 		Role:        parser.RoleAssistant,
 		ToolResults: []parser.ToolResult{{ID: "t1", Content: "EXPANDED_MARKER"}},
 	}}}
-	m := tui.NewReplay(sess, []topics.Topic{{TurnIndices: []int{0}}})
+	m := tui.NewReplay(sess, []topics.Topic{{TurnIndices: []int{0}}}, tui.CatppuccinMocha())
 	m = m.SetSize(120, 40).(tui.Replay)
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 

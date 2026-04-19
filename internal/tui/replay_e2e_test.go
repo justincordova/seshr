@@ -19,7 +19,7 @@ func TestReplay_E2E_FromFixture(t *testing.T) {
 	ts := topics.Cluster(sess, topics.DefaultOptions())
 	require.NotEmpty(t, ts)
 
-	m := tui.NewReplay(sess, ts)
+	m := tui.NewReplay(sess, ts, tui.CatppuccinMocha())
 	m = m.SetSize(120, 40).(tui.Replay)
 
 	// Advance through every turn with →

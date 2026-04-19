@@ -38,7 +38,7 @@ func TestExplicitMarkerScore_UserMarkerPhrase_ReturnsWeight(t *testing.T) {
 	prev := turnAt(time.Unix(0, 0), parser.RoleAssistant, "done")
 	cur := turnAt(time.Unix(1, 0), parser.RoleUser, "actually, can you switch gears to something else")
 	got := topics.ExplicitMarkerScore(prev, cur)
-	assert.InDelta(t, 0.40, got, 0.001)
+	assert.InDelta(t, 0.15, got, 0.001)
 }
 
 func TestExplicitMarkerScore_AssistantSide_Zero(t *testing.T) {

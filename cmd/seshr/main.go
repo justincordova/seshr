@@ -69,7 +69,7 @@ func main() {
 				slog.Info("positional path arg ignored in phase 2", "path", args[0])
 			}
 
-			p := tea.NewProgram(tui.NewApp(metas, cfg), tea.WithAltScreen())
+			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				slog.Error("tui exited with error", "err", err)
 				return fmt.Errorf("run tui: %w", err)
