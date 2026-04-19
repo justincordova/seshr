@@ -206,7 +206,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if c.Confirmed() {
 					sel := o.currentSelection()
 					o.pruning = true
-					o.status = "pruning��"
+					o.status = "pruning…"
 					return o, pruneCmd(o.sess, sel)
 				}
 			}
@@ -240,6 +240,8 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o.topics = tops
 		o.allTopics = tops
 		o.cursor = 0
+		o.offset = 0
+		o.expanded = map[int]bool{}
 		return o, nil
 	case clearStatusMsg:
 		o.status = ""
@@ -351,17 +353,10 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					len(sel.Turns), humanize.Comma(int64(preTok)))
 			} else {
 				confirmTitle = fmt.Sprintf("Prune %d topics?", o.selectedCount())
-				if preCount > 0 {
-					confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
-						len(sel.Turns),
-						humanize.Comma(int64(o.tokensFreed())),
-						humanize.Comma(int64(activeTok)))
-				} else {
-					confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
-						len(sel.Turns),
-						humanize.Comma(int64(activeTok)),
-						humanize.Comma(int64(activeTok)))
-				}
+				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
+					len(sel.Turns),
+					humanize.Comma(int64(o.tokensFreed())),
+					humanize.Comma(int64(activeTok)))
 			}
 			o.confirm = &Confirm{
 				title:  confirmTitle,
@@ -384,6 +379,16 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return o, nil
 }
 
+// heightOrZero returns lipgloss.Height of s, or 0 when s is empty.
+// lipgloss.Height("") returns 1 which over-counts the space taken by
+// conditionally-rendered components like the search bar.
+func heightOrZero(s string) int {
+	if s == "" {
+		return 0
+	}
+	return lipgloss.Height(s)
+}
+
 // topicBodyHeight returns the line budget available to the topic list body,
 // i.e. the area inside the panel border (so excludes header, stats strip,
 // search bar, selection strip, footer, panel border, and panel title).
@@ -397,8 +402,8 @@ func (o Overview) topicBodyHeight() int {
 	footer := o.renderFooter(cw)
 	selStrip := o.renderSelectionStrip(cw)
 	searchBar := o.search.View(cw)
-	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(footer) + lipgloss.Height(selStrip) + lipgloss.Height(searchBar)
+	fixedH := heightOrZero(header) + heightOrZero(statsStrip) +
+		heightOrZero(footer) + heightOrZero(selStrip) + heightOrZero(searchBar)
 	mainH := o.height - fixedH
 	if mainH < 6 {
 		mainH = 6
@@ -536,8 +541,8 @@ func (o Overview) View() string {
 	selStrip := o.renderSelectionStrip(cw)
 	footer := o.renderFooter(cw)
 
-	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(searchBar) + lipgloss.Height(selStrip) + lipgloss.Height(footer)
+	fixedH := heightOrZero(header) + heightOrZero(statsStrip) +
+		heightOrZero(searchBar) + heightOrZero(selStrip) + heightOrZero(footer)
 	mainH := o.height - fixedH
 	if o.height == 0 || mainH < 6 {
 		mainH = len(o.topics)*3 + 20

@@ -387,14 +387,8 @@ func TestOverview_Scroll_CursorStaysVisibleWhenAllExpanded(t *testing.T) {
 	}
 	assert.Equal(t, 19, o.Cursor())
 	assert.LessOrEqual(t, o.Offset(), o.Cursor())
-
-	// Crucial assertion: cursor must be within the visible window rendered
-	// from the current offset. We check this by scanning the View output
-	// for the expected cursor marker position.
-	out := next.(tui.Overview).View()
-	_ = out // reserved for future visibility check
-	// A weaker but robust check: after 19 down-presses, offset must have
-	// advanced past 10 (with ~30-line terminal and 10-line-tall expansions).
+	// After 19 down-presses with expanded topics, offset must have advanced
+	// to keep the cursor on screen.
 	assert.Greater(t, o.Offset(), 0, "offset must advance with expanded topics")
 }
 
