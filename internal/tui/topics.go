@@ -418,43 +418,39 @@ func (o Overview) topicBodyHeight() int {
 	return bodyH
 }
 
-// cursorVisibleFrom reports whether the cursor topic would be fully rendered
-// when the list is drawn starting at fromIdx with bodyH available lines.
-// Mirrors the budget logic in renderTopicList exactly so scroll math tracks
-// render math: a card is 2 rows, a divider is 1 row, expansion is its
-// preview lines. Separators between cards are not counted as rows — a
-// newline terminates the previous row, it doesn't add one.
+// cursorVisibleFrom reports whether the cursor topic's 2-line header would
+// be fully rendered when the list is drawn starting at fromIdx with bodyH
+// available rows. We require the header (not necessarily the whole
+// expansion) — when the cursor's expansion is larger than the viewport, we
+// still want to see the card indicator so the user knows where they are.
 func (o Overview) cursorVisibleFrom(fromIdx, cursor, bodyH int) bool {
 	if cursor < fromIdx || cursor >= len(o.topics) {
 		return false
 	}
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
-	linesUsed := 0
-	for i := fromIdx; i <= cursor; i++ {
-		if linesUsed+2 > bodyH {
+	rowsUsed := 0
+	for i := fromIdx; i < cursor; i++ {
+		// Card header of each prior topic.
+		if rowsUsed+2 > bodyH {
 			return false
 		}
-		linesUsed += 2
+		rowsUsed += 2
 		if o.expanded[i] {
 			extra := len(o.topics[i].TurnIndices) + 1
 			if extra > maxExpandedPreviews+1 {
 				extra = maxExpandedPreviews + 1
 			}
-			// For the cursor itself, require the whole expansion to fit so
-			// its turns are actually visible. For earlier topics an over-fill
-			// just pushes the cursor off-screen, which is the same failure.
-			if linesUsed+extra > bodyH {
+			rowsUsed += extra
+			if rowsUsed > bodyH {
 				return false
 			}
-			linesUsed += extra
 		}
 		if _, ok := dividerAfter[i]; ok {
-			if i < cursor {
-				linesUsed++
-			}
+			rowsUsed++
 		}
 	}
-	return true
+	// Cursor header must fit fully so its indicator is visible.
+	return rowsUsed+2 <= bodyH
 }
 
 // clampTopicOffset returns the smallest offset in [0, cursor] such that the
@@ -667,38 +663,53 @@ func (o Overview) renderTopicPanel(width, height int) string {
 
 func (o Overview) renderTopicList(width, bodyH int) string {
 	var b strings.Builder
-	// linesUsed counts actual visible rows. A newline character separating
-	// two blocks terminates the previous row; it doesn't add a row. Only
-	// card content, expansion content, and divider content count as rows.
-	linesUsed := 0
-
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
+
+	// rowsUsed counts actual visible rows. Each block rendered below is
+	// appended separated by "\n"; lipgloss.Height of the accumulated result
+	// is the source of truth. We re-measure after each addition and stop
+	// once we'd exceed the budget, rolling back if needed.
+	rowsUsed := 0
+	write := func(block string) int {
+		n := lipgloss.Height(block)
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(block)
+		rowsUsed += n
+		return n
+	}
 
 	for i := o.offset; i < len(o.topics); i++ {
 		top := o.topics[i]
 
-		if linesUsed+2 > bodyH {
+		card := o.renderTopicCard(i, top, width)
+		cardRows := lipgloss.Height(card)
+		if rowsUsed+cardRows > bodyH {
 			break
 		}
-
-		if linesUsed > 0 {
-			b.WriteByte('\n') // terminate previous line, starts new row
-		}
-		b.WriteString(o.renderTopicCard(i, top, width))
-		linesUsed += 2
+		write(card)
 
 		if o.expanded[i] {
-			b.WriteByte('\n')
-			remaining := bodyH - linesUsed
-			written := renderExpandedCapped(&b, o.styles, o.sess, top, remaining)
-			linesUsed += written
+			remaining := bodyH - rowsUsed
+			if remaining > 0 {
+				var eb strings.Builder
+				renderExpandedCapped(&eb, o.styles, o.sess, top, remaining)
+				exp := strings.TrimRight(eb.String(), "\n")
+				if exp != "" {
+					expRows := lipgloss.Height(exp)
+					if rowsUsed+expRows <= bodyH {
+						write(exp)
+					}
+				}
+			}
 		}
 
-		// Insert compact divider after this topic if a boundary falls here.
-		if cb, ok := dividerAfter[i]; ok && linesUsed+1 <= bodyH {
-			b.WriteByte('\n')
-			b.WriteString(renderCompactDivider(cb, width))
-			linesUsed++ // divider is a single row
+		if cb, ok := dividerAfter[i]; ok {
+			div := renderCompactDivider(cb, width)
+			if rowsUsed+lipgloss.Height(div) <= bodyH {
+				write(div)
+			}
 		}
 	}
 	return b.String()

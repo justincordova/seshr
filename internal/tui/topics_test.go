@@ -470,6 +470,30 @@ func TestOverview_Scroll_LastTopicExpandedShowsItsTurns(t *testing.T) {
 	assert.Contains(t, out, "payload-t3", "expanded cursor topic must render its turns")
 }
 
+func TestOverview_Scroll_ExpandAllDoesNotExceedTerminalHeight(t *testing.T) {
+	// Regression: expanding all topics used to emit a View() taller than the
+	// terminal, which made the terminal auto-scroll and hide the top rows
+	// (including the first topic's card indicator).
+	s, tops := manyTopicsSession(15)
+	o := tui.NewOverview(s, tops)
+	const termH = 55
+	next, _ := o.Update(tea.WindowSizeMsg{Width: 170, Height: termH})
+	o = next.(tui.Overview)
+
+	n, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	o = n.(tui.Overview)
+
+	out := o.View()
+	lines := strings.Split(out, "\n")
+	assert.LessOrEqual(t, len(lines), termH,
+		"rendered view must not exceed terminal height (was %d, term %d)",
+		len(lines), termH)
+
+	// Cursor topic (topic 0) must be fully visible with its card indicator.
+	assert.Contains(t, out, tops[0].Label,
+		"cursor topic card header must appear in view")
+}
+
 func TestOverview_Scroll_MovingUpScrollsBack(t *testing.T) {
 	s, tops := manyTopicsSession(20)
 	o := tui.NewOverview(s, tops)
