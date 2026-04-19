@@ -22,7 +22,7 @@ just lint
 
 Or run `just check` to do all three. Fix failures before committing. Do not skip.
 
-Add new task commands to the `justfile`, not the Makefile.
+Add new task commands to the `justfile`.
 
 ## Non-Negotiables
 
