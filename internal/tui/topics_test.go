@@ -217,14 +217,95 @@ func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
 	assert.True(t, ok, "expected OpenReplayMsg, got %T", msg)
 }
 
-func TestOverview_EKeyEmitsOpenEditorMsg(t *testing.T) {
+func TestOverview_SpaceSelectsTopic(t *testing.T) {
 	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
 	m := tui.NewOverview(sess, ts)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	assert.True(t, next.(tui.Overview).IsSelected(0))
 
-	require.NotNil(t, cmd)
-	_, ok := cmd().(tui.OpenEditorMsg)
-	assert.True(t, ok, "expected OpenEditorMsg, got %T", cmd())
+	// Space again deselects.
+	next2, _ := next.(tui.Overview).Update(tea.KeyMsg{Type: tea.KeySpace})
+	assert.False(t, next2.(tui.Overview).IsSelected(0))
+}
+
+func TestOverview_ToggleAll_SelectsAndDeselects(t *testing.T) {
+	s, tops := demoSessionAndTopics()
+	m := tui.NewOverview(s, tops)
+	require.Len(t, tops, 2)
+
+	// 'a' with none selected → select all
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	o := next.(tui.Overview)
+	assert.True(t, o.IsSelected(0))
+	assert.True(t, o.IsSelected(1))
+
+	// 'a' again with all selected → deselect all
+	next2, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	o2 := next2.(tui.Overview)
+	assert.False(t, o2.IsSelected(0))
+	assert.False(t, o2.IsSelected(1))
+}
+
+func TestOverview_FoldAll_ExpandsAndCollapses(t *testing.T) {
+	s, tops := demoSessionAndTopics()
+	m := tui.NewOverview(s, tops)
+
+	// 'f' with none expanded → expand all
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	o := next.(tui.Overview)
+	assert.True(t, o.Expanded(0))
+	assert.True(t, o.Expanded(1))
+
+	// 'f' again → collapse all
+	next2, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	o2 := next2.(tui.Overview)
+	assert.False(t, o2.Expanded(0))
+	assert.False(t, o2.Expanded(1))
+}
+
+func TestOverview_MultipleCompactBoundaries_MiddleTopicsAreSafeToprune(t *testing.T) {
+	// Topics 1 and 2 are before boundary 1; topic 3 is between boundaries;
+	// topic 4 is after boundary 2 (active context). Topics 1–3 should all be
+	// pre-compact; only topic 4 is active.
+	base := time.Unix(1_700_000_000, 0)
+	sess := &parser.Session{
+		Turns: []parser.Turn{
+			{Role: parser.RoleUser, Timestamp: base, Content: "a"},
+			{Role: parser.RoleAssistant, Timestamp: base.Add(1 * time.Second), Content: "b"},
+			{Role: parser.RoleUser, Timestamp: base.Add(2 * time.Second), Content: "c"},
+			{Role: parser.RoleAssistant, Timestamp: base.Add(3 * time.Second), Content: "d"},
+			{Role: parser.RoleUser, Timestamp: base.Add(4 * time.Second), Content: "e"},
+			{Role: parser.RoleAssistant, Timestamp: base.Add(5 * time.Second), Content: "f"},
+		},
+		CompactBoundaries: []parser.CompactBoundary{
+			{TurnIndex: 2, Trigger: "auto"},
+			{TurnIndex: 4, Trigger: "manual"},
+		},
+	}
+	tops := []topics.Topic{
+		{Label: "Before first", TurnIndices: []int{0, 1}},
+		{Label: "Between boundaries", TurnIndices: []int{2, 3}},
+		{Label: "After last", TurnIndices: []int{4, 5}},
+	}
+	m := tui.NewOverview(sess, tops)
+
+	// Select first two topics (pre-compact) and verify safe indicator
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace}) // select topic 0
+	next, _ = next.(tui.Overview).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	next, _ = next.(tui.Overview).Update(tea.KeyMsg{Type: tea.KeySpace}) // select topic 1
+	out := next.(tui.Overview).View()
+	assert.Contains(t, out, "Safe to prune", "topics before last boundary should be safe")
+	assert.NotContains(t, out, "⚠", "should not show a warning for pre-compact topics")
+}
+
+func TestOverview_SelectionStripShownInView(t *testing.T) {
+	s, tops := demoSessionAndTopics()
+	m := tui.NewOverview(s, tops)
+
+	// Select first topic then check view contains token summary
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	out := next.(tui.Overview).View()
+	assert.Contains(t, out, "selected")
 }

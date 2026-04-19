@@ -125,32 +125,6 @@ func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
 	assert.Equal(t, tui.StateOverview, a3.(tui.App).State())
 }
 
-func TestApp_OpenEditorTransitionsToEditorState(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
-	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
-	app := tui.AppInOverview(sess, ts)
-	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	a := next.(tui.App)
-
-	a2, _ := a.Update(tui.OpenEditorMsg{})
-
-	assert.Equal(t, tui.StateEditor, a2.(tui.App).State())
-}
-
-func TestApp_EditorEscReturnsToOverview(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
-	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
-	app := tui.AppInOverview(sess, ts)
-	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	a := next.(tui.App)
-	a2, _ := a.Update(tui.OpenEditorMsg{})
-	require.Equal(t, tui.StateEditor, a2.(tui.App).State())
-
-	a3, _ := a2.(tui.App).Update(tui.ReturnToOverviewMsg{})
-
-	assert.Equal(t, tui.StateOverview, a3.(tui.App).State())
-}
-
 func TestApp_RestoreRequestedShowsConfirm(t *testing.T) {
 	app := tui.NewApp([]parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg())
 	next, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})

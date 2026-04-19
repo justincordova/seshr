@@ -20,16 +20,13 @@ func (a App) currentBindings() []key.Binding {
 	switch a.state {
 	case stateList:
 		k := DefaultPickerKeys()
-		return []key.Binding{k.Up, k.Down, k.Open, k.Replay, k.Edit, k.Delete, k.Restore, k.Search, k.Quit}
+		return []key.Binding{k.Up, k.Down, k.Open, k.Replay, k.Delete, k.Restore, k.Search, k.Quit}
 	case stateOverview:
 		k := DefaultOverviewKeys()
-		return []key.Binding{k.Up, k.Down, k.Expand, k.Replay, k.Edit, k.Stats, k.Search, k.Back, k.Quit}
+		return []key.Binding{k.Up, k.Down, k.Expand, k.FoldAll, k.Select, k.ToggleAll, k.Prune, k.Replay, k.Stats, k.Search, k.Back, k.Quit}
 	case stateReplay:
 		k := DefaultReplayKeys()
 		return []key.Binding{k.Next, k.Prev, k.AutoPlay, k.NextTopic, k.PrevTopic, k.ToggleThinking, k.SpeedUp, k.SpeedDown, k.Expand, k.SidebarFocus, k.Search, k.Back, k.Quit}
-	case stateEditor:
-		k := DefaultEditorKeys()
-		return []key.Binding{k.Up, k.Down, k.Toggle, k.SelectAll, k.SelectNone, k.Prune, k.Expand, k.Cancel, k.Quit}
 	default:
 		return nil
 	}
@@ -58,7 +55,6 @@ const (
 	stateOverview
 	stateError
 	stateReplay
-	stateEditor
 	stateConfirmRestore
 )
 
@@ -69,7 +65,6 @@ const (
 	StateOverview       = "overview"
 	StateError          = "error"
 	StateReplay         = "replay"
-	StateEditor         = "editor"
 	StateConfirmRestore = "confirm_restore"
 )
 
@@ -79,7 +74,6 @@ type App struct {
 	picker       Picker
 	overview     Overview
 	replay       Replay
-	editorModel  Editor
 	spinner      spinner.Model
 	loading      string
 	lastErr      string
@@ -94,7 +88,6 @@ type App struct {
 	restoreModal Confirm
 	prevState    appState
 	autoReplay   bool
-	autoEdit     bool
 	// overlay fields
 	overlay  overlayKind
 	help     Help
@@ -116,8 +109,6 @@ func (a App) State() string {
 		return StateOverview
 	case stateReplay:
 		return StateReplay
-	case stateEditor:
-		return StateEditor
 	case stateConfirmRestore:
 		return StateConfirmRestore
 	case stateError:
@@ -240,11 +231,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = m.Meta.Path
 		a.autoReplay = true
 		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
-	case OpenSessionAndEditMsg:
-		a.state = stateLoading
-		a.loading = m.Meta.Path
-		a.autoEdit = true
-		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path))
 	case SessionLoadedMsg:
 		a.session = m.Session
 		a.topicsCache = m.Topics
@@ -259,13 +245,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.replay = a.replay.SetSize(a.width, a.height).(Replay)
 			a.state = stateReplay
 			return a, a.replay.Init()
-		}
-		if a.autoEdit {
-			a.autoEdit = false
-			a.editorModel = NewEditor(m.Session, m.Topics)
-			a.editorModel = a.editorModel.SetSize(a.width, a.height).(Editor)
-			a.state = stateEditor
-			return a, a.editorModel.Init()
 		}
 		a.state = stateOverview
 		return a, nil
@@ -285,11 +264,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ReturnToOverviewMsg:
 		a.state = stateOverview
 		return a, nil
-	case OpenEditorMsg:
-		a.editorModel = NewEditor(a.session, a.topicsCache)
-		a.editorModel = a.editorModel.SetSize(a.width, a.height).(Editor)
-		a.state = stateEditor
-		return a, a.editorModel.Init()
 	case RestoreRequestedMsg:
 		a.restorePath = m.Path
 		a.restoreModal = NewConfirm("Restore from backup?", "This will overwrite the current session file with the backup.")
@@ -330,10 +304,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateReplay:
 		rm, cmd := a.replay.Update(msg)
 		a.replay = rm.(Replay)
-		return a, cmd
-	case stateEditor:
-		em, cmd := a.editorModel.Update(msg)
-		a.editorModel = em.(Editor)
 		return a, cmd
 	case stateConfirmRestore:
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -389,8 +359,6 @@ func (a App) View() string {
 		base = a.overview.View()
 	case stateReplay:
 		base = a.replay.View()
-	case stateEditor:
-		base = a.editorModel.View()
 	case stateConfirmRestore:
 		base = a.restoreModal.View()
 	case stateError:

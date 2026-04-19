@@ -24,14 +24,19 @@ func TestReplayKeys_AllBindingsDefined(t *testing.T) {
 	assert.NotEmpty(t, k.Quit.Keys())
 }
 
-func TestEditorKeys_AllBindingsDefined(t *testing.T) {
-	k := tui.DefaultEditorKeys()
+func TestOverviewKeys_AllBindingsDefined(t *testing.T) {
+	k := tui.DefaultOverviewKeys()
 
-	assert.NotEmpty(t, k.Toggle.Keys())
-	assert.NotEmpty(t, k.SelectAll.Keys())
-	assert.NotEmpty(t, k.SelectNone.Keys())
-	assert.NotEmpty(t, k.Prune.Keys())
+	assert.NotEmpty(t, k.Up.Keys())
+	assert.NotEmpty(t, k.Down.Keys())
 	assert.NotEmpty(t, k.Expand.Keys())
-	assert.NotEmpty(t, k.Cancel.Keys())
+	assert.NotEmpty(t, k.FoldAll.Keys())
+	assert.NotEmpty(t, k.Select.Keys())
+	assert.NotEmpty(t, k.ToggleAll.Keys())
+	assert.NotEmpty(t, k.Prune.Keys())
+	assert.NotEmpty(t, k.Replay.Keys())
+	assert.NotEmpty(t, k.Stats.Keys())
+	assert.NotEmpty(t, k.Search.Keys())
+	assert.NotEmpty(t, k.Back.Keys())
 	assert.NotEmpty(t, k.Quit.Keys())
 }

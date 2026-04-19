@@ -9,21 +9,19 @@ type PickerKeys struct {
 	Down    key.Binding
 	Open    key.Binding
 	Replay  key.Binding
-	Edit    key.Binding
 	Delete  key.Binding
 	Restore key.Binding
 	Search  key.Binding
 	Quit    key.Binding
 }
 
-// DefaultPickerKeys returns the v1 picker bindings per SPEC §3.1.
+// DefaultPickerKeys returns the picker bindings.
 func DefaultPickerKeys() PickerKeys {
 	return PickerKeys{
 		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
 		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 		Open:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
 		Replay:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
-		Edit:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		Delete:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		Restore: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restore")),
 		Search:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
@@ -33,29 +31,35 @@ func DefaultPickerKeys() PickerKeys {
 
 // OverviewKeys is the Topic Overview keymap (SPEC §3.2).
 type OverviewKeys struct {
-	Up     key.Binding
-	Down   key.Binding
-	Expand key.Binding
-	Replay key.Binding
-	Edit   key.Binding
-	Stats  key.Binding
-	Search key.Binding
-	Back   key.Binding
-	Quit   key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Expand    key.Binding
+	FoldAll   key.Binding
+	Select    key.Binding
+	ToggleAll key.Binding
+	Prune     key.Binding
+	Replay    key.Binding
+	Stats     key.Binding
+	Search    key.Binding
+	Back      key.Binding
+	Quit      key.Binding
 }
 
-// DefaultOverviewKeys returns the v1 topic overview bindings per SPEC §3.2.
+// DefaultOverviewKeys returns the topic overview bindings.
 func DefaultOverviewKeys() OverviewKeys {
 	return OverviewKeys{
-		Up:     key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		Expand: key.NewBinding(key.WithKeys("enter", "right", "l"), key.WithHelp("enter", "expand")),
-		Replay: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
-		Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
-		Stats:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "stats")),
-		Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-		Back:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Quit:   key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
+		Up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		Expand:    key.NewBinding(key.WithKeys("enter", "right", "l"), key.WithHelp("enter", "expand")),
+		FoldAll:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "fold all")),
+		Select:    key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "select")),
+		ToggleAll: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "toggle all")),
+		Prune:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prune")),
+		Replay:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
+		Stats:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "stats")),
+		Search:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+		Back:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Quit:      key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
 
@@ -93,31 +97,5 @@ func DefaultReplayKeys() ReplayKeys {
 		Search:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 		Quit:           key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
-	}
-}
-
-type EditorKeys struct {
-	Up         key.Binding
-	Down       key.Binding
-	Toggle     key.Binding
-	SelectAll  key.Binding
-	SelectNone key.Binding
-	Prune      key.Binding
-	Expand     key.Binding
-	Cancel     key.Binding
-	Quit       key.Binding
-}
-
-func DefaultEditorKeys() EditorKeys {
-	return EditorKeys{
-		Up:         key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:       key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		Toggle:     key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
-		SelectAll:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "all")),
-		SelectNone: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "none")),
-		Prune:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prune")),
-		Expand:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "expand")),
-		Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }

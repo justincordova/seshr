@@ -194,11 +194,6 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return p, func() tea.Msg { return OpenSessionAndReplayMsg{Meta: sel} }
 			}
 			return p, nil
-		case key.Matches(msg, p.keys.Edit):
-			if sel, ok := p.selectedSession(); ok {
-				return p, func() tea.Msg { return OpenSessionAndEditMsg{Meta: sel} }
-			}
-			return p, nil
 		case key.Matches(msg, p.keys.Delete):
 			sel, ok := p.selectedSession()
 			if !ok {
@@ -574,10 +569,6 @@ type OpenSessionMsg struct {
 }
 
 type OpenSessionAndReplayMsg struct {
-	Meta parser.SessionMeta
-}
-
-type OpenSessionAndEditMsg struct {
 	Meta parser.SessionMeta
 }
 
