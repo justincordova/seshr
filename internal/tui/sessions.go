@@ -285,15 +285,7 @@ func renderLogo() string {
 func (p Picker) renderHeader(width int) string {
 	logo := renderLogo()
 	ver := dimStyle.Render("v0.1")
-	left := logo + " " + ver
-
-	right := dimStyle.Render("↑↓ select · enter open · q quit")
-
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	row := left + strings.Repeat(" ", gap) + right
+	row := logo + " " + ver
 	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(row)
 }
 
@@ -309,6 +301,7 @@ func (p Picker) renderStats(width int) string {
 		value string
 	}
 	items := []statItem{
+		{"SESSIONS", fmt.Sprintf("%d", sum.TotalSessions)},
 		{"PROJECTS", fmt.Sprintf("%d", sum.Projects)},
 		{"TOKENS", humanize.Comma(sum.TotalTokens)},
 		{"SIZE", humanizeSize(sum.TotalBytes)},
@@ -349,9 +342,8 @@ func (p Picker) renderSessionPanel(width, height int) string {
 		return panel(title, body, width, height)
 	}
 
-	title := fmt.Sprintf(" Sessions %s", dimStyle.Render(fmt.Sprintf("(%d)", len(p.metas))))
 	body := p.renderGroupedList(width - 4)
-	return panel(title, body, width, height)
+	return panel("", body, width, height)
 }
 
 func (p Picker) renderGroupedList(width int) string {

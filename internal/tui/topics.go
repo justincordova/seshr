@@ -284,7 +284,7 @@ func (o Overview) renderStatsStrip(width int) string {
 
 	items := []string{
 		statInline("TURNS", fmt.Sprintf("%d", len(s.Turns)), colGreen),
-		statInline("TOKENS", fmt.Sprintf("~%s (%.0f%%)", humanize.Comma(int64(s.TokenCount)), pct), tokenColor),
+		statInline("TOKENS", fmt.Sprintf("~%s", humanize.Comma(int64(s.TokenCount))), tokenColor),
 		statInline("TOPICS", fmt.Sprintf("%d", len(o.topics)), colMauve),
 		statInline("DURATION", dur.String(), colLavender),
 	}

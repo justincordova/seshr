@@ -58,7 +58,7 @@ func TestApp_ReturnToPickerMsg_GoesBack(t *testing.T) {
 	loaded := tui.SessionLoadedMsg{Session: sess, Topics: topics.Cluster(sess, topics.DefaultOptions())}
 	a, _ := app.Update(loaded)
 	next, _ := a.(tui.App).Update(tui.ReturnToPickerMsg{})
-	assert.Contains(t, next.(tui.App).View(), "Sessions")
+	assert.Contains(t, next.(tui.App).View(), "SESSIONS")
 }
 
 func TestApp_SessionLoadErrMsg_ShowsErrorState(t *testing.T) {
