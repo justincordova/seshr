@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -83,16 +82,21 @@ func Scan(root string) ([]SessionMeta, error) {
 		return out[i].ModifiedAt.After(out[j].ModifiedAt)
 	})
 
-	p := NewClaude()
 	for i := range out {
-		sess, err := p.Parse(context.Background(), out[i].Path)
-		if err != nil {
-			slog.Warn("quick parse failed", "path", out[i].Path, "err", err)
-			continue
-		}
-		out[i].TurnCount = len(sess.Turns)
-		out[i].TokenCount = sess.TokenCount
+		out[i].TokenCount = estimateTokensFromSize(out[i].Size)
 	}
 
 	return out, nil
+}
+
+// estimateTokensFromSize produces a rough token count from file size. The
+// tokenizer heuristic is rune_count/3.5 for text content. JSONL overhead
+// (keys, braces, timestamps) inflates byte count relative to actual content,
+// so dividing by 5 gives a reasonable ballpark for the picker display. Exact
+// counts are computed when the user opens a session via Parse.
+func estimateTokensFromSize(size int64) int {
+	if size <= 0 {
+		return 0
+	}
+	return int(size / 5)
 }
