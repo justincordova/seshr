@@ -424,10 +424,10 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	name := nameStyle.Render(strings.ToUpper(truncate(g.DisplayName, 30)))
 
 	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
-	tokens := dimStyle.Render(humanize.Comma(int64(g.TotalTokens)) + " tok")
+	tokStr := dimStyle.Render(humanizeTokens(int64(g.TotalTokens)) + " tok")
 
 	const nameMetaGap = 4
-	line1 := gutter + " " + name + strings.Repeat(" ", nameMetaGap) + count + "  " + tokens
+	line1 := gutter + " " + name + strings.Repeat(" ", nameMetaGap) + count + "  " + tokStr
 	// Second line keeps the colored gutter so the project bar reads as a
 	// chunkier, taller block. Visually connects to the next row's gutter.
 	line2 := gutter
@@ -455,7 +455,7 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 	}
 	id := idStyle.Render(truncate(m.ID, 20))
 
-	tokStr := dimStyle.Render(humanize.Comma(int64(m.TokenCount)) + " tok")
+	tokStr := dimStyle.Render(humanizeTokens(int64(m.TokenCount)) + " tok")
 
 	backup := ""
 	if m.HasBackup {
@@ -464,7 +464,11 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 
 	if width >= 80 {
 		age := dimStyle.Render(humanize.Time(m.ModifiedAt))
-		return gutter + "   " + glyph + " " + id + "  " + tokStr + "  " + age + backup
+		const tokCol = 12
+		const ageCol = 14
+		tokAligned := lipgloss.NewStyle().Width(tokCol).Align(lipgloss.Right).Render(tokStr)
+		ageAligned := lipgloss.NewStyle().Width(ageCol).Align(lipgloss.Right).Render(age)
+		return gutter + "   " + glyph + " " + id + "  " + tokAligned + "  " + ageAligned + backup
 	}
 	return gutter + "   " + glyph + " " + id + "  " + tokStr + backup
 }
@@ -616,4 +620,17 @@ func removeMeta(metas []parser.SessionMeta, path string) []parser.SessionMeta {
 
 func humanizeSize(n int64) string {
 	return humanize.IBytes(uint64(n))
+}
+
+func humanizeTokens(n int64) string {
+	switch {
+	case n >= 1_000_000_000:
+		return fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }
