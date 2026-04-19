@@ -25,7 +25,8 @@ TUI coverage is lower by design — view rendering is validated manually. Focus 
 
 ```
 seshr/
-├── main.go
+├── cmd/seshr/
+│   └── main.go
 ├── internal/
 │   ├── parser/
 │   │   ├── claude.go           → claude_test.go
@@ -40,11 +41,17 @@ seshr/
 │   │   └── config.go           → config_test.go
 │   └── tui/
 │       ├── app.go              → app_test.go
+│       ├── topics.go           → topics_test.go
+│       ├── replay.go           → replay_test.go
 │       └── ...
 ├── testdata/
 │   ├── simple.jsonl
 │   ├── multi_topic.jsonl
-│   └── chained.jsonl
+│   ├── compact_boundary.jsonl
+│   ├── embedded_tool_results.jsonl
+│   ├── prune_basic.jsonl
+│   ├── replay_basic.jsonl
+│   └── malformed.jsonl
 └── tests/
     └── integration_test.go
 ```

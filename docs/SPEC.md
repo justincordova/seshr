@@ -71,25 +71,28 @@ seshr/
 │       ├── app.go             # Root Bubbletea model, screen routing, global overlays
 │       ├── sessions.go        # Session picker view (grouped by project)
 │       ├── picker_groups.go   # Project grouping, row flattening, summary stats
-│       ├── topics.go          # Topic overview view (shared foundation)
+│       ├── topics.go          # Topic overview with inline edit/select/prune
 │       ├── replay.go          # Replay mode view
 │       ├── replay_autoplay.go # Auto-play state machine
 │       ├── replay_render.go   # Replay turn rendering (markdown, tool blocks, search)
-│       ├── editor.go          # Editor mode view
-│       ├── editor_render.go   # Editor turn rendering
 │       ├── confirm.go         # Confirmation dialog component (delete, prune, restore)
 │       ├── help.go            # Help overlay component (? key)
 │       ├── search.go          # Fuzzy search bar component (/ key)
 │       ├── settings.go        # Settings popup (, key)
 │       ├── logviewer.go       # Log viewer (L key)
+│       ├── load.go            # Async session loading (Bubbletea Cmds)
 │       ├── theme.go           # Color scheme definitions (Catppuccin, Nord, Dracula)
 │       ├── keys.go            # Keybinding definitions per screen
 │       ├── styles.go          # Lipgloss style constants
 │       └── chrome.go          # Shared layout primitives: header/footer bars, pill, panel, kbd, hRule
 ├── testdata/
-│   ├── simple.jsonl           # Simple Claude Code session fixture
-│   ├── multi_topic.jsonl      # Multi-topic session with tool calls
-│   └── embedded_tool_results.jsonl  # Session with embedded tool results
+│   ├── simple.jsonl                # Simple Claude Code session fixture
+│   ├── multi_topic.jsonl           # Multi-topic session with tool calls
+│   ├── embedded_tool_results.jsonl # Session with embedded tool results
+│   ├── compact_boundary.jsonl      # Session with /compact boundaries
+│   ├── prune_basic.jsonl           # Session for prune pairing tests
+│   ├── replay_basic.jsonl          # Session for replay rendering tests
+│   └── malformed.jsonl             # Malformed JSONL for parser resilience
 ├── go.mod
 └── go.sum
 ```
@@ -107,12 +110,11 @@ Session file(s) on disk
   topics.Cluster()         →  []Topic (grouped turns with labels)
        │
        ▼
-  tui renders Topic Overview
+  tui renders Topic Overview (with inline edit/select/prune)
        │
-   ┌───┴───┐
-   ▼       ▼
- Replay   Editor
- Mode     Mode
+       ├── Replay Mode
+       │
+       └── Prune selected topics
             │
             ▼
   pruner.Prune()           →  Rewritten file (selected turns removed)
@@ -153,7 +155,6 @@ Sessions are **grouped by project** into collapsible groups with colored gutters
 | `↑/↓` or `j/k` | Navigate session list         | Vim-style navigation                   |
 | `enter`        | Open session → Topic Overview | Parses and clusters into topics        |
 | `r`            | Open directly in Replay Mode  | Skips topic overview                   |
-| `e`            | Open directly in Edit Mode    | Skips topic overview                   |
 | `d`            | Delete session                | Confirmation dialog before deleting    |
 | `R`            | Restore from `.bak`           | Only if a `.bak` sibling exists (§4.5) |
 | `/`            | Fuzzy search/filter sessions  | Matches project name + session ID      |
@@ -168,7 +169,7 @@ When a user presses `d`, a confirmation dialog appears with the session display 
 
 ### 3.2 Topic Overview (Shared View)
 
-The core screen and shared foundation for both Replay and Edit modes. Displays the parsed session as a list of auto-detected topics, each showing a label, token count, turn range, tool call count, and duration.
+The core screen for inspecting and editing sessions. Displays the parsed session as a list of auto-detected topics, each showing a label, token count, turn range, tool call count, and duration. Selection and pruning are done inline — there is no separate Edit Mode screen.
 
 ```
 ┌─ ◆ Seshr ───────────────────────────────────────────────────────────────────┐
@@ -183,21 +184,25 @@ The core screen and shared foundation for both Replay and Edit modes. Displays t
 │  ▌  3. Where to buy a house                           ~2,100                 │
 │       turns 12–13 · 0 tool calls · 2 min · 5 days ago                       │
 │                                                                              │
-│  ↑↓/jk nav · enter expand · r replay · e edit · tab stats · / search · esc back │
+│  ↑↓/jk nav · enter expand · f fold · space select · a toggle · p prune      │
+│  r replay · tab stats · / search · esc back                                  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Topic Overview Keybindings
 
-| Key            | Action                      | Notes                         |
-| -------------- | --------------------------- | ----------------------------- |
-| `↑/↓` or `j/k` | Navigate topics             |                               |
-| `enter` or `→` or `l` | Expand/collapse topic | Shows individual turns within |
-| `r`            | Enter Replay Mode           | Starts from selected topic    |
-| `e`            | Enter Edit Mode             | Enables selection checkboxes  |
-| `/`            | Fuzzy search within session | Searches topic labels + turn content |
-| `tab`          | Toggle stats panel          | Right-side aggregate stats    |
-| `esc`          | Back to Session Picker      |                               |
+| Key            | Action                      | Notes                                    |
+| -------------- | --------------------------- | ---------------------------------------- |
+| `↑/↓` or `j/k` | Navigate topics             |                                          |
+| `enter` or `→` or `l` | Expand/collapse topic | Shows individual turns within            |
+| `f`            | Fold all / unfold all       | Collapses all if any expanded; vice versa |
+| `space`        | Toggle topic selection      | Selects all turns in the topic           |
+| `a`            | Toggle select all           | Select all if any unselected; deselect all if all selected |
+| `p`            | Prune selected topics       | Shows confirmation with token savings    |
+| `r`            | Enter Replay Mode           | Starts from selected topic               |
+| `/`            | Fuzzy search within session | Searches topic labels + turn content     |
+| `tab`          | Toggle stats panel          | Right-side aggregate stats               |
+| `esc`          | Back to Session Picker      |                                          |
 
 #### Compact Boundary Dividers
 
@@ -293,34 +298,27 @@ Press `tab` to toggle focus between the main content and the topic sidebar. When
 | `/`        | Search within session  | Shows results panel, jumps on enter              |
 | `esc`      | Back to Topic Overview | Or close expanded tool result / search           |
 
-### 3.4 Edit Mode
+### 3.4 Inline Editing & Pruning
 
-Adds selection controls to the Topic Overview. Users select entire topics to prune. Footer shows a running count of selected items and estimated tokens freed.
+Selection and pruning happen directly on the Topic Overview — there is no separate Edit Mode screen. Users select entire topics to prune from the same screen used for browsing.
 
 ```
-┌─ ◆ Seshr ─── EDIT MODE ─────────────────────────────────────────────────────┐
-│  Select topics or turns to prune                                             │
+┌─ ◆ Seshr ───────────────────────────────────────────────────────────────────┐
+│  TURNS 34 │ TOKENS ~47,231 │ TOPICS 5 │ DURATION 2 hours                    │
 │                                                                              │
-│  [ ] 1. Project setup & Express init          ~12.4k                        │
-│  [ ] 2. Authentication with JWT                ~8.2k                        │
-│  [x] 3. Where to buy a house                   ~2.1k                        │
-│  [ ] 4. Rate limiting implementation           ~9.8k                        │
-│  [ ] 5. Error handling & validation           ~14.7k                        │
+│  [ ] 1. Project setup & Express init                    ~12,400               │
+│       turns 1–5 · 8 tool calls · 12 min · 1 week ago                        │
 │                                                                              │
-│  space select · a all · A none · enter expand · p prune · esc cancel        │
+│  [ ] 2. Authentication with JWT                        ~8,200                 │
+│       turns 6–11 · 4 tool calls · 9 min · 6 days ago                        │
+│                                                                              │
+│  [x] 3. Where to buy a house                           ~2,100                 │
+│       turns 12–13 · 0 tool calls · 2 min · 5 days ago                       │
+│                                                                              │
+│  1 topic selected · ~2,100 tokens freed                                      │
+│  ↑↓ nav · space select · a toggle · p prune · esc clear                      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
-
-#### Edit Mode Keybindings
-
-| Key     | Action                | Notes                                        |
-| ------- | --------------------- | -------------------------------------------- |
-| `space` | Toggle selection      | Selecting a topic selects all its turns      |
-| `a`     | Select all            |                                              |
-| `A`     | Deselect all          |                                              |
-| `p`     | Prune selected        | Shows confirmation with token savings        |
-| `enter` | Expand/collapse topic | View individual turns within the topic       |
-| `esc`   | Cancel and return     | Discards selections                          |
 
 Selection is at the topic level. Individual turn selection within a topic is not supported in v1.
 

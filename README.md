@@ -11,7 +11,8 @@ _Coming soon_ — Homebrew tap and prebuilt binaries will land with v0.1.0.
 
 ```
 seshr                       # launch the session picker
-seshr path/to/session.jsonl
+seshr --dir path/to/sessions   # scan a custom directory
+seshr --theme nord          # use the Nord color scheme
 seshr --debug               # verbose logging to ~/.seshr/debug.log
 seshr --version
 ```
