@@ -130,8 +130,7 @@ func (s *Settings) startEditing() {
 
 func (s *Settings) applyInput() error {
 	val := strings.TrimSpace(s.input.Value())
-	switch s.cursor {
-	case fieldGap:
+	if s.cursor == fieldGap {
 		var n int
 		if _, err := fmt.Sscanf(val, "%d", &n); err != nil || n < 0 {
 			return fmt.Errorf("must be a non-negative integer")

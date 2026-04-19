@@ -168,19 +168,19 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.expandedTool >= 0 {
 				switch msg.String() {
 				case "up", "k":
-					m.vp.LineUp(1)
+					m.vp.ScrollUp(1)
 					return m, nil
 				case "down", "j":
-					m.vp.LineDown(1)
+					m.vp.ScrollDown(1)
 					return m, nil
 				}
 			} else {
 				switch msg.String() {
 				case "up", "k":
-					m.mainVP.LineUp(1)
+					m.mainVP.ScrollUp(1)
 					return m, nil
 				case "down", "j":
-					m.mainVP.LineDown(1)
+					m.mainVP.ScrollDown(1)
 					return m, nil
 				}
 			}
@@ -283,11 +283,11 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
-		switch msg.Type {
-		case tea.MouseWheelUp:
-			m.mainVP.LineUp(3)
-		case tea.MouseWheelDown:
-			m.mainVP.LineDown(3)
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.mainVP.ScrollUp(3)
+		case tea.MouseButtonWheelDown:
+			m.mainVP.ScrollDown(3)
 		}
 	}
 	return m, nil
@@ -567,7 +567,7 @@ func (m Replay) renderMain(width int) string {
 	header := RenderTurnHeader(turn, prev, width, m.styles, m.theme)
 	if preCompact {
 		badge := lipgloss.NewStyle().Foreground(colSurface1).Render(" pre-compact")
-		header = header + badge
+		header += badge
 	}
 	b.WriteString(header)
 	b.WriteString("\n")

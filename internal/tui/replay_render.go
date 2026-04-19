@@ -314,9 +314,7 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 		}
 		if selected {
 			blk.lines = append(blk.lines, header)
-			for _, l := range strings.Split(excerpt, "\n") {
-				blk.lines = append(blk.lines, l)
-			}
+			blk.lines = append(blk.lines, strings.Split(excerpt, "\n")...)
 		} else {
 			blk.lines = append(blk.lines, dimStyle.Render(header))
 			for _, l := range strings.Split(excerpt, "\n") {
@@ -339,7 +337,6 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 	}
 
 	// Flatten all lines and track where selected block starts.
-	type lineEntry struct{ text string }
 	var allLines []string
 	blockStart := make([]int, len(blocks)) // line index of first line of each block
 	cur := 0
@@ -455,20 +452,17 @@ func ComputeSearchScrollTop(sess *parser.Session, matches []fuzzy.Match, selecte
 		scrollTop = maxTop
 	}
 	top := scrollTop
-	bottom := top + height - 1
-	if selEnd > bottom {
+	if selEnd > top+height-1 {
 		top = selEnd - height + 1
 		if top > maxTop {
 			top = maxTop
 		}
-		bottom = top + height - 1
 	}
 	if selStart < top {
 		top = selStart
 		if top < 0 {
 			top = 0
 		}
-		bottom = top + height - 1
 	}
 	return top
 }

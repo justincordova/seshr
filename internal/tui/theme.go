@@ -101,7 +101,7 @@ func Nord() Theme {
 
 		ProjectPalette: []lipgloss.AdaptiveColor{
 			frost3, frost2, accent, auroraGreen, auroraYellow, auroraPurple,
-			auroraRed, lipgloss.AdaptiveColor{Dark: "#88C0D0", Light: "#88C0D0"},
+			auroraRed, {Dark: "#88C0D0", Light: "#88C0D0"},
 		},
 
 		UserColor:       lipgloss.AdaptiveColor{Light: "#A3BE8C", Dark: "#A3BE8C"},
