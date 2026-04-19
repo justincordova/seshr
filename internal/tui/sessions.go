@@ -426,8 +426,13 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
 	tokStr := dimStyle.Render(humanizeTokens(int64(g.TotalTokens)) + " tok")
 
-	const nameMetaGap = 4
-	line1 := gutter + " " + name + strings.Repeat(" ", nameMetaGap) + count + "  " + tokStr
+	left := gutter + " " + name
+	right := count + "  " + tokStr
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 4 {
+		gap = 4
+	}
+	line1 := left + strings.Repeat(" ", gap) + right
 	// Second line keeps the colored gutter so the project bar reads as a
 	// chunkier, taller block. Visually connects to the next row's gutter.
 	line2 := gutter
@@ -464,11 +469,13 @@ func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.Ter
 
 	if width >= 80 {
 		age := dimStyle.Render(humanize.Time(m.ModifiedAt))
-		const tokCol = 12
-		const ageCol = 14
-		tokAligned := lipgloss.NewStyle().Width(tokCol).Align(lipgloss.Right).Render(tokStr)
-		ageAligned := lipgloss.NewStyle().Width(ageCol).Align(lipgloss.Right).Render(age)
-		return gutter + "   " + glyph + " " + id + "  " + tokAligned + "  " + ageAligned + backup
+		left := gutter + "   " + glyph + " " + id
+		right := tokStr + "  " + age + backup
+		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+		if gap < 2 {
+			gap = 2
+		}
+		return left + strings.Repeat(" ", gap) + right
 	}
 	return gutter + "   " + glyph + " " + id + "  " + tokStr + backup
 }
