@@ -437,7 +437,7 @@ func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	}
 
 	num := numStyle.Render(fmt.Sprintf("%2d.", i+1))
-	tokStr := fmt.Sprintf("~%s", humanize.Comma(int64(top.TokenCount)))
+	tokStr := fmt.Sprintf("~%s tok", humanize.Comma(int64(top.TokenCount)))
 	// Pre-compact topics get an ░ right-margin indicator.
 	inactiveMarker := ""
 	if preCompact {
@@ -445,7 +445,12 @@ func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	}
 	tokens := tokenStyle.Render(tokStr) + inactiveMarker
 
-	line1 := fmt.Sprintf("%s %s %s  %s", bar, num, label, tokens)
+	left := fmt.Sprintf("%s %s %s", bar, num, label)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(tokens)
+	if gap < 1 {
+		gap = 1
+	}
+	line1 := left + strings.Repeat(" ", gap) + tokens
 
 	turnRange := dimStyle.Render(fmt.Sprintf("turns %d–%d",
 		firstTurnIdx(top.TurnIndices)+1,
