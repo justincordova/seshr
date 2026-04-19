@@ -378,10 +378,10 @@ func (p Picker) renderGroupedList(width int) string {
 	return b.String()
 }
 
-// rowHeight returns the total line count each row kind occupies. Group headers
-// are 2 lines tall so the colored gutter reads as a bigger block; sessions stay
-// 1 line. Gutters line up vertically across adjacent rows so a whole project
-// visually reads as one connected bar on the left.
+// rowHeight returns the total line count each row kind occupies. All rows are
+// 1 line tall — group headers and session rows render identically. The gutter
+// carries project color across adjacent rows so a whole project reads as one
+// connected bar on the left.
 func rowHeight(kind RowKind) int {
 	return 1
 }
