@@ -419,9 +419,11 @@ func (o Overview) topicBodyHeight() int {
 }
 
 // cursorVisibleFrom reports whether the cursor topic would be fully rendered
-// (2-line card + any expanded previews + a trailing blank) when the list is
-// drawn starting at fromIdx with bodyH available lines. This mirrors the
-// budget logic in renderTopicList exactly so scroll math tracks render math.
+// when the list is drawn starting at fromIdx with bodyH available lines.
+// Mirrors the budget logic in renderTopicList exactly so scroll math tracks
+// render math: a card is 2 rows, a divider is 1 row, expansion is its
+// preview lines. Separators between cards are not counted as rows — a
+// newline terminates the previous row, it doesn't add one.
 func (o Overview) cursorVisibleFrom(fromIdx, cursor, bodyH int) bool {
 	if cursor < fromIdx || cursor >= len(o.topics) {
 		return false
@@ -429,16 +431,11 @@ func (o Overview) cursorVisibleFrom(fromIdx, cursor, bodyH int) bool {
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
 	linesUsed := 0
 	for i := fromIdx; i <= cursor; i++ {
-		need := 2
-		if linesUsed > 0 {
-			need++ // separator above the card
-		}
-		if linesUsed+need > bodyH {
+		if linesUsed+2 > bodyH {
 			return false
 		}
-		linesUsed += need
+		linesUsed += 2
 		if o.expanded[i] {
-			linesUsed++ // blank line above expansion block
 			extra := len(o.topics[i].TurnIndices) + 1
 			if extra > maxExpandedPreviews+1 {
 				extra = maxExpandedPreviews + 1
@@ -453,7 +450,7 @@ func (o Overview) cursorVisibleFrom(fromIdx, cursor, bodyH int) bool {
 		}
 		if _, ok := dividerAfter[i]; ok {
 			if i < cursor {
-				linesUsed += 2
+				linesUsed++
 			}
 		}
 	}
@@ -670,6 +667,9 @@ func (o Overview) renderTopicPanel(width, height int) string {
 
 func (o Overview) renderTopicList(width, bodyH int) string {
 	var b strings.Builder
+	// linesUsed counts actual visible rows. A newline character separating
+	// two blocks terminates the previous row; it doesn't add a row. Only
+	// card content, expansion content, and divider content count as rows.
 	linesUsed := 0
 
 	dividerAfter := compactDividerAfter(o.sess, o.topics)
@@ -677,35 +677,28 @@ func (o Overview) renderTopicList(width, bodyH int) string {
 	for i := o.offset; i < len(o.topics); i++ {
 		top := o.topics[i]
 
-		// Each card always takes 2 lines; need 1 more for separator after first.
-		needed := 2
-		if linesUsed > 0 {
-			needed++
-		}
-		if linesUsed+needed > bodyH {
+		if linesUsed+2 > bodyH {
 			break
 		}
 
 		if linesUsed > 0 {
-			b.WriteByte('\n')
-			linesUsed++
+			b.WriteByte('\n') // terminate previous line, starts new row
 		}
 		b.WriteString(o.renderTopicCard(i, top, width))
 		linesUsed += 2
 
 		if o.expanded[i] {
 			b.WriteByte('\n')
-			linesUsed++
 			remaining := bodyH - linesUsed
 			written := renderExpandedCapped(&b, o.styles, o.sess, top, remaining)
 			linesUsed += written
 		}
 
 		// Insert compact divider after this topic if a boundary falls here.
-		if cb, ok := dividerAfter[i]; ok && linesUsed < bodyH {
+		if cb, ok := dividerAfter[i]; ok && linesUsed+1 <= bodyH {
 			b.WriteByte('\n')
 			b.WriteString(renderCompactDivider(cb, width))
-			linesUsed += 2
+			linesUsed++ // divider is a single row
 		}
 	}
 	return b.String()
