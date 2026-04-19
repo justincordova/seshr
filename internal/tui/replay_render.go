@@ -17,8 +17,12 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-var markdownRenderer *glamour.TermRenderer
-var markdownRendererWidth int
+func getMarkdownRenderer(width int) (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
+		glamour.WithStyles(catppuccinStyleConfig()),
+		glamour.WithWordWrap(width),
+	)
+}
 
 func catppuccinStyleConfig() ansi.StyleConfig {
 	cfg := styles.DarkStyleConfig
@@ -40,22 +44,6 @@ func catppuccinStyleConfig() ansi.StyleConfig {
 	cfg.CodeBlock.Color = &codeColor
 	cfg.CodeBlock.BackgroundColor = &codeBg
 	return cfg
-}
-
-func getMarkdownRenderer(width int) (*glamour.TermRenderer, error) {
-	if markdownRenderer != nil && markdownRendererWidth == width {
-		return markdownRenderer, nil
-	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStyles(catppuccinStyleConfig()),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		return nil, err
-	}
-	markdownRenderer = r
-	markdownRendererWidth = width
-	return r, nil
 }
 
 // RenderRoleBadge returns a styled role badge using the pill chrome primitive.
