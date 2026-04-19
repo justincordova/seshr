@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var confirmTheme = tui.CatppuccinMocha()
+
 func TestConfirm_YKey_Confirms(t *testing.T) {
-	// Arrange
-	c := tui.NewConfirm("delete?", "really?")
+	c := tui.NewConfirm("delete?", "really?", confirmTheme)
 
 	// Act
 	next, _ := c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -22,8 +23,7 @@ func TestConfirm_YKey_Confirms(t *testing.T) {
 }
 
 func TestConfirm_NKey_Cancels(t *testing.T) {
-	// Arrange
-	c := tui.NewConfirm("delete?", "really?")
+	c := tui.NewConfirm("delete?", "really?", confirmTheme)
 
 	// Act
 	next, _ := c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
@@ -35,8 +35,7 @@ func TestConfirm_NKey_Cancels(t *testing.T) {
 }
 
 func TestConfirm_EscKey_Cancels(t *testing.T) {
-	// Arrange
-	c := tui.NewConfirm("delete?", "really?")
+	c := tui.NewConfirm("delete?", "really?", confirmTheme)
 
 	// Act
 	next, _ := c.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -48,8 +47,7 @@ func TestConfirm_EscKey_Cancels(t *testing.T) {
 }
 
 func TestConfirm_View_ContainsTitleAndBody(t *testing.T) {
-	// Arrange
-	c := tui.NewConfirm("Delete session", "This is permanent.")
+	c := tui.NewConfirm("Delete session", "This is permanent.", confirmTheme)
 
 	// Act
 	out := c.View()

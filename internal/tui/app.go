@@ -266,7 +266,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case RestoreRequestedMsg:
 		a.restorePath = m.Path
-		a.restoreModal = NewConfirm("Restore from backup?", "This will overwrite the current session file with the backup.")
+		a.restoreModal = NewConfirm("Restore from backup?", "This will overwrite the current session file with the backup.", a.theme)
 		a.state = stateConfirmRestore
 		return a, nil
 	case RestoreDoneMsg:

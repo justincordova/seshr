@@ -16,8 +16,8 @@ type Confirm struct {
 }
 
 // NewConfirm returns an unresolved Confirm with the given strings.
-func NewConfirm(title, body string) Confirm {
-	return Confirm{title: title, body: body, styles: NewStyles(CatppuccinMocha())}
+func NewConfirm(title, body string, theme Theme) Confirm {
+	return Confirm{title: title, body: body, styles: NewStyles(theme)}
 }
 
 // Done reports whether the user has chosen yes or no.

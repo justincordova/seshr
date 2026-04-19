@@ -204,6 +204,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c := NewConfirm(
 				"Delete session?",
 				fmt.Sprintf("%s · %s\nThis cannot be undone.", g.DisplayName, sel.Project),
+				p.theme,
 			)
 			p.confirm = &c
 			return p, nil
