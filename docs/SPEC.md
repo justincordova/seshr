@@ -642,7 +642,7 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - Table-driven tests for parser and clustering logic — each case gets a `name` field used as the subtest name.
 - Test files sit next to the code they test (`claude_test.go` beside `claude.go`).
 - `testdata/` holds sample JSONL fixtures. Fixtures are checked in, not generated.
-- Run tests with `go test ./...` before any commit (see CLAUDE.md pre-commit gate).
+- Run `just test` before any commit (see CLAUDE.md pre-commit gate).
 
 ### 11.5 Go Best Practices
 

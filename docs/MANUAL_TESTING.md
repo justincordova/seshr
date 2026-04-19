@@ -11,7 +11,7 @@ Run these checks on a real terminal (iTerm2, Alacritty, or kitty) at normal size
 - macOS or Linux
 - Terminal ≥ 80 cols × 24 rows
 - A real `~/.claude/projects/` with at least one multi-topic session
-- Fresh build: `go build -o seshr ./ && ./seshr`
+- Fresh build: `just build && ./seshr`
 
 Tail the log file in a second pane while testing:
 

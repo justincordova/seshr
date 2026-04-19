@@ -4,7 +4,7 @@
 
 1. **Testify framework** — `github.com/stretchr/testify` for all assertions. No mixing styles.
 2. **AAA pattern** — Arrange–Act–Assert with section comments.
-3. **Pre-commit gate** — `go build ./... && go test ./... && golangci-lint run` must pass.
+3. **Pre-commit gate** — `just check` must pass (runs `just build && just test && just lint`).
 4. **Tests alongside code** — `*_test.go` next to the source file.
 5. **No mocks for things you can use directly** — prefer real files in `t.TempDir()` over mocked filesystems, real fixtures over synthetic data.
 
@@ -151,11 +151,11 @@ Do not assert on rendered strings except for narrow snapshot tests — `View()` 
 ## Running Tests
 
 ```bash
-go test ./...                                    # all tests
-go test ./internal/parser/... -v                 # specific package
-go test -race ./...                              # race detection
-go test ./... -coverprofile=cover.out            # coverage
-go tool cover -func=cover.out                    # coverage summary
+just test                                          # all tests
+go test ./internal/parser/... -v                   # specific package
+just test -- -race                                 # race detection
+go test ./... -coverprofile=cover.out              # coverage
+go tool cover -func=cover.out                      # coverage summary
 ```
 
 ## Integration Tests
@@ -171,12 +171,12 @@ go tool cover -func=cover.out                    # coverage summary
 Every commit must pass, in order:
 
 ```bash
-go build ./...
-go test ./...
-golangci-lint run
+just build
+just test
+just lint
 ```
 
-If any step fails, fix it — don't commit broken code. See CLAUDE.md.
+Or `just check` to run all three. If any step fails, fix it — don't commit broken code. See CLAUDE.md.
 
 ## Checklist
 
@@ -186,4 +186,4 @@ If any step fails, fix it — don't commit broken code. See CLAUDE.md.
 - [ ] `t.TempDir()` for filesystem isolation
 - [ ] Helpers marked with `t.Helper()`
 - [ ] Coverage meets package target
-- [ ] `go build ./... && go test ./... && golangci-lint run` passes
+- [ ] `just check` passes

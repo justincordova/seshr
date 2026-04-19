@@ -15,12 +15,14 @@ AI agent session replay & conversation editor. Bubbletea TUI in Go.
 Every commit must pass, in order:
 
 ```bash
-go build ./...
-go test ./...
-golangci-lint run
+just build
+just test
+just lint
 ```
 
-Fix failures before committing. Do not skip.
+Or run `just check` to do all three. Fix failures before committing. Do not skip.
+
+Add new task commands to the `justfile`, not the Makefile.
 
 ## Non-Negotiables
 
