@@ -985,7 +985,7 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	lines = append(lines, fmt.Sprintf("  total: ~%s tokens · %d turns · %s",
 		humanize.Comma(int64(totalTok)), len(sess.Turns), dur))
 	lines = append(lines, "  "+bar)
-	lines = append(lines, fmt.Sprintf("  %s user · %s assistant · %s tool results",
+	lines = append(lines, fmt.Sprintf("  %s user · %s AI · %s tool results",
 		lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleUser])))),
 		lipgloss.NewStyle().Foreground(colBlue).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleAssistant])))),
 		lipgloss.NewStyle().Foreground(colLavender).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleToolResult])))),

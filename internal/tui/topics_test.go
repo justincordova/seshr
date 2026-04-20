@@ -110,7 +110,7 @@ func TestOverview_Stats_ContainsBreakdownNumbers(t *testing.T) {
 	out := o.View()
 	assert.Contains(t, out, "100")
 	assert.Contains(t, out, "user")
-	assert.Contains(t, out, "assistant")
+	assert.Contains(t, out, "AI")
 	assert.Contains(t, out, "2 topics")
 }
 
@@ -166,7 +166,7 @@ func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
 
 	// Assert — stats breakdown shown, and topic-panel cards are hidden.
 	assert.Contains(t, out, "user")
-	assert.Contains(t, out, "assistant")
+	assert.Contains(t, out, "AI")
 	assert.Contains(t, out, "2 topic")
 }
 
