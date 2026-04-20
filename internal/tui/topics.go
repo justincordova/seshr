@@ -12,6 +12,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/justincordova/seshr/internal/editor"
 	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/tokenizer"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -937,15 +938,32 @@ func firstLine(s string) string {
 }
 
 func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
-	roleCounts := map[parser.Role]int{}
-	roleTokens := map[parser.Role]int{}
-	fileSet := map[string]struct{}{}
+	// Tool-result turns are attached to their originating assistant turn, so
+	// tn.Role is never RoleToolResult. We split tool-result tokens out of the
+	// assistant bucket by estimating over ToolResults[].Content directly.
+	userTokens := 0
+	asstTokens := 0
+	toolTokens := 0
 	var tools, toolResults int
+	fileSet := map[string]struct{}{}
 	for _, tn := range sess.Turns {
-		roleCounts[tn.Role]++
-		roleTokens[tn.Role] += tn.Tokens
+		for _, tr := range tn.ToolResults {
+			toolTokens += tokenizer.Estimate(tr.Content)
+		}
 		tools += len(tn.ToolCalls)
 		toolResults += len(tn.ToolResults)
+		switch tn.Role {
+		case parser.RoleUser:
+			userTokens += tn.Tokens
+		case parser.RoleAssistant:
+			asstTokens += tn.Tokens
+		}
+	}
+	// asstTokens currently includes tool-result tokens (attachToolResult folds
+	// them in). Subtract to get a clean split.
+	asstTokens -= toolTokens
+	if asstTokens < 0 {
+		asstTokens = 0
 	}
 	for _, top := range tops {
 		for _, f := range top.FileSet {
@@ -968,10 +986,17 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		totalTok = 1
 	}
 
-	// Visual token distribution bar using Unicode block characters.
+	// Visual token distribution bar using Unicode block characters. The bar is
+	// proportional to the computed user/assistant/tool-result split, not to
+	// sess.TokenCount directly (which counts attached tool results under
+	// assistant turns).
+	splitTotal := userTokens + asstTokens + toolTokens
+	if splitTotal == 0 {
+		splitTotal = 1
+	}
 	const barWidth = 30
-	userW := (roleTokens[parser.RoleUser] * barWidth) / totalTok
-	asstW := (roleTokens[parser.RoleAssistant] * barWidth) / totalTok
+	userW := (userTokens * barWidth) / splitTotal
+	asstW := (asstTokens * barWidth) / splitTotal
 	toolW := barWidth - userW - asstW
 	if toolW < 0 {
 		toolW = 0
@@ -987,9 +1012,9 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		humanize.Comma(int64(totalTok)), len(sess.Turns), dur))
 	lines = append(lines, "  "+bar)
 	lines = append(lines, fmt.Sprintf("  %s user · %s AI · %s tool results",
-		lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleUser])))),
-		lipgloss.NewStyle().Foreground(colBlue).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleAssistant])))),
-		lipgloss.NewStyle().Foreground(colLavender).Render(fmt.Sprintf("~%s", humanize.Comma(int64(roleTokens[parser.RoleToolResult])))),
+		lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("~%s", humanize.Comma(int64(userTokens)))),
+		lipgloss.NewStyle().Foreground(colBlue).Render(fmt.Sprintf("~%s", humanize.Comma(int64(asstTokens)))),
+		lipgloss.NewStyle().Foreground(colLavender).Render(fmt.Sprintf("~%s", humanize.Comma(int64(toolTokens)))),
 	))
 
 	lines = append(lines, "")
