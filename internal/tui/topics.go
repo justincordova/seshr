@@ -940,11 +940,12 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	roleCounts := map[parser.Role]int{}
 	roleTokens := map[parser.Role]int{}
 	fileSet := map[string]struct{}{}
-	var tools int
+	var tools, toolResults int
 	for _, tn := range sess.Turns {
 		roleCounts[tn.Role]++
 		roleTokens[tn.Role] += tn.Tokens
 		tools += len(tn.ToolCalls)
+		toolResults += len(tn.ToolResults)
 	}
 	for _, top := range tops {
 		for _, f := range top.FileSet {
@@ -992,8 +993,8 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	))
 
 	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf("  %s · %d tool calls · %d files",
-		countLabel(len(tops), "topic"), tools, len(fileSet)))
+	lines = append(lines, fmt.Sprintf("  %s · %d tool calls · %d tool results · %d files",
+		countLabel(len(tops), "topic"), tools, toolResults, len(fileSet)))
 
 	if n := len(sess.CompactBoundaries); n > 0 {
 		last := sess.CompactBoundaries[n-1]
