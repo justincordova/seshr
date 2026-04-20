@@ -919,7 +919,7 @@ func roleBadge(r parser.Role) string {
 	case parser.RoleUser:
 		return pill("USER", colBase, colGreen)
 	case parser.RoleAssistant:
-		return pill("ASST", colBase, colBlue)
+		return pill("AI", colBase, colBlue)
 	case parser.RoleToolResult:
 		return pill("TOOL", colBase, colLavender)
 	default:

@@ -21,7 +21,7 @@ func TestRenderRoleBadge_KnownRoles(t *testing.T) {
 		token string
 	}{
 		{parser.RoleUser, "USER"},
-		{parser.RoleAssistant, "ASST"},
+		{parser.RoleAssistant, "AI"},
 		{"tool_use", "TOOL"},
 		{parser.RoleToolResult, "RSLT"},
 	}
@@ -75,7 +75,7 @@ func TestRenderTurnHeader_ContainsAllParts(t *testing.T) {
 
 	got := tui.RenderTurnHeader(turn, prev, 80, s, th)
 
-	assert.Contains(t, got, "ASST")
+	assert.Contains(t, got, "AI")
 	assert.Contains(t, got, "+3m")
 	assert.Contains(t, got, "890")
 }

@@ -52,7 +52,7 @@ func RenderRoleBadge(role parser.Role, t Theme) string {
 	case parser.RoleUser:
 		return pill("USER", t.UserColor, t.Background)
 	case parser.RoleAssistant:
-		return pill("ASST", t.AssistantColor, t.Background)
+		return pill("AI", t.AssistantColor, t.Background)
 	case "tool_use":
 		return pill("TOOL", t.ToolUseColor, t.Background)
 	case parser.RoleToolResult:
