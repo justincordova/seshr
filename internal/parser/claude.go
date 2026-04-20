@@ -322,10 +322,12 @@ func attachToolResult(sess *Session, turn Turn) bool {
 		for _, tc := range sess.Turns[i].ToolCalls {
 			for _, tr := range turn.ToolResults {
 				if tc.ID == tr.ID {
+					est := tokenizer.Estimate(tr.Content)
 					sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, tr)
-					sess.Turns[i].Tokens += tokenizer.Estimate(tr.Content)
+					sess.Turns[i].Tokens += est
 					sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
-					sess.TokenCount += tokenizer.Estimate(tr.Content)
+					sess.TokenCount += est
+					sess.ToolResultTokens += est
 					attached++
 				}
 			}

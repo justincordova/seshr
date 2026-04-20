@@ -39,6 +39,7 @@ type Session struct {
 	CreatedAt         time.Time
 	ModifiedAt        time.Time
 	TokenCount        int
+	ToolResultTokens  int // estimate-based sum of all attached tool-result content; split out of assistant turns for display
 	Turns             []Turn
 	ChainedFiles      []string          // populated only when continuation chains are reconstructed (Phase 7)
 	CompactBoundaries []CompactBoundary // one per /compact call, ordered by position

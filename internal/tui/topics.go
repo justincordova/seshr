@@ -12,7 +12,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/justincordova/seshr/internal/editor"
 	"github.com/justincordova/seshr/internal/parser"
-	"github.com/justincordova/seshr/internal/tokenizer"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -938,33 +937,38 @@ func firstLine(s string) string {
 }
 
 func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
-	// Tool-result turns are attached to their originating assistant turn, so
-	// tn.Role is never RoleToolResult. We split tool-result tokens out of the
-	// assistant bucket by estimating over ToolResults[].Content directly.
+	// Token split: user and assistant tokens come from tn.Tokens (billing
+	// counts when available, estimate otherwise). Tool-result tokens are stored
+	// on sess.ToolResultTokens by attachToolResult using the same estimator,
+	// so all three are in comparable units. We do NOT subtract tool-result
+	// tokens from the assistant bucket here — the bar is proportional to the
+	// three displayed numbers and is labelled accordingly.
+	//
+	// Orphan tool-result turns (attachment failed — rare) have Role ==
+	// RoleToolResult and contribute zero to either user or assistant buckets,
+	// which is intentional: their tokens are already counted in sess.TokenCount
+	// and their ToolResults are counted in toolCalls/toolResults below.
 	userTokens := 0
 	asstTokens := 0
-	toolTokens := 0
-	var tools, toolResults int
+	var toolCalls, toolResults int
 	fileSet := map[string]struct{}{}
 	for _, tn := range sess.Turns {
-		for _, tr := range tn.ToolResults {
-			toolTokens += tokenizer.Estimate(tr.Content)
-		}
-		tools += len(tn.ToolCalls)
-		toolResults += len(tn.ToolResults)
 		switch tn.Role {
 		case parser.RoleUser:
 			userTokens += tn.Tokens
 		case parser.RoleAssistant:
 			asstTokens += tn.Tokens
+			toolCalls += len(tn.ToolCalls)
+			toolResults += len(tn.ToolResults)
+		case parser.RoleToolResult:
+			// Orphan: attachment failed. Count its results but not its tokens
+			// (already in sess.TokenCount; excluding from split avoids skewing
+			// user/asst proportions with an unclassified turn).
+			toolCalls += len(tn.ToolCalls)
+			toolResults += len(tn.ToolResults)
 		}
 	}
-	// asstTokens currently includes tool-result tokens (attachToolResult folds
-	// them in). Subtract to get a clean split.
-	asstTokens -= toolTokens
-	if asstTokens < 0 {
-		asstTokens = 0
-	}
+	toolTokens := sess.ToolResultTokens
 	for _, top := range tops {
 		for _, f := range top.FileSet {
 			fileSet[f] = struct{}{}
@@ -981,15 +985,9 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 		dur = -dur
 	}
 
-	totalTok := sess.TokenCount
-	if totalTok == 0 {
-		totalTok = 1
-	}
-
-	// Visual token distribution bar using Unicode block characters. The bar is
-	// proportional to the computed user/assistant/tool-result split, not to
-	// sess.TokenCount directly (which counts attached tool results under
-	// assistant turns).
+	// Visual token distribution bar. Each segment is proportional to the
+	// displayed number; the three numbers do not sum to sess.TokenCount because
+	// assistant tokens include tool-result tokens (attachment folds them in).
 	splitTotal := userTokens + asstTokens + toolTokens
 	if splitTotal == 0 {
 		splitTotal = 1
@@ -1009,7 +1007,7 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	var lines []string
 	lines = append(lines, "")
 	lines = append(lines, fmt.Sprintf("  total: ~%s tokens · %d turns · %s",
-		humanize.Comma(int64(totalTok)), len(sess.Turns), dur))
+		humanize.Comma(int64(sess.TokenCount)), len(sess.Turns), dur))
 	lines = append(lines, "  "+bar)
 	lines = append(lines, fmt.Sprintf("  %s user · %s AI · %s tool results",
 		lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("~%s", humanize.Comma(int64(userTokens)))),
@@ -1019,7 +1017,7 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 
 	lines = append(lines, "")
 	lines = append(lines, fmt.Sprintf("  %s · %d tool calls · %d tool results · %d files",
-		countLabel(len(tops), "topic"), tools, toolResults, len(fileSet)))
+		countLabel(len(tops), "topic"), toolCalls, toolResults, len(fileSet)))
 
 	if n := len(sess.CompactBoundaries); n > 0 {
 		last := sess.CompactBoundaries[n-1]
