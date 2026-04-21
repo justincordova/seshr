@@ -1,37 +1,41 @@
 # Seshr — Product Specification
 
-**AI Agent Session Replay & Conversation Editor**
-A Bubbletea TUI for understanding and managing AI agent conversations
+**AI Agent Session Cockpit & Conversation Editor**
+A Bubbletea TUI for understanding, managing, and live-monitoring AI agent conversations
 
-v0.1.0 · April 2026
+v1.0.0-draft · April 2026
 
 ---
 
 ## 1. Overview
 
-Seshr is a terminal-based tool built in Go with Bubbletea and Lipgloss that lets developers replay, inspect, and edit AI agent conversation sessions. In v1 it reads conversation logs from Claude Code (JSONL), groups messages into topics automatically, and provides two core modes: a step-by-step Replay Mode for understanding what happened, and an Edit Mode for pruning irrelevant turns from session files. The parser layer is designed to be extensible — additional formats (OpenCode, LangChain, Cursor) are planned post-v1.
+Seshr is a terminal-based tool built in Go with Bubbletea and Lipgloss that lets developers observe, inspect, and edit AI agent conversation sessions for Claude Code and OpenCode. It detects running agents, shows their live status and current action in a unified picker, and auto-refreshes session views while the agent is working. It groups messages into topics automatically, supports a step-by-step Replay Mode for understanding what happened, and supports pruning irrelevant turns (and tool calls) from session stores.
+
+v1 covers two agent platforms as first-class backends: **Claude Code** (JSONL files) and **OpenCode** (SQLite + per-message parts). Backend abstraction is designed so additional agents (LangChain, Cursor) can be added post-v1 without touching TUI code.
 
 ### 1.1 Problem Statement
 
-AI agent sessions accumulate irrelevant context over time. Off-topic tangents, failed tool calls, and exploratory dead ends all consume tokens and degrade agent performance. There is currently no tool that lets developers visualize their session history by topic and selectively remove unwanted turns. Existing tools either focus on cross-session memory (claude-mem) or streaming live output (claude-esp) but none provide an interactive editor for session files.
+AI agent sessions accumulate irrelevant context over time. Off-topic tangents, failed tool calls, and exploratory dead ends all consume tokens and degrade agent performance. Developers running agents across multiple projects lose track of which sessions are live, what they're doing, and when context is filling up. There is currently no tool that unifies session observation (what's running now) with session management (what to prune before resuming) in one place. Existing tools either focus on cross-session memory (claude-mem), live output streaming (claude-esp), or process-level monitoring (abtop) — none provide an interactive editor paired with live cockpit visibility.
 
 ### 1.2 Target User
 
-Developers who use Claude Code, OpenCode, or other LLM-based coding agents daily and run long sessions where context management matters. They are comfortable in the terminal, likely use tmux, and want a tool that fits into their existing workflow as a second pane.
+Developers who use Claude Code, OpenCode, or both daily and run long or multi-agent workflows where context management matters. They are comfortable in the terminal, likely use tmux, and want a tool that sits in an adjacent pane showing what their agents are doing while they manage older sessions.
 
 ### 1.3 Core Value Proposition
 
-- See what's in your agent session at a glance, grouped by topic with token counts
-- Replay sessions step-by-step to understand agent behavior and decisions
-- Prune irrelevant conversation topics to clean session files before resuming
-- Manage sessions by deleting old or unnecessary session files from disk
-- Extensible parser layer — Claude Code in v1, additional agent platforms post-v1
+- **Unified cockpit:** see all your Claude Code and OpenCode sessions in one picker, with live status (working / waiting), current tool call, and context % at a glance
+- **Live refresh:** open a session while the agent is running; new turns, new tool calls, and new topics appear automatically as the agent works
+- **Topic visualization:** groups session history into auto-detected topics with token counts — understand what's in a session before you prune
+- **Replay Mode:** step-by-step walkthrough of agent behavior, tool calls, and decisions
+- **Safe pruning:** remove irrelevant topics to clean session stores before resuming; per-source pairing and backup rules prevent corruption
+- **Multi-agent parity:** Claude Code and OpenCode both fully supported — scan, view, live-detect, prune, restore — under one UX
+- **Privacy-first, local-only:** no telemetry, no network calls, session content never leaves disk
 
 ---
 
 ## 2. Architecture
 
-Seshr follows a simple three-layer architecture: a parser layer that reads and understands conversation files, a topic clustering engine that groups turns into logical topics, and a TUI layer built with Bubbletea that renders the interface and handles user interaction.
+Seshr separates responsibilities into four layers: **session** (shared types), **backend** (per-source Scan/Load/Detect/Edit implementations), **topics** (source-agnostic clustering), and **tui** (Bubbletea rendering + state management). Each backend implements the same interfaces so TUI code is agent-agnostic. Adding a new agent = adding a new backend.
 
 ### 2.1 Project Structure
 
@@ -41,84 +45,143 @@ seshr/
 │   └── seshr/
 │       └── main.go            # CLI entry point (Cobra)
 ├── internal/
-│   ├── parser/
-│   │   ├── parser.go          # SessionParser interface (Parse)
-│   │   ├── claude.go          # Claude Code JSONL parser
-│   │   ├── scan.go            # Directory scanning and session discovery
-│   │   ├── record.go          # JSONL record types and decoding
-│   │   └── types.go           # Shared types: Turn, ToolCall, Session
+│   ├── session/                    # Shared types (renamed from parser/)
+│   │   └── types.go                # Session, Turn, ToolCall, ToolResult,
+│   │                                 Role, CompactBoundary, SourceKind
+│   ├── backend/                    # Backend abstraction
+│   │   ├── backend.go              # SessionStore, LiveDetector, SessionEditor
+│   │   │                             interfaces; SessionMeta, LiveSession,
+│   │   │                             Cursor types
+│   │   ├── registry.go             # SourceKind → backend mapping
+│   │   ├── process.go              # Shared ProcessScanner (ps + cwd lookup)
+│   │   ├── process_linux.go        # //go:build linux
+│   │   ├── process_darwin.go       # //go:build darwin
+│   │   ├── claude/
+│   │   │   ├── store.go            # SessionStore implementation
+│   │   │   ├── jsonl.go            # JSONL decoder (was internal/parser/claude.go)
+│   │   │   ├── scan.go             # Directory scan
+│   │   │   ├── record.go           # JSONL record decoding
+│   │   │   ├── sidecar.go          # ~/.claude/sessions/*.json parse
+│   │   │   ├── detect.go           # LiveDetector: sidecar + cwd fallback + CPU
+│   │   │   ├── detect_linux.go     # //go:build linux — CLAUDE_CONFIG_DIR via /proc
+│   │   │   ├── detect_darwin.go    # //go:build darwin — env only
+│   │   │   └── cursor.go           # Byte-offset + file-identity cursor
+│   │   └── opencode/
+│   │       ├── store.go            # SessionStore via modernc.org/sqlite
+│   │       ├── db.go               # Read + write connection management
+│   │       ├── decode.go           # Walks parent_id; translates parts → Turn
+│   │       ├── detect.go           # LiveDetector: cwd inference, ambiguity
+│   │       ├── detect_linux.go     # //go:build linux
+│   │       ├── detect_darwin.go    # //go:build darwin
+│   │       └── cursor.go           # (time_created, id) cursor
 │   ├── topics/
-│   │   ├── cluster.go         # Topic clustering algorithm
-│   │   ├── signals.go         # Clustering signals (time gap, file shift, etc.)
-│   │   ├── label.go           # Topic label generation
-│   │   ├── stopwords.go       # Stopword list for keyword extraction
-│   │   └── fileset.go         # File set extraction from tool calls
+│   │   ├── cluster.go              # Topic clustering
+│   │   ├── cluster_append.go       # Incremental cluster for live updates
+│   │   ├── signals.go              # Clustering signals (time gap, file shift)
+│   │   ├── label.go                # Topic label generation
+│   │   ├── stopwords.go            # Stopword list
+│   │   └── fileset.go              # File set extraction from tool calls
 │   ├── editor/
-│   │   ├── pruner.go          # JSONL rewriting with safe message pairing
-│   │   ├── pairing.go         # Turn pair enforcement rules
-│   │   ├── backup.go          # .bak file creation and restore
-│   │   ├── lock.go            # Advisory file locking (flock)
-│   │   └── load.go            # Session loading helper
+│   │   ├── editor.go               # SessionEditor interface
+│   │   ├── selection.go            # Generic selection type
+│   │   ├── claude/
+│   │   │   ├── pruner.go           # JSONL rewriter
+│   │   │   ├── pairing.go          # Claude tool_use ↔ tool_result pairing
+│   │   │   ├── backup.go           # .bak sibling file
+│   │   │   └── lock.go             # flock advisory lock
+│   │   └── opencode/
+│   │       ├── pruner.go           # SQL DELETE for partial prune
+│   │       ├── deleter.go          # Whole-session delete (picker `d` action)
+│   │       ├── backup.go           # JSON export to ~/.seshr/backups/opencode/
+│   │       ├── lockfile.go         # Per-session backup-dir flock for retention
+│   │       └── retention.go        # Keep last 5 backups per session
 │   ├── tokenizer/
-│   │   └── estimate.go        # Token count estimation
+│   │   └── estimate.go             # Token estimation
 │   ├── config/
-│   │   └── config.go          # Settings management (~/.seshr/config.json)
+│   │   └── config.go               # ~/.seshr/config.json
 │   ├── logging/
-│   │   └── logging.go         # slog setup → ~/.seshr/debug.log
+│   │   └── logging.go              # slog → ~/.seshr/debug.log
 │   ├── version/
-│   │   └── version.go         # const Version, injected via ldflags on release
+│   │   └── version.go              # const Version
 │   └── tui/
-│       ├── app.go             # Root Bubbletea model, screen routing, global overlays
-│       ├── sessions.go        # Session picker view (grouped by project)
-│       ├── picker_groups.go   # Project grouping, row flattening, summary stats
-│       ├── topics.go          # Topic overview with inline edit/select/prune
-│       ├── replay.go          # Replay mode view
-│       ├── replay_autoplay.go # Auto-play state machine
-│       ├── replay_render.go   # Replay turn rendering (markdown, tool blocks, search)
-│       ├── confirm.go         # Confirmation dialog component (delete, prune, restore)
-│       ├── help.go            # Help overlay component (? key)
-│       ├── search.go          # Fuzzy search bar component (/ key)
-│       ├── settings.go        # Settings popup (, key)
-│       ├── logviewer.go       # Log viewer (L key)
-│       ├── load.go            # Async session loading (Bubbletea Cmds)
-│       ├── theme.go           # Color scheme definitions (Catppuccin, Nord, Dracula)
-│       ├── keys.go            # Keybinding definitions per screen
-│       ├── styles.go          # Lipgloss style constants
-│       └── chrome.go          # Shared layout primitives: header/footer bars, pill, panel, kbd, hRule
+│       ├── app.go                  # Root model, screen routing, ticker owner
+│       ├── sessions.go             # Picker: live pulse, source badge, status
+│       ├── picker_groups.go        # Project grouping, sort order, stats
+│       ├── landing.go              # NEW: per-session summary screen
+│       ├── session_view.go         # NEW: *SessionView per-session state
+│       ├── live_ticker.go          # NEW: fast (2s) + slow (10s) tick routing
+│       ├── resume_overlay.go       # NEW: `c` resume-command overlay
+│       ├── topics.go               # Topic overview; consumes *SessionView
+│       ├── replay.go               # Replay mode; consumes *SessionView
+│       ├── replay_autoplay.go      # Auto-play state machine
+│       ├── replay_render.go        # Turn rendering
+│       ├── confirm.go              # Confirmation dialogs
+│       ├── help.go                 # ? overlay
+│       ├── search.go               # / search bar
+│       ├── settings.go             # , settings popup
+│       ├── logviewer.go            # L log viewer
+│       ├── load.go                 # Async load Cmds
+│       ├── theme.go                # Color schemes
+│       ├── keys.go                 # Keybindings
+│       ├── styles.go               # Lipgloss styles
+│       └── chrome.go               # Shared layout primitives
 ├── testdata/
-│   ├── simple.jsonl                # Simple Claude Code session fixture
-│   ├── multi_topic.jsonl           # Multi-topic session with tool calls
-│   ├── embedded_tool_results.jsonl # Session with embedded tool results
-│   ├── compact_boundary.jsonl      # Session with /compact boundaries
-│   ├── prune_basic.jsonl           # Session for prune pairing tests
-│   ├── replay_basic.jsonl          # Session for replay rendering tests
-│   └── malformed.jsonl             # Malformed JSONL for parser resilience
+│   ├── simple.jsonl                # Claude simple fixture
+│   ├── multi_topic.jsonl           # Claude multi-topic
+│   ├── embedded_tool_results.jsonl # Claude embedded tool results
+│   ├── compact_boundary.jsonl      # Claude /compact fixture
+│   ├── prune_basic.jsonl           # Claude prune pairing
+│   ├── replay_basic.jsonl          # Claude replay fixture
+│   ├── malformed.jsonl             # Parser resilience
+│   ├── claude_live_sidecar.json    # Claude ~/.claude/sessions/*.json sample
+│   ├── opencode_simple.db          # OC linear session SQLite fixture
+│   ├── opencode_branching.db       # OC session with parent_id branching
+│   ├── opencode_with_tools.db      # OC tool parts (all 4 statuses)
+│   ├── opencode_compaction.db      # OC compaction part fixture
+│   ├── ps_output.txt               # Mocked ps output
+│   └── lsof_cwd_output.txt         # Mocked lsof cwd output
 ├── go.mod
 └── go.sum
 ```
 
 ### 2.2 Data Flow
 
+**Cold open (ended session):**
 ```
-Session file(s) on disk
-       │
-       ▼
-  parser.Scan()            →  []SessionMeta (discovery)
-  parser.Parse()           →  *Session ([]Turn, tool calls, metadata)
-       │
-       ▼
-  topics.Cluster()         →  []Topic (grouped turns with labels)
-       │
-       ▼
-  tui renders Topic Overview (with inline edit/select/prune)
-       │
-       ├── Replay Mode
-       │
-       └── Prune selected topics
-            │
-            ▼
-  pruner.Prune()           →  Rewritten file (selected turns removed)
+pick session → backend.SessionStore.Scan() → SessionMeta list
+            → backend.SessionStore.Load()   → *session.Session + Cursor
+            → topics.Cluster()              → []Topic
+            → tui renders Landing Page      → t/r/c shortcuts
+            → Topic Overview / Replay / Resume overlay
 ```
+
+**Live open (running agent):**
+```
+process scan → backend.ProcessScanner.Scan()  → ProcessSnapshot (ps+lsof)
+            → backend.LiveDetector.DetectLive() → []LiveSession
+fast tick  → backend.SessionStore.LoadIncremental(cursor) → new Turns
+            → topics.ClusterAppend()          → updated Topics
+            → re-render picker row + open view
+```
+
+**Prune:**
+```
+selection → backend.SessionEditor.Prune(selection)
+         (Claude: JSONL rewrite + .bak; OC: SQL DELETE in tx + JSON backup)
+         → *.bak / ~/.seshr/backups/opencode/<id>/<ts>.json
+```
+
+### 2.3 Backend Abstraction
+
+Three interfaces, one per concern:
+
+- `SessionStore` — reads session metadata and turns (Scan, Load, LoadIncremental, LoadRange)
+- `LiveDetector` — detects running agent processes and maps them to sessions
+- `SessionEditor` — pruning and restore for a given source
+
+Claude and OpenCode each implement all three. The TUI only ever sees these interfaces; adding a new agent means writing three implementations and registering them in `backend.Registry`.
+
+`Cursor` is a typed struct (`{Kind, Data []byte}`) carrying opaque source-specific state. The `Kind` field tags which backend owns it, preventing accidental cross-source misuse.
 
 ---
 
@@ -126,48 +189,238 @@ Session file(s) on disk
 
 ### 3.1 Session Picker
 
-The entry point of the application. On launch, Seshr scans the default directory for Claude Code (`~/.claude/projects/`) sessions. Users can also pass a custom path via `--dir` flag.
+The entry point. On launch, Seshr scans both sources:
+- Claude Code: `~/.claude/projects/*/*.jsonl` (and `CLAUDE_CONFIG_DIR` if set)
+- OpenCode: `~/.local/share/opencode/opencode.db` (SQLite read-only)
 
-Sessions are **grouped by project** into collapsible groups with colored gutters. The header shows a logo. A stats strip shows aggregate SESSIONS · PROJECTS · TOKENS · SIZE · LATEST. Each session row shows a truncated session ID, token count (compact format like `15.7M`), and relative timestamp.
+Sessions from both sources are unified into one picker, **grouped by project**. A source badge (`claude` / `opencode`) appears on each row; live sessions float to the top of their group with a pulsing status dot.
 
 ```
-┌─ ◆ Seshr v0.1 ──────────────────────────────────────────────────────────────┐
-│  SESSIONS 10 · PROJECTS 7 · TOKENS 381,449,721 · SIZE 53 MiB · LATEST 3s ago│
+┌─ ◆ Seshr v1.0 ──────────────────────────────────────────────────────────────┐
+│  SESSIONS 12 · LIVE 3 · PROJECTS 7 · TOKENS 381M · SIZE 53 MiB · LATEST now │
 │                                                                              │
 │  ▌ JUSTIN                                     ▾ 1 session  15.7M tok       │
-│  ▌   ▸ 146a51d6-ade8-42df-…                          15.7M  2 minutes ago  │
+│  ▌   ● 146a51d6-ade8-…   claude     15.7M  working · Edit auth.go           │
 │                                                                              │
 │  ▌ BOOT                                       ▾ 1 session  65.8M tok       │
-│  ▌   ▸ bb859dee-0744-44f1-…                          65.8M  2 minutes ago  │
+│  ▌   ▸ bb859dee-0744-…   claude     65.8M  ended 2 days ago                 │
 │                                                                              │
 │  ▌ DARTLY                                     ▾ 2 sessions  25.7M tok      │
-│  ▌   ▸ d29d5ec6-e19d-4362-…                          14.4M  2 minutes ago  │
-│  ▌   ▸ 323f0680-89be-497f-…                          11.2M  2 minutes ago  │
+│  ▌   ● ses_3df67faf…     opencode    8.2M  waiting · ctx 87% ⚠              │
+│  ▌   ▸ 323f0680-89be-…   claude     11.2M  ended 6 days ago                 │
 │                                                                              │
-│  ↑↓/jk nav · enter open · d delete · / search · q quit                      │
+│  ↑↓/jk nav · enter open · l live-only · d delete · / search · q quit        │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Row Markers and Columns
+
+| Marker | Meaning |
+| --- | --- |
+| `▸` | Ended session |
+| `●` | Live session (color-coded): green = Working, yellow = Waiting |
+| `◌` | Ambiguous-live (multiple OpenCode candidates in same cwd) |
+
+Source badge (`claude` / `opencode`): fixed-width dim column, word-form for scanability.
+
+Right-most column for live rows: `status · current-task-or-context`
+- Working: `working · <tool> <arg>` — truncated at 30 chars
+- Waiting: `waiting`
+- Waiting + context ≥ 80%: `waiting · ctx N% ⚠`
+- Working + context ≥ 80%: `working · <task> · ctx N% ⚠`
+- Ambiguous: `? live`
+
+Ended rows show the relative timestamp as before.
+
+#### Sort order within each project group
+
+1. Live sessions first: Working → Waiting → Ambiguous
+2. Within each status class: most-recent activity first
+3. Ended sessions after all live, by `UpdatedAt` descending
+
+#### Stats strip
+
+Top-of-picker aggregate line shows `SESSIONS N · LIVE M · PROJECTS · TOKENS · SIZE · LATEST`. The `LIVE M` field is hidden when zero.
+
+#### Live-detection-unavailable banner
+
+If the shared ProcessScanner fails for 3 consecutive slow ticks (~30s) — typically because `ps` or `lsof` is restricted — a dim line appears below the stats strip:
+
+```
+  live detection off · press ? for details
+```
+
+Seshr degrades gracefully: all sessions show as ended. Use `--no-live` to opt out explicitly (see §10).
+
 #### Session Picker Keybindings
 
-| Key            | Action                        | Notes                                  |
-| -------------- | ----------------------------- | -------------------------------------- |
-| `↑/↓` or `j/k` | Navigate session list         | Vim-style navigation                   |
-| `enter`        | Open session → Topic Overview | Parses and clusters into topics        |
-| `r`            | Open directly in Replay Mode  | Skips topic overview                   |
-| `d`            | Delete session                | Confirmation dialog before deleting    |
-| `R`            | Restore from `.bak`           | Only if a `.bak` sibling exists (§4.5) |
-| `/`            | Fuzzy search/filter sessions  | Matches project name + session ID      |
+| Key            | Action                      | Notes                                     |
+| -------------- | --------------------------- | ----------------------------------------- |
+| `↑/↓` or `j/k` | Navigate session list       | Vim-style                                 |
+| `enter`        | Open session → Landing Page | Not direct-to-topics anymore (see §3.2)   |
+| `r`            | Open directly in Replay Mode| Skips landing page + topics               |
+| `l`            | Toggle live-only view       | Filters picker to only live sessions      |
+| `d`            | Delete session              | Confirmation dialog; ended sessions only  |
+| `R`            | Restore from backup         | Only if a backup exists (§4.5)            |
+| `/`            | Fuzzy search/filter sessions| Matches project name + session ID         |
 
-Global overlays (handled by root app model): `,` settings, `L` log viewer, `?` help, `q` quit.
+Global overlays: `,` settings, `L` log viewer, `?` help, `q` quit.
 
 #### Session Deletion
 
-When a user presses `d`, a confirmation dialog appears with the session display name and project path, warning that this cannot be undone. On confirmation:
+When `d` is pressed on an ended session, a confirmation dialog warns that deletion cannot be undone.
 
-- **Claude Code:** Deletes the `.jsonl` file from `~/.claude/projects/<project-dir>/`. Also removes any `.bak` and `.lock` siblings. If the project directory is now empty, the empty directory is also cleaned up.
+- **Claude Code:** deletes the `.jsonl` from `~/.claude/projects/<project>/`. Removes `.bak` and `.lock` siblings. Empty project dir is cleaned up.
+- **OpenCode:** deletes the session and all its messages/parts in a SQL transaction with `_foreign_keys=on`. Writes a backup before the transaction (same JSON format as prune backup; see §6.3 Pruning).
 
-### 3.2 Topic Overview (Shared View)
+Live sessions cannot be deleted. The delete confirmation refuses with a message directing the user to close the running agent first.
+
+### 3.2 Session Landing Page
+
+A per-session summary screen, shown when the user presses `enter` on a picker row. The landing page is the decision point: the user sees a digest of the session and chooses what to do (topics / replay / resume / back). This replaces the previous direct-to-topics navigation.
+
+Same layout for live and ended sessions; different data fills it.
+
+**Live session:**
+
+```
+┌─ ◆ Seshr · Session ─────────────────────────────────────────────────────────┐
+│  bb859dee-0744-… · boot · claude · WORKING ●                                 │
+│  838 turns · 65.7M tok · 4 compactions · context 85% ⚠                       │
+│                                                                              │
+│  First prompt:   "help me set up the trading bot"                            │
+│  Current action: Edit src/bot/strategy.go · 4s ago                           │
+│  Files in play:  strategy.go, config.go, main.go, strategy_test.go, …  (+62) │
+│                                                                              │
+│  Tokens                                                                      │
+│  ████████████████████████████████████████████████ ~65.7M total               │
+│  ▌ ~32.9K user  ▌ ~65.0M AI  ▌ ~680K tool results                            │
+│                                                                              │
+│  t topics  ·  r replay  ·  c resume  ·  esc back                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Ended session:**
+
+```
+┌─ ◆ Seshr · Session ─────────────────────────────────────────────────────────┐
+│  bb859dee-0744-… · boot · claude · ended 2 days ago                          │
+│  838 turns · 65.7M tok · 4 compactions                                       │
+│                                                                              │
+│  First prompt:   "help me set up the trading bot"                            │
+│  Last action:    Bash · ended 2 days ago                                     │
+│  Files touched:  strategy.go, config.go, main.go, strategy_test.go, …  (+62) │
+│                                                                              │
+│  Tokens                                                                      │
+│  ████████████████████████████████████████████████ ~65.7M total               │
+│  ▌ ~32.9K user  ▌ ~65.0M AI  ▌ ~680K tool results                            │
+│                                                                              │
+│  t topics  ·  r replay  ·  c resume  ·  esc back                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+For OpenCode sessions, total cost is shown alongside tokens (Claude JSONL doesn't record per-message cost):
+
+```
+│  838 turns · 65.7M tok · $12.43 · 4 compactions                              │
+```
+
+Live-only indicators: pulsing `●` in the header, context-% warning when ≥ 80%, "current action" (vs. "last action") labels.
+
+**Field definitions:**
+- *First prompt:* the first user turn's content, truncated to one line.
+- *Current action* (live) / *Last action* (ended): the most-recent assistant turn's last `tool_use` / OpenCode tool part, with its first arg (e.g. `Edit src/foo.go`). Truncated at 60 chars on the landing page (vs 30 on the picker).
+- *Files in play* / *Files touched*: union of `Topic.FileSet` across all topics in the session, sorted by mention frequency, top 5 shown with `(+N)` overflow indicator. Empty for sessions without tool calls that reference files.
+- *Tokens bar:* same proportional split shown in the existing stats panel — user, AI, tool results.
+
+#### Landing Page Keybindings
+
+| Key | Action |
+| --- | --- |
+| `t` | Topic Overview |
+| `r` | Replay Mode |
+| `c` | Resume overlay (see §3.3) |
+| `i` | Info overlay — full session metadata (first prompt, version, agent/model, etc.) |
+| `ctrl+l` | Jump to picker in live-only mode |
+| `esc` | Back to picker |
+| `/` | Search (delegates to topic overview) |
+| `?` | Help |
+
+No `p` (prune) on this screen — pruning requires a selection, which lives in Topic Overview.
+
+### 3.3 Resume Overlay
+
+Pressing `c` on the landing page opens a centered overlay with the command to resume this session in its source agent:
+
+```
+┌──────────────────────────────────────────┐
+│  Resume this session                     │
+│                                          │
+│  claude --resume bb859dee-0744-44f1-…    │
+│                                          │
+│  enter  copy to clipboard                │
+│  esc    close                            │
+└──────────────────────────────────────────┘
+```
+
+Per-source resume commands (verified against installed CLIs):
+
+- **Claude Code:** `claude --resume <session-id>` or `claude -r <session-id>`.
+- **OpenCode:** `opencode -s <session-id>`. OpenCode's flag is `-s` / `--session`, NOT `--resume`. Also supports `--fork` for branching.
+
+Clipboard copy uses `pbcopy` / `xclip` / `wl-copy` via platform-gated helpers. After a successful copy, the footer flashes `✓ copied — paste in your terminal` for 2 seconds then reverts. If the clipboard tool is missing, the footer shows `copy unavailable · select and copy manually`.
+
+**Tmux integration (stretch for v1):** if `$TMUX` is set, a second action `s spawn in new tmux window` is added — runs the resume command in a new tmux window without seshr exiting. Hidden when not in tmux.
+
+### 3.4 UX Principles
+
+This section consolidates interaction rules that apply across screens.
+
+#### First-launch welcome
+
+On first launch (detected by absence of `~/.seshr/config.json`), a single-line banner appears above the picker stats strip:
+
+```
+  Welcome to seshr. Select a session to open, or press ? for help.
+```
+
+Dismisses on any keypress. Never shown after the first launch.
+
+#### Live pulse animation
+
+Live pulse dots animate at 1Hz between `●` and `◉` (same color, subtle shift). Conveys "connection is live" even when no data changes. Stops when a live session becomes Done.
+
+#### Prune confirmation shows every topic
+
+The confirmation dialog lists every selected topic with its token count before deletion, so the user can verify the selection before committing. Same layout across sources; per-source warnings adjust the footer line only.
+
+#### Landing page priority
+
+- **Live sessions:** pulsing status, current action, context warning (if ≥ 80%) are the visual focus. First prompt becomes a secondary detail accessed via `i`.
+- **Ended sessions:** first prompt and last action are primary.
+- Token bar is always secondary on the landing page (one line). The full segmented bar remains in the stats panel under Topic Overview.
+
+#### Picker scroll preservation
+
+Scroll position and row selection are preserved when navigating back from the landing page via `esc`. Reset only on `q` / app restart or when entering search/filter mode.
+
+#### Live badge on non-picker screens
+
+When the user is on the landing page, topic overview, or replay mode, a compact `· N live` indicator appears at the right edge of the global footer if any live sessions exist. `ctrl+l` jumps back to the picker in live-only mode. Keeps users aware of other agents without cluttering the current view.
+
+#### Landing page action emphasis
+
+The recommended next action (`t`, `r`, or none) is rendered in accent color based on context:
+
+- Ended, never opened → `t topics` emphasized.
+- Ended, previously opened (with a recorded action) → `r replay`; footnote shows the last action (e.g. `last time: pruned 2 topics`).
+- Live → no emphasis; the page is meant for observation.
+
+#### Live-detection banner (shown selectively)
+
+The "live detection paused" banner appears only when live detection previously worked on this machine and subsequently failed. First-launch on sandboxes / containers silently operates in ended-only mode — no alarming banner. `--no-live` also suppresses the banner. The config tracks last-seen-working state.
+
+### 3.5 Topic Overview (Shared View)
 
 The core screen for inspecting and editing sessions. Displays the parsed session as a list of auto-detected topics, each showing a label, token count, turn range, tool call count, and duration. Selection and pruning are done inline — there is no separate Edit Mode screen.
 
@@ -227,7 +480,7 @@ Pre-compact topics (those whose turns all precede the earliest boundary) are ren
 
 When toggled on, the right side shows: total token count, breakdown by role (user turns/tokens, assistant turns/tokens), tool call and tool result counts, number of topics detected, total session duration, and number of unique files touched. If the session has compact boundaries, a `Compactions: N (last: trigger, tok)` line is also shown.
 
-### 3.3 Replay Mode
+### 3.6 Replay Mode
 
 Split-pane view. Left sidebar shows the topic list with the current position highlighted. Main pane shows the full content of the current turn.
 
@@ -298,7 +551,7 @@ Press `tab` to toggle focus between the main content and the topic sidebar. When
 | `/`        | Search within session  | Shows results panel, jumps on enter              |
 | `esc`      | Back to Topic Overview | Or close expanded tool result / search           |
 
-### 3.4 Inline Editing & Pruning
+### 3.7 Inline Editing & Pruning
 
 Selection and pruning happen directly on the Topic Overview — there is no separate Edit Mode screen. Users select entire topics to prune from the same screen used for browsing.
 
@@ -353,18 +606,29 @@ When `p` is pressed, a context-aware confirmation dialog appears:
   A .bak backup will be created automatically.
 ```
 
-#### Concurrent Access
+#### Pruning a Live Session
 
-Only one `seshr` process should write to a given session file at a time. The pruner takes an advisory file lock (`flock`) on the target `.jsonl` for the duration of the rewrite. If the lock is held, the prune confirmation shows "Session is locked by another process" and the operation is cancelled. Reads (parsing, replay) do not require a lock.
+Live-session pruning policy differs by source:
 
-#### Safe Message Pairing
+- **Claude (live):** blocked. JSONL append from a running Claude Code process can race a rewrite and corrupt the file. The dialog refuses with a clear message: "Cannot prune a live Claude Code session. Close Claude Code first."
+- **OpenCode (live):** allowed with a warning. SQLite WAL handles concurrent reads/writes safely, but the dialog still alerts the user that very-recent turns may race the prune and that running/pending tool parts are skipped.
 
-The pruner enforces strict pairing rules to prevent invalid session files:
+#### Concurrent Access (per source)
 
-- User and assistant turns are always deleted as pairs. Cannot delete one without the other.
-- `tool_use` and `tool_result` blocks must be deleted together. A `tool_use` without its matching `tool_result` (or vice versa) breaks the session on resume.
-- If a user selects only one half of a pair, the pruner automatically includes the other half and shows this in the confirmation.
-- System messages and compact summaries (`isCompactSummary: true`) are never selectable.
+- **Claude:** the pruner takes an advisory file lock (`flock`) on the target `.jsonl` for the rewrite. Reads do not require a lock. If the lock is held, prune is cancelled with "Session is locked by another process."
+- **OpenCode:** the pruner uses a separate writable SQLite connection (DSN `_foreign_keys=on&_busy_timeout=500`) and runs the DELETE in a transaction. If the lock is held by OpenCode beyond 500ms, the operation aborts cleanly and the user can retry.
+
+#### Safe Message Pairing (per source)
+
+Pairing rules differ because the storage models differ:
+
+- **Claude:** `tool_use` blocks live in assistant turns; `tool_result` blocks live in subsequent user turns or separate `tool_result` records, linked by `tool_use_id`. The pruner expands a selection to include the matching half and shows this in the confirmation. User and assistant turns are always deleted as pairs. System messages and compact summaries (`isCompactSummary: true`) are never selectable.
+- **OpenCode:** tool calls are atomic — a single `part` row of `type: "tool"` contains both the call (`state.input`) and result (`state.output`). No cross-message pairing logic is needed. However, parts with `state.status` of `running` or `pending` are excluded from prune selections (the agent owns them). System parts (`step-start`, `step-finish`) are never selectable.
+
+#### Backups
+
+- **Claude:** `.bak` sibling file next to the original `.jsonl`. Most-recent backup overwrites prior on each prune.
+- **OpenCode:** JSON file at `~/.seshr/backups/opencode/<session-id>/<YYYYMMDD-HHMMSS>.json`. Retention: keep the last 5 backups per session ID; older are deleted on each new prune.
 
 ---
 
@@ -387,12 +651,17 @@ Pressing `?` on any screen displays a centered overlay showing all keybindings f
 │  esc            Go back              │
 │                                      │
 │  Actions                             │
+│  t              Topic overview       │
 │  r              Replay mode          │
-│  e              Edit mode            │
+│  c              Resume command       │
+│  p              Prune (in topics)    │
 │  d              Delete session       │
+│  i              Info overlay         │
+│  l              Toggle live-only     │
 │                                      │
 │  Global                              │
 │  /              Search               │
+│  ctrl+l         Jump to live picker  │
 │  ,              Settings             │
 │  L              Log viewer           │
 │  ?              This help            │
@@ -431,11 +700,12 @@ Opens a full-screen viewport showing the last 1000 lines of `~/.seshr/debug.log`
 
 ### 4.5 Backup Restore
 
-Every prune operation writes a `.bak` sibling file next to the original (e.g. `session.jsonl.bak`). If a pruned session fails to resume in Claude Code, the user can restore from backup:
+Every prune operation writes a backup before deleting anything. Restore mechanics differ by source:
 
-- In the Session Picker, a session with a `.bak` sibling shows a small `↶` indicator.
-- Pressing `R` (shift-r) on such a session opens a confirmation dialog: "Restore from backup? This will overwrite the current session file."
-- On confirm, the `.bak` is copied over the original. The backup is preserved until the next prune overwrites it.
+- **Claude:** `.bak` sibling next to the original `.jsonl` (e.g. `session.jsonl.bak`). Restore copies the `.bak` over the original. The most-recent backup overwrites prior on each prune.
+- **OpenCode:** JSON file at `~/.seshr/backups/opencode/<session-id>/<YYYYMMDD-HHMMSS>.json`. Restore re-INSERTs the rows in a transaction (idempotent: re-inserting present rows is a no-op). Last 5 backups per session are retained; older are pruned on each new backup.
+
+In the Session Picker, sessions with a backup show a small `↶` indicator. Pressing `R` (shift-r) on such a session opens a confirmation dialog and, on confirm, restores from the most-recent backup. Restore is blocked on live sessions for the same reasons pruning is blocked (Claude) or warned (OpenCode).
 
 ---
 
@@ -463,19 +733,45 @@ Generated by extracting the top 3 meaningful keywords from the turns in each top
 
 ---
 
-## 6. Parser Specification
+## 6. Backend Specification
 
-### 6.1 Parser Interface
+A backend is a per-source implementation of three interfaces — `SessionStore`, `LiveDetector`, `SessionEditor` — plus a typed `Cursor`. All backends produce/consume the same `session.Session`, `session.Turn`, `session.ToolCall`, `session.ToolResult` shapes; downstream code (`topics`, `tui`) is source-agnostic.
+
+### 6.1 Backend Interfaces
 
 ```go
-type SessionParser interface {
-    Parse(ctx context.Context, path string) (*Session, error)
+type SessionStore interface {
+    Kind() session.SourceKind
+    Scan(ctx context.Context) ([]SessionMeta, error)
+    Load(ctx context.Context, id string) (*session.Session, Cursor, error)
+    LoadIncremental(ctx context.Context, id string, cur Cursor) ([]session.Turn, Cursor, error)
+    LoadRange(ctx context.Context, id string, fromIdx, toIdx int) ([]session.Turn, error)
+    Close() error
+}
+
+type LiveDetector interface {
+    Kind() session.SourceKind
+    DetectLive(ctx context.Context, procs ProcessSnapshot) ([]LiveSession, error)
+}
+
+type SessionEditor interface {
+    Kind() session.SourceKind
+    Prune(ctx context.Context, id string, sel Selection) error
+    RestoreBackup(ctx context.Context, id string) error
+    HasBackup(id string) bool
+}
+
+type Cursor struct {
+    Kind session.SourceKind  // tags which backend owns this cursor
+    Data []byte               // source-specific JSON state
 }
 ```
 
-The Claude parser also provides `Detect(path) bool` and `Source() string` as methods on the concrete type, but these are not part of the interface.
+The TUI is given `SessionStore` / `LiveDetector` / `SessionEditor` only. It never sees source-specific types. `Cursor` is opaque to the TUI; only the owning backend can interpret `Data`.
 
-### 6.2 Claude Code JSONL Format
+### 6.2 Claude Code Backend
+
+#### File Format
 
 Each line in a Claude Code JSONL session file is a JSON object with a `type` field:
 
@@ -487,42 +783,240 @@ Each line in a Claude Code JSONL session file is a JSON object with a `type` fie
 | `system`      | System/compaction messages | `message.content`, `isCompactSummary`, `subtype`, `compactMetadata`     |
 | `summary`     | Session summary            | Summary text, generated asynchronously                                  |
 
-The parser ignores unknown types (e.g. `file-history-snapshot`, `progress`, `hook`) and logs a warning via slog.
+Unknown types (`file-history-snapshot`, `progress`, `hook`, etc.) are logged at warn and skipped.
 
 #### Compact Boundary Records
 
-`system` records with `subtype: "compact_boundary"` mark where a `/compact` call occurred. The parser extracts these into `Session.CompactBoundaries []CompactBoundary` (ordered by position). Each boundary carries:
+`system` records with `subtype: "compact_boundary"` mark where a `/compact` call occurred. Parsed into `Session.CompactBoundaries []CompactBoundary` (ordered by position).
 
-- `TurnIndex int` — index of the first turn after this boundary
-- `Trigger string` — `"manual"` or `"auto"`
-- `PreTokens int` — token count before compaction
-- `DurationMs int` — compaction duration in milliseconds
-
-User turns whose content starts with `"This session is being continued"` are marked with `Turn.IsCompactContinuation = true`. These are the continuation summaries Claude Code injects after compaction.
+User turns whose content starts with `"This session is being continued"` are marked with `Turn.IsCompactContinuation = true` (continuation summaries injected after compaction).
 
 #### Embedded Tool Results
 
-Tool results can appear either as top-level records or embedded within assistant message content blocks (with `type: "tool_result"`). The parser extracts embedded tool results and attaches them to the parent assistant turn.
+Tool results may appear as top-level records or embedded within assistant content blocks (`type: "tool_result"`). The parser extracts embedded ones and attaches them to the owning assistant turn.
 
-### 6.3 Session Scanning
+#### Live Detection (two-layer)
 
-`parser.Scan()` discovers session files by walking the Claude Code projects directory. For each `.jsonl` file, it reads metadata (session ID, project, timestamps, token count, file size) without fully parsing the file. Sessions are grouped by project directory name.
+1. **Sidecar (primary):** parse `~/.claude/sessions/*.json` (and `CLAUDE_CONFIG_DIR`/`sessions/*.json` on Linux). Each file has `{pid, sessionId, cwd, startedAt}`. Cross-reference with the ProcessSnapshot to filter PIDs running `claude`.
+2. **CWD fallback:** for any `claude` process not matched via sidecar, find the most-recently-modified transcript under `~/.claude/projects/<encoded-cwd>/` (modified within last 5 min). Marked live with reduced confidence.
 
-### 6.4 Adding Future Parsers
+Status derivation: transcript mtime < 30s → Working; else CPU > 1% on the claude process or > 5% on any descendant → Working; else Waiting; PID gone → ended.
 
-The parser interface is designed so additional formats can be added without modifying existing code. To add a new parser: implement the `SessionParser` interface, add detection logic, and register it in the parser registry. The registry tries each parser's `Detect` method in order until one matches.
+CurrentTask: extracted from the latest assistant turn's last `tool_use` block. Truncated at 30 chars; falls back to tool name; falls back to status alone.
+
+#### Incremental Read
+
+Cursor: `{ByteOffset int64, FileIdentity}` where `FileIdentity` is `(inode, mtime_ns)` on Linux and `(mtime_ns, size_bytes)` on macOS (macOS stat doesn't expose inode reliably). Seeks to offset, parses tail. On rotation/truncation (identity mismatch), falls back to full Load.
+
+#### Pruning
+
+Existing JSONL rewriter under `internal/editor/claude/`. Strict pairing rules (see §3.7 Safe Message Pairing). Advisory `flock` for the duration of the rewrite. `.bak` sibling.
+
+### 6.3 OpenCode Backend
+
+#### Storage
+
+OpenCode stores sessions in a SQLite database at `~/.local/share/opencode/opencode.db`. Two main tables:
+
+- `session` — metadata (id, project_id, directory, title, time_created, time_updated, time_archived, time_compacting)
+- `message` — envelope rows (id, session_id, time_created, data) keyed to a session, with a JSON `data` payload (role, parentID, modelID, providerID, tokens, cost)
+- `part` — content blocks (id, message_id, session_id, time_created, data) where `data.type` is one of `text`, `reasoning`, `tool`, `patch`, `file`, `compaction`, `step-start`, `step-finish`, `agent`, `subtask`
+
+The `project` table provides optional name + worktree path for human display.
+
+#### Connection Strategy
+
+- **Read pool:** read-only DSN (`file:...?mode=ro&_busy_timeout=500`) opened at Store construction. `SetMaxOpenConns(2)` to allow concurrent Scan refresh + Load without serializing every query. WAL mode on the DB makes concurrent reads safe.
+- **Write connection:** read-write DSN (`file:...?mode=rw&_foreign_keys=on&_busy_timeout=500`) opened lazily on first Prune. `SetMaxOpenConns(1)` — pruning is serial.
+- Both pools use `modernc.org/sqlite` (pure Go, CGO-free, cross-platform).
+
+#### Scanning
+
+```sql
+SELECT s.id, s.project_id, s.directory, s.title, s.time_created, s.time_updated,
+       p.name AS project_name, p.worktree AS project_worktree
+FROM session s
+LEFT JOIN project p ON s.project_id = p.id
+WHERE s.time_archived IS NULL
+ORDER BY s.time_updated DESC;
+```
+
+Token and cost totals are aggregated via SQL:
+```sql
+SELECT session_id,
+       SUM(CAST(json_extract(data, '$.tokens.total') AS INTEGER)) AS tokens,
+       SUM(CAST(json_extract(data, '$.cost') AS REAL)) AS cost
+FROM message
+WHERE json_extract(data, '$.role') = 'assistant'
+GROUP BY session_id;
+```
+
+Project name: `project.name` if set, else last component of `session.directory`.
+
+`session.directory` is the cwd captured when the session was created; `project.worktree` is the canonical project path. They normally match. If they diverge (project moved on disk), prefer `project.worktree` for grouping.
+
+#### Branching and Decode
+
+OpenCode supports message branching via `data.parentID` — when a user edits or regenerates, alternate branches accumulate in the DB (94% of sessions in real-world data). Decode walks the **current branch only** (from the most-recent leaf back to the root), ignoring dormant branches.
+
+Part decode rules:
+
+| OC Part Type | Translates to |
+| --- | --- |
+| `text` | appended to `Turn.Content` for the owning message |
+| `reasoning` | appended to `Turn.Thinking` |
+| `tool` (status `completed` / `error`) | emits both `ToolCall` and `ToolResult` on the owning assistant Turn — atomic, not paired across messages |
+| `tool` (status `running` / `pending`) | emits `ToolCall` only; result not yet present; excluded from prune selections |
+| `patch` | treated like `text` for display |
+| `file` | emits a `ToolResult` with content = file path + contents |
+| `compaction` | emits a `session.CompactBoundary` at the part's position |
+| `step-start` / `step-finish` | ignored (internal framing) |
+| `agent` / `subtask` | ignored in v1 (multi-agent subsessions deferred) |
+
+Message `role`: `"user"` → `RoleUser`, `"assistant"` → `RoleAssistant`. Others logged at warn, skipped.
+
+#### Live Detection
+
+For each `opencode` process in the ProcessSnapshot, look up its CWD (via `lsof -p PID -d cwd` on macOS, `/proc/<PID>/cwd` on Linux). Find sessions in the DB matching that CWD with `time_updated` within the last 5 min:
+
+- 0 candidates → process not in a session, skip
+- 1 candidate → mark live
+- 2+ candidates → mark all candidates live with `Ambiguous=true`; UI renders these as `◌ ? live`
+
+Status derivation mirrors Claude (DB `time_updated` < 30s OR process/descendant CPU above thresholds).
+
+CurrentTask: most-recent `part` of `type=tool` for that session within the last 60s. Cached per session, only re-queried when `session.time_updated` advances.
+
+#### Incremental Read
+
+Cursor: `{LastTimeCreated int64, LastMessageID string}`.
+
+```sql
+SELECT id, message_id, time_created, data
+FROM part
+WHERE session_id = ?
+  AND (time_created > ? OR (time_created = ? AND id > ?))
+ORDER BY time_created, id
+LIMIT 1000;
+```
+
+Owning messages are fetched and decoded with branch-walking. If the new branch leaf is not a descendant of the prior cursor, the backend triggers a full Load to recover correctness.
+
+#### Pruning
+
+```
+1. Resolve selection to message IDs (and optional individual part IDs in v1.1).
+2. Filter out tool parts whose state.status is `running` or `pending`.
+3. Export to-be-deleted rows to ~/.seshr/backups/opencode/<id>/<ts>.json
+4. PRAGMA foreign_keys = ON;          -- set on writable connection
+   BEGIN IMMEDIATE;                    -- reserves write lock; readers continue
+   DELETE FROM part WHERE id IN (...); -- belt + suspenders (cascade would handle this)
+   DELETE FROM message WHERE id IN (...);
+   COMMIT;
+5. Backup retention: keep last 5 per session ID; older deleted (under per-session lockfile).
+```
+
+Live OpenCode pruning is allowed with a warning dialog (see §3.7).
+
+#### Restore
+
+Read the most-recent backup file for the session ID. Re-INSERT messages and parts in a single transaction with `INSERT OR IGNORE` (idempotent).
+
+### 6.4 Adding a Future Backend
+
+A new backend implements `SessionStore`, `LiveDetector`, `SessionEditor`, plus a `Cursor` shape, then registers itself in `internal/backend/registry.go` against a new `session.SourceKind`. The TUI does not change. Topic clustering does not change. Editor pairing rules remain per-source (Claude has them; OpenCode does not).
 
 ---
 
-## 7. Token Estimation
+## 7. Live Sessions
+
+Live-session detection and refresh is what makes seshr a cockpit rather than a post-hoc viewer. The same screens render live and ended sessions; what changes is the data refresh cadence and the indicators shown.
+
+### 7.1 Process Scanning
+
+A shared `backend.ProcessScanner` runs once per slow tick (every 10s) and produces a `ProcessSnapshot{ByPID, Children, At}`. Per slow tick it does:
+
+1. **Process list:** `ps -ww -eo pid,ppid,rss,%cpu,command` — one subprocess invocation, returns the full table.
+2. **CWD lookup (only for agent processes):** matches argv tokens against `claude` / `opencode`, then for each match runs `lsof -p PID -d cwd` (macOS) or reads `/proc/<PID>/cwd` (Linux). Typically 1–5 lookups per tick.
+
+Each `LiveDetector` consumes the same snapshot and filters for its agent. Total cost per slow tick on a busy machine: ~30ms.
+
+If `ProcessScanner.Scan` fails 3 consecutive ticks (~30s), seshr surfaces a `live detection off` banner in the picker header and degrades to ended-only display. The `--no-live` CLI flag (see §10) disables scanning explicitly.
+
+### 7.2 Tickers
+
+Two tickers in the TUI app:
+
+| Ticker | Cadence | Active when | Purpose |
+| --- | --- | --- | --- |
+| Slow | 10s | always | Refresh ProcessSnapshot, run all LiveDetectors, reconcile live set, apply hysteresis |
+| Fast | 2s | any live session known | Pull `LoadIncremental` on every live session, refresh CurrentTask, append to viewed session if open |
+
+**Cold-start latency:** on launch, no live sessions are known yet → fast tick is suspended → first slow tick fires after 10s and discovers any live sessions. Picker initially shows everything as ended; live pulses light up on the first slow-tick result. To shorten this, the slow tick fires once immediately on launch (not waiting the full 10s for the first cycle).
+
+Both tickers suspend while help / settings / log viewer overlays are open to avoid rerender storms under modals.
+
+### 7.3 Status Hysteresis
+
+To prevent flicker at tool-call boundaries (when CPU briefly idles between calls):
+
+- **Upgrade** Waiting → Working: instant, on first signal
+- **Downgrade** Working → Waiting: only after 2 consecutive slow ticks (~20s) without any "working" signal
+
+### 7.4 Live View Refresh
+
+When the user opens a live session, the landing page subscribes to fast-tick refresh for that session ID. Each tick:
+
+1. `backend.SessionStore.LoadIncremental(ctx, id, cursor)` fetches new turns since the last cursor
+2. New turns appended to `view.Session.Turns`; `view.Cursor` updated
+3. `topics.ClusterAppend(view.Session, view.Topics, newTurns)` extends the topic list — the last topic grows or a new topic opens at a boundary; historical topics never re-cluster
+4. UI rerenders
+
+If the session ends mid-view (process gone), `view.Live` becomes nil; the screen continues to function as an ended-session view.
+
+### 7.5 Bounded Memory Window
+
+Long-lived live sessions accumulate turns indefinitely. Policy:
+
+- Keep last 500 turns in `view.Session.Turns` at all times.
+- When `LoadIncremental` would push past 500, oldest turns are evicted. `view.TurnsLoadedFrom` advances.
+- If the user scrolls/jumps to an evicted range in replay, `backend.SessionStore.LoadRange(ctx, id, fromIdx, toIdx)` loads the requested window on demand.
+- Topics are never evicted — only per-turn content. Topic-level navigation is unaffected because topics hold turn indices, not turn pointers.
+
+Default 500 (≈ 40MB at the largest real-world session size) is conservative; configurable via `config.max_turns_in_memory` if needed.
+
+### 7.6 Pruning Live Sessions
+
+See §3.7 for full policy. Summary:
+- Claude live: blocked (JSONL append + rewrite race risk)
+- OpenCode live: allowed with warning (SQLite WAL handles concurrency safely)
+
+### 7.7 Shutdown
+
+On `ctrl+c` / `tea.Quit`:
+1. App cancels the global `context.Context`
+2. In-flight backend operations receive `ctx.Done()` and return
+3. All `Store.Close()` called in parallel with a 500ms timeout
+4. Log file flushed and closed
+5. Process exits
+
+No goroutine may outlive the app context.
+
+---
+
+## 8. Token Estimation
 
 Seshr estimates token counts for display purposes using a character-based heuristic: divide rune count by 3.5 for English text. This gives an approximation within 10-15% of actual Claude tokenization. All token counts are prefixed with `~` in the UI to indicate they are approximate.
 
-If the JSONL records contain actual token usage data (some Claude Code versions include `usage` fields in assistant messages with `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`), the parser prefers those values over the heuristic.
+**Per source:**
+- **Claude:** if `message.usage` fields (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`) are present, the parser prefers those over the heuristic.
+- **OpenCode:** every assistant message records exact `tokens.total` (and a breakdown of input/output/reasoning/cache). Aggregated via SQL during Scan; no heuristic needed.
+
+OpenCode also records exact `cost` per message; cumulative cost is shown on the OpenCode landing page (Claude JSONL doesn't expose this).
 
 ---
 
-## 8. Color Scheme
+## 9. Color Scheme
 
 ### 8.1 Default Theme: Catppuccin Mocha
 
@@ -547,7 +1041,7 @@ Base styles are defined in `internal/tui/styles.go` using the Catppuccin Mocha p
 
 ---
 
-## 9. Responsive Layout
+## 10. Responsive Layout
 
 The TUI must adapt to different terminal sizes. Use `tea.WindowSizeMsg` to detect the terminal dimensions and adjust layout accordingly.
 
@@ -561,18 +1055,20 @@ The TUI must adapt to different terminal sizes. Use `tea.WindowSizeMsg` to detec
 
 ---
 
-## 9.5 Error UX Standard
+## 11. Error UX Standard
 
 Errors are surfaced inline within the current screen:
 
 - **Delete errors:** Shown as a red error line below the session list in the picker. Auto-clears.
-- **Prune errors:** Shown in the confirmation dialog or as inline status text in the editor.
+- **Prune errors:** Shown in the confirmation dialog or as inline status text.
 - **Session load errors:** Full-screen error state with the error message and an `esc` to go back prompt.
+- **Live detection failures:** Persistent dim banner in the picker header (`live detection off · press ? for details`) after 3 consecutive failed slow ticks. See §3.1 and §7.1.
+- **Live refresh failures (per session):** Logged at warn; the next slow tick triggers a full Load to recover. UI shows the last successfully-loaded turns; no error overlay during transient failures.
 - **Log correlation:** Every displayed error writes a matching `error`-level slog entry with the same message and an `err` field.
 
 ---
 
-## 9.6 Privacy & Telemetry
+## 12. Privacy & Telemetry
 
 Seshr collects **no telemetry**. No analytics, no crash reporting, no network calls, no update pings. The only network-capable dependency is `glamour` (for rendering images in markdown, which is disabled). If any future feature would phone home, it is opt-in and documented in this section before landing.
 
@@ -580,44 +1076,50 @@ Session content never leaves disk. All processing is local. The log file at `~/.
 
 ---
 
-## 10. CLI Specification
+## 13. CLI Specification
 
 Seshr uses Cobra for CLI argument parsing.
 
-| Command / Flag          | Description                    | Default                |
-| ----------------------- | ------------------------------ | ---------------------- |
-| `seshr`                | Launch TUI with session picker | Scans default dirs     |
-| `--dir <path>`          | Scan a custom directory        | Auto-detected          |
-| `--theme <name>`        | Color theme                    | `catppuccin-mocha`     |
-| `--debug`               | Enable debug logging           | `false`                |
-| `--version`             | Print version and exit         |                        |
+| Command / Flag    | Description                                         | Default            |
+| ----------------- | --------------------------------------------------- | ------------------ |
+| `seshr`           | Launch TUI with session picker                      | Scans default dirs |
+| `--dir <path>`    | Scan a custom directory for Claude sessions         | Auto-detected      |
+| `--theme <name>`  | Color theme                                         | `catppuccin-mocha` |
+| `--debug`         | Enable debug logging                                | `false`            |
+| `--no-live`       | Disable live detection; all sessions show as ended  | `false`            |
+| `--version`       | Print version and exit                              |                    |
+
+`--no-live` is for restricted environments where `ps` / `lsof` aren't available (sandboxes, locked-down hosts) or when the user simply doesn't want background process scanning.
 
 ---
 
-## 11. Tech Stack & Go Best Practices
+## 14. Tech Stack & Go Best Practices
 
-### 11.1 Go Version
+### 14.1 Go Version
 
-Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` file should specify `go 1.26`.
+Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` file specifies `go 1.26`.
 
-### 11.2 Dependencies
+### 14.2 Dependencies
 
 | Package                           | Purpose                                                             |
 | --------------------------------- | ------------------------------------------------------------------- |
 | `charmbracelet/bubbletea`         | TUI framework, application model and event loop                     |
 | `charmbracelet/lipgloss`          | Terminal styling, colors, borders, layout                           |
 | `charmbracelet/bubbles`           | Pre-built components: viewport, textinput, spinner, key             |
-| `charmbracelet/glamour`           | Markdown rendering for Claude's responses in replay view            |
+| `charmbracelet/glamour`           | Markdown rendering for assistant responses in replay view           |
 | `github.com/spf13/cobra`          | CLI argument parsing and subcommands                                |
 | `github.com/stretchr/testify`     | Testing: `assert`, `require` packages — standard everywhere         |
 | `log/slog` (stdlib)               | Structured logging to file (TUI owns stdout)                        |
 | `github.com/sahilm/fuzzy`         | Fuzzy string matching for `/` search                                |
 | `github.com/dustin/go-humanize`   | Human-friendly formatting: "2h ago", "47k", "1.2 MB"                |
-| `github.com/gofrs/flock`          | Advisory file locking during prune                                  |
+| `github.com/gofrs/flock`          | Advisory file locking during Claude prune                           |
+| `modernc.org/sqlite`              | Pure-Go SQLite driver for OpenCode database access (no CGO)         |
 
-**Explicitly not used:** no third-party logging library (stdlib `log/slog` is sufficient), no YAML (config is JSON), no pty/clipboard/diff libraries (not needed for v1 scope).
+`modernc.org/sqlite` adds ~12MB to the binary (15MB → ~27MB total). Accepted as the cost of cross-platform Go binaries without a C toolchain dependency. CGO-based alternatives (`mattn/go-sqlite3`) would be smaller but break goreleaser's static cross-compilation.
 
-### 11.3 Logging
+**Explicitly not used:** no third-party logging library (stdlib `log/slog` is sufficient), no YAML (config is JSON). Clipboard for the resume overlay shells out to `pbcopy` / `xclip` / `wl-copy` rather than pulling a clipboard library.
+
+### 14.3 Logging
 
 **Library choice:** Use stdlib `log/slog` only. No third-party logging library (zap, zerolog, logrus). slog covers structured logging, levels, and handlers; adding another library would be dead weight for a tool this size.
 
@@ -629,7 +1131,7 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - **Standard keys:** `path` (file path), `session_id`, `turns`, `topics`, `duration_ms`, `err`. Keep keys consistent across the codebase so log grep works.
 - **No secrets or full message content:** log metadata (turn counts, IDs, sizes), not the raw conversation. Session content can include sensitive data from the user's work.
 
-### 11.4 Testing
+### 14.4 Testing
 
 **Framework:** `github.com/stretchr/testify` is the project's testing library. All tests use it — do not mix in other assertion libraries or write raw `if got != want { t.Fatalf(...) }` style checks.
 
@@ -642,7 +1144,7 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - `testdata/` holds sample JSONL fixtures. Fixtures are checked in, not generated.
 - Run `just test` before any commit (see CLAUDE.md pre-commit gate).
 
-### 11.5 Go Best Practices
+### 14.5 Go Best Practices
 
 - **Project layout:** Use `internal/` for all private packages. No `pkg/` directory.
 - **Error handling:** Wrap errors with `fmt.Errorf` and `%w`. Define sentinel errors at package level. Never panic in library code.
@@ -651,32 +1153,63 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - **Naming:** MixedCaps, acronyms all caps (ID, URL). Short lowercase package names.
 - **Concurrency:** Use Bubbletea `Cmd` for async operations (parsing, file I/O). The TUI event loop is single-threaded.
 - **Linting:** Run `golangci-lint` with gocritic, errcheck, govet enabled.
-- **Build:** Use `goreleaser` for cross-platform builds: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64.
+- **Platform gates:** Use `//go:build linux` / `//go:build darwin` for OS-specific code (process scanning, cwd lookup). Never use `//go:build !windows` style negation; be explicit about supported platforms.
+- **Build:** Use `goreleaser` for cross-platform builds: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64. Windows targets are disabled in v1.
 
 ---
 
-## 12. Future Features (Post-Launch)
+## 15. Future Features (Post-Launch)
 
 These are explicitly out of scope for v1 but are natural extensions:
 
-- **OpenCode parser:** SQLite + file-based + CLI export fallback. Deferred from v1 to keep scope focused on Claude Code.
-- **Live session watching:** Use fsnotify to watch an active session and update the TUI in real time, similar to claude-esp. Turns Seshr from post-hoc analysis into a live companion.
-- **Additional parsers:** LangChain traces, Cursor conversation logs, generic JSONL agent logs.
-- **Session comparison:** Side-by-side diff of two sessions to understand how different approaches played out.
-- **Export:** Generate clean markdown or HTML reports from sessions for documentation or sharing.
-- **Session continuation chains:** Reconstruct multi-file sessions from Claude Code's compaction continuation chains.
-- **Individual turn selection in editor:** Allow selecting specific turns within a topic for more granular pruning.
-- **Word wrap toggle in replay:** Toggle between wrapped and horizontal-scroll display of long lines.
+- **Suggestions engine:** proactive nudges on the landing page ("prune this cold topic", "consider /compact at 85%", "duplicate Bash calls detected").
+- **Autopsy view:** retrospective analysis of failed tool calls, loops, files touched unnecessarily.
+- **Sparklines and token charts:** visual time series of token growth, turn rate, context evolution.
+- **All-live dashboard:** abtop-style grid showing every live session at once (currently surfaced as picker rows + `l` filter).
+- **Per-source settings:** enable/disable each source independently; custom paths for non-standard installs.
+- **Additional backends:** LangChain traces, Cursor conversation logs, generic JSONL agent logs.
+- **OpenCode multi-agent subsessions:** decode `agent` and `subtask` part types as nested sub-sessions in the topic view.
+- **OpenCode alternate-branch display:** surface dormant branches (regenerated responses) in the replay view.
+- **Claude continuation-chain reconstruction:** stitch multi-file Claude sessions linked by compaction continuation summaries.
+- **Claude subagent transcripts:** sessions spawned by the Task tool live at `~/.claude/projects/<p>/<session>/subagents/*.jsonl`. Currently invisible to seshr; future work would surface them nested under their parent session.
+- **Individual turn / part selection for pruning:** more granular than topic-level (currently topic-level only).
+- **Cursor persistence across restarts:** save where the user left off in a live session.
+- **Notifications:** OS notification when a Waiting OpenCode/Claude session needs the user's input.
+- **tmux pane-jumping:** `enter` on a live row jumps to its tmux pane (abtop-style).
+- **Session comparison / diff:** side-by-side compare of two sessions.
+- **Export:** generate clean markdown or HTML reports for documentation or sharing.
+- **Word wrap toggle in replay:** toggle between wrapped and horizontal-scroll display.
+- **Windows support:** currently disabled in goreleaser; bubbletea + sqlite both work on Windows but live detection (ps/lsof) does not.
 
 ---
 
-## 13. Risks & Mitigations
+## 16. Risks & Mitigations
 
-| Risk                                        | Impact                               | Mitigation                                                                                                              |
-| ------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| JSONL format changes in Claude Code updates | Parser breaks, sessions fail to load | Pin parser to known format types. Ignore unknown types gracefully with warning logs. Monitor Claude Code changelogs.    |
-| Large session files (100k+ lines)           | Slow parsing, high memory usage      | Stream-parse JSONL instead of loading entire file. Show spinner during parse. Paginate displayed turns.                 |
-| Accidental deletion of important sessions   | Data loss                            | Require confirmation dialog. Create `.bak` backup before any write.                                                      |
-| Invalid JSONL after pruning breaks resume   | Session cannot be resumed            | Enforce strict message pairing rules. Validate output structure before writing. Always keep `.bak`.                     |
-| Topic clustering produces poor groupings    | Confusing UI                         | Make clustering configurable (`gap_threshold`). Allow manual topic boundary insertion in future version.                |
-| Charm library import path migration         | Build failures                       | Pin exact versions in go.mod. Document which import paths are used.                                                     |
+**High-priority risks** (data loss, broken sessions, blocking failures): Claude JSONL format changes, OpenCode schema changes, invalid JSONL after pruning, OpenCode FK orphans, accidental deletion, OpenCode branch detection picks wrong leaf.
+
+**Medium-priority** (UX degradation, perf): SQLite write lock, sidecar absent, ps/lsof unavailable, ambiguous OpenCode cwd, JSONL rotation mid-session, memory growth, scan slow at scale.
+
+**Low-priority** (cosmetic, recoverable): backup disk bloat, status flicker, Charm import migration.
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Claude JSONL format changes | Parser breaks, sessions fail to load | Pin to known types; ignore unknown with warn; monitor Claude Code changelogs |
+| OpenCode SQLite schema changes | Scan/decode breaks | Fixture-based schema test as canary; pin tested OpenCode version in README |
+| Large session files (100k+ lines) | Slow parsing, high memory | Stream-parse JSONL; spinner during parse; bounded-memory window in live view (§7.5) with on-demand `LoadRange` |
+| Accidental deletion of important sessions | Data loss | Confirmation dialog; backup before any write (`.bak` for Claude, JSON for OpenCode) |
+| Invalid JSONL after Claude pruning | Session cannot be resumed | Strict pairing rules; validate output before writing; always keep `.bak` |
+| OpenCode FK orphans after pruning | Inconsistent DB | `_foreign_keys=on` in writable connection; explicit `DELETE FROM part` first as belt-and-suspenders |
+| SQLite write lock contention during prune | Prune fails | 500ms `_busy_timeout`; user-visible retry message; abort cleanly |
+| Claude sidecar files absent or removed | Live detection degrades | Layer-2 cwd-fallback detection (§6.2); still works without sidecars |
+| `ps` / `lsof` unavailable | No live detection | Persistent banner in picker; `--no-live` flag; UX still usable for ended sessions |
+| Ambiguous OpenCode cwd (multiple agents same dir) | Wrong "live" marker | "? live" hollow-dot rendering; don't pick one |
+| Claude JSONL rotation mid-session | Incremental parse misses turns | File identity check every tick; reset cursor on mismatch |
+| OpenCode branch detection picks wrong leaf | Wrong conversation displayed | Walk from most-recent leaf by `MAX(time_created)`; regression test on branching fixture |
+| Long-lived live session memory growth | RAM pressure | 500-turn window + on-demand `LoadRange` |
+| OpenCode scan slow at scale (1000+ sessions) | Laggy launch | Benchmark first; cache aggregates in `~/.seshr/opencode_meta.db` if needed |
+| Backup file disk bloat | Disk pressure | Retention: keep last 5 per session ID for OpenCode; Claude keeps 1 `.bak` |
+| Topic clustering produces poor groupings | Confusing UI | Configurable `gap_threshold`; manual boundary insertion in future version |
+| Pulse / status flicker | Jarring UX | Downgrade hysteresis: Working → Waiting requires 2 consecutive slow ticks |
+| Charm library import path migration | Build failures | Pin exact versions in go.mod; document import paths used |
+| Goroutine leaks on shutdown | Zombie processes | Every backend exposes `Close()`; app shutdown waits bounded; context cancellation everywhere |
+| OpenCode binary version drift (resume command changes) | Resume overlay shows wrong command | Verify `--resume` flag at implementation time; document tested OC version; fall back to "show ID only" if flag absent |
