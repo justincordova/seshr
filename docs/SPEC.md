@@ -177,11 +177,63 @@ Three interfaces, one per concern:
 
 - `SessionStore` — reads session metadata and turns (Scan, Load, LoadIncremental, LoadRange)
 - `LiveDetector` — detects running agent processes and maps them to sessions
-- `SessionEditor` — pruning and restore for a given source
+- `SessionEditor` — pruning, deletion, and restore for a given source
 
 Claude and OpenCode each implement all three. The TUI only ever sees these interfaces; adding a new agent means writing three implementations and registering them in `backend.Registry`.
 
 `Cursor` is a typed struct (`{Kind, Data []byte}`) carrying opaque source-specific state. The `Kind` field tags which backend owns it, preventing accidental cross-source misuse.
+
+Full interface signatures are in §6.1 Backend Interfaces.
+
+### 2.4 Supporting Types
+
+A few TUI-level types coordinate live-session state across screens.
+
+```go
+// internal/backend/process.go
+
+type ProcessSnapshot struct {
+    At       time.Time
+    ByPID    map[int]ProcInfo
+    Children map[int][]int  // ppid → []pid
+}
+
+type ProcInfo struct {
+    PID     int
+    PPID    int
+    Command string
+    CPU     float64
+    RSSKB   int64
+    CWD     string // populated lazily, only for agent processes
+}
+
+type ProcessScanner struct { /* internals */ }
+
+// Scan runs ps + lsof (or /proc) once and returns a snapshot.
+// Called by the slow ticker in the TUI app; shared across detectors.
+func (p *ProcessScanner) Scan(ctx context.Context) (ProcessSnapshot, error)
+```
+
+```go
+// internal/tui/session_view.go
+
+// SessionView holds per-session live state coordinated across screens
+// (Landing, Topics, Replay). One source of truth per open session.
+type SessionView struct {
+    Meta     backend.SessionMeta
+    Session  *session.Session
+    Topics   []topics.Topic
+    Cursor   backend.Cursor
+    Live     *backend.LiveSession // nil when not live
+    LastTick time.Time
+    LastErr  error
+
+    // Bounded-memory window (see §7.5).
+    TurnsLoadedFrom int // index of first turn in memory
+    TurnsLoadedTo   int // index of last turn in memory (exclusive)
+    TotalTurns      int // total turns the session has on disk/DB
+}
+```
 
 ---
 
@@ -757,6 +809,7 @@ type LiveDetector interface {
 type SessionEditor interface {
     Kind() session.SourceKind
     Prune(ctx context.Context, id string, sel Selection) error
+    Delete(ctx context.Context, id string) error       // whole-session delete (picker `d`)
     RestoreBackup(ctx context.Context, id string) error
     HasBackup(id string) bool
 }
@@ -765,6 +818,38 @@ type Cursor struct {
     Kind session.SourceKind  // tags which backend owns this cursor
     Data []byte               // source-specific JSON state
 }
+
+type SessionMeta struct {
+    ID         string
+    Kind       session.SourceKind
+    Project    string
+    Directory  string
+    Title      string
+    TokenCount int       // 0 if not yet computed; Claude estimates, OC exact
+    CostUSD    float64   // OpenCode only; 0 for Claude
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+    SizeBytes  int64
+    HasBackup  bool
+}
+
+type LiveSession struct {
+    SessionID     string
+    Kind          session.SourceKind
+    PID           int
+    Status        Status            // Working | Waiting
+    CurrentTask   string            // ≤ 30 chars on picker, ≤ 60 on landing
+    LastActivity  time.Time
+    ContextTokens int
+    ContextWindow int               // 200_000 or 1_000_000
+    Ambiguous     bool              // true for OC cwd with >1 candidate session
+}
+
+type Status int
+const (
+    StatusWaiting Status = iota
+    StatusWorking
+)
 ```
 
 The TUI is given `SessionStore` / `LiveDetector` / `SessionEditor` only. It never sees source-specific types. `Cursor` is opaque to the TUI; only the owning backend can interpret `Data`.
@@ -922,6 +1007,23 @@ Live OpenCode pruning is allowed with a warning dialog (see §3.7).
 
 Read the most-recent backup file for the session ID. Re-INSERT messages and parts in a single transaction with `INSERT OR IGNORE` (idempotent).
 
+#### Whole-Session Delete
+
+Distinct from prune. The picker `d` action removes an entire session. Live sessions are blocked (same policy as prune).
+
+```
+1. Write a full-session backup to
+   ~/.seshr/backups/opencode/<id>/<ts>-delete.json
+   (same format as prune backup; includes ALL messages and parts)
+2. PRAGMA foreign_keys = ON;
+   BEGIN IMMEDIATE;
+   DELETE FROM session WHERE id = ?;  -- cascade drops messages and parts
+   COMMIT;
+3. Apply backup retention (last 5 per session).
+```
+
+Restore from a `*-delete.json` backup re-INSERTs the session row first, then messages, then parts. Idempotent like prune restore.
+
 ### 6.4 Adding a Future Backend
 
 A new backend implements `SessionStore`, `LiveDetector`, `SessionEditor`, plus a `Cursor` shape, then registers itself in `internal/backend/registry.go` against a new `session.SourceKind`. The TUI does not change. Topic clustering does not change. Editor pairing rules remain per-source (Claude has them; OpenCode does not).
@@ -1018,17 +1120,17 @@ OpenCode also records exact `cost` per message; cumulative cost is shown on the 
 
 ## 9. Color Scheme
 
-### 8.1 Default Theme: Catppuccin Mocha
+### 9.1 Default Theme: Catppuccin Mocha
 
 Seshr uses Catppuccin Mocha as the default color scheme. Three themes are available: `catppuccin-mocha` (default), `nord`, and `dracula`. All colors are defined using `lipgloss.AdaptiveColor` so they degrade gracefully on light terminal backgrounds.
 
 The `Theme` struct holds: Background, Foreground, Accent, Muted, Error, plus role badge colors (UserColor, AssistantColor, ToolUseColor, ToolResultColor, AgentColor), palette entries for project gutters (ProjectPalette), and overlay/surface colors for UI elements.
 
-### 8.2 Theme Switching
+### 9.2 Theme Switching
 
 Themes are selectable via the settings popup (`,`) or `--theme` CLI flag. The active theme is stored in `~/.seshr/config.json`.
 
-### 8.3 Style Constants
+### 9.3 Style Constants
 
 Base styles are defined in `internal/tui/styles.go` using the Catppuccin Mocha palette. Key styles:
 
@@ -1144,6 +1246,38 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 - `testdata/` holds sample JSONL fixtures. Fixtures are checked in, not generated.
 - Run `just test` before any commit (see CLAUDE.md pre-commit gate).
 
+**Test fixtures added for v1:**
+
+- `testdata/opencode_simple.db` — linear OpenCode session (2 sessions, ~20 messages)
+- `testdata/opencode_branching.db` — session with `parent_id` branching
+- `testdata/opencode_with_tools.db` — tool parts in all 4 statuses (completed, error, running, pending)
+- `testdata/opencode_compaction.db` — session with `compaction` part
+- `testdata/claude_live_sidecar.json` — sample `~/.claude/sessions/<uuid>.json`
+- `testdata/ps_output.txt` — mocked `ps -ww -eo pid,ppid,rss,%cpu,command` output
+- `testdata/lsof_cwd_output.txt` — mocked `lsof -p PID -d cwd` output
+
+**Per-package test coverage expectations for v1:**
+
+| Package | Key test areas |
+|---|---|
+| `backend/claude/` | Sidecar decode round-trip; `LoadIncremental` appends correctly; reset on rotation; `LoadRange` returns correct slice; `DetectLive` layers 1 & 2; platform build tags compile on darwin + linux |
+| `backend/opencode/` | Scan across linear/branching/compaction fixtures; `Load` walks current branch; `LoadIncremental` handles branch-change edge case; `LoadRange` window; part-type decode rules; `DetectLive` ambiguity (≥2 candidates → `Ambiguous=true`); status derivation thresholds |
+| `backend/process.go` | `ps` output parsing; children map; CWD lookup gated by platform |
+| `editor/claude/` | Prune round-trip on paired tool_use/tool_result; pairing under orphan selection; backup/restore round-trip |
+| `editor/opencode/` | Prune round-trip with no FK orphans; skip running/pending tool parts; backup format + restore idempotence; retention (6th prune deletes oldest backup); `foreign_keys=ON` verified |
+| `tui/` | Picker row golden tests (ended/working/waiting/ambiguous); cross-source mixed rendering; Landing page rendering (live + ended, with/without cost); resume overlay command format per source; clipboard helper invocation + "copy unavailable"; `SessionView` bounded-memory eviction + `LoadRange` trigger; hysteresis (2-tick downgrade, instant upgrade); live-detection-paused banner appears after 3 failures, clears on recovery |
+
+**Integration tests** (`tests/` package):
+- Unified picker: Claude + OpenCode fixtures both appear
+- Live → ended transition: simulate process exit; verify pulse → arrow
+- Prune blocked on Claude live
+- Prune allowed on OpenCode live
+
+**Coverage targets:**
+- New `backend/` and `editor/opencode/` packages: ≥ 80%
+- Modified `tui/landing.go`, `session_view.go`: ≥ 70%
+- No regression on existing package coverage
+
 ### 14.5 Go Best Practices
 
 - **Project layout:** Use `internal/` for all private packages. No `pkg/` directory.
@@ -1158,7 +1292,40 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 
 ---
 
-## 15. Future Features (Post-Launch)
+## 15. Implementation Order
+
+Each phase builds clean (`just check` passes), delivers incremental value, and is a separate commit (or a small sequence of related commits). Phases have stable boundaries so `just check` + manual-testing checklists apply cleanly per phase.
+
+1. **Rename `internal/parser/` → `internal/session/`.** Mechanical. All imports updated. No behavior change.
+2. **Introduce `internal/backend/` package** with `SessionStore`, `LiveDetector`, `SessionEditor` interfaces. Claude implementations are thin wrappers over existing code. TUI still calls them directly (interfaces not yet consumed).
+3. **Shared `ProcessScanner`** with platform gates (`process_linux.go` + `process_darwin.go`).
+4. **Claude `LiveDetector`** (layer 1 sidecar + layer 2 cwd fallback) + `--no-live` CLI flag. Picker rows start showing live pulse + source badge.
+5. **Claude `LoadIncremental` and `LoadRange`** + `SessionView` with bounded-memory window.
+6. **Fast/slow tickers** with hysteresis. Live-detection-paused banner.
+7. **Landing page.** Intermediate screen; `c` resume overlay with platform-gated clipboard helper.
+8. **OpenCode `SessionStore`** (Scan with backup discovery + token aggregate, Load with parent_id branch walk, decode).
+9. **OpenCode `LiveDetector`** (cwd inference, ambiguity handling, `◌ ? live` rendering).
+10. **OpenCode `LoadIncremental` and `LoadRange`.**
+11. **OpenCode `SessionEditor`** (prune, whole-session delete, backup, retention with per-session lockfile, restore).
+12. **Polish + docs.** MANUAL_TESTING.md additions; README.md update; OpenCode resume command verification.
+
+Phases 1–7 deliver full Claude live experience. Phases 8–11 deliver full OpenCode parity. Phase 12 closes v1.
+
+---
+
+## 16. Non-Findings (Considered and Declined)
+
+Intentionally not addressed in v1. Recorded here so future-reviewers know the decision was deliberate rather than an oversight.
+
+- **ProcessScanner caching / diffing.** At ≤ 5 agent processes and ~20ms per `ps` + `lsof` invocation, caching saves nothing meaningful. Reconsider if benchmarks show scan > 100ms.
+- **CPU-independent live status.** The 3-signal model (transcript mtime < 30s, process CPU > 1%, descendant CPU > 5%) is empirically proven via abtop on thousands of users. IO-bound agents show CPU on the parent during network calls; truly idle agents are correctly classified Waiting.
+- **Cursor persistence across restarts.** Cold-start full reload is fast (~300ms on the largest real session). Persisting cursors adds versioning + staleness handling without proportionate benefit.
+- **Per-source configuration toggles.** Flat config stays flat in v1. Schema is forward-compatible (unknown keys ignored) so per-source settings can be added later without a migration.
+- **Model / provider display.** OpenCode exposes `modelID`/`providerID`; Claude exposes `version`. Surfacing these in the UI competes for screen space with higher-priority information. Accessible via log and `i` info overlay (landing page) if needed.
+
+---
+
+## 17. Future Features (Post-Launch)
 
 These are explicitly out of scope for v1 but are natural extensions:
 
@@ -1183,7 +1350,7 @@ These are explicitly out of scope for v1 but are natural extensions:
 
 ---
 
-## 16. Risks & Mitigations
+## 18. Risks & Mitigations
 
 **High-priority risks** (data loss, broken sessions, blocking failures): Claude JSONL format changes, OpenCode schema changes, invalid JSONL after pruning, OpenCode FK orphans, accidental deletion, OpenCode branch detection picks wrong leaf.
 
