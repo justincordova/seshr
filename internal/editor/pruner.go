@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
-func Prune(sess *parser.Session, selection Selection, dstPath string) error {
+func Prune(sess *session.Session, selection Selection, dstPath string) error {
 	if dstPath == sess.Path {
 		return fmt.Errorf("destination must differ from source (%s)", dstPath)
 	}
@@ -62,7 +62,7 @@ func Prune(sess *parser.Session, selection Selection, dstPath string) error {
 	return nil
 }
 
-func PruneSession(sess *parser.Session, selection Selection) error {
+func PruneSession(sess *session.Session, selection Selection) error {
 	path := sess.Path
 	lock, err := TryLock(path)
 	if err != nil {
@@ -80,7 +80,7 @@ func PruneSession(sess *parser.Session, selection Selection) error {
 		return fmt.Errorf("write tmp: %w", err)
 	}
 
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	if _, perr := p.Parse(context.Background(), tmp); perr != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("validate pruned file: %w", perr)

@@ -58,7 +58,7 @@ seshr/
 │   │   ├── process_darwin.go       # //go:build darwin
 │   │   ├── claude/
 │   │   │   ├── store.go            # SessionStore implementation
-│   │   │   ├── jsonl.go            # JSONL decoder (was internal/parser/claude.go)
+│   │   │   ├── jsonl.go            # JSONL decoder (was internal/session/claude.go)
 │   │   │   ├── scan.go             # Directory scan
 │   │   │   ├── record.go           # JSONL record decoding
 │   │   │   ├── sidecar.go          # ~/.claude/sessions/*.json parse
@@ -1296,7 +1296,7 @@ Seshr targets **Go 1.26** (latest stable, released February 2026). The `go.mod` 
 
 Each phase builds clean (`just check` passes), delivers incremental value, and is a separate commit (or a small sequence of related commits). Phases have stable boundaries so `just check` + manual-testing checklists apply cleanly per phase.
 
-1. **Rename `internal/parser/` → `internal/session/`.** Mechanical. All imports updated. No behavior change.
+1. **Rename `internal/session/` → `internal/session/`.** Mechanical. All imports updated. No behavior change.
 2. **Introduce `internal/backend/` package** with `SessionStore`, `LiveDetector`, `SessionEditor` interfaces. Claude implementations are thin wrappers over existing code. TUI still calls them directly (interfaces not yet consumed).
 3. **Shared `ProcessScanner`** with platform gates (`process_linux.go` + `process_darwin.go`).
 4. **Claude `LiveDetector`** (layer 1 sidecar + layer 2 cwd fallback) + `--no-live` CLI flag. Picker rows start showing live pulse + source badge.

@@ -1,7 +1,7 @@
 package editor
 
 import (
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -10,7 +10,7 @@ type Selection struct {
 	Turns  map[int]bool
 }
 
-func ExpandSelection(sess *parser.Session, ts []topics.Topic, in Selection) Selection {
+func ExpandSelection(sess *session.Session, ts []topics.Topic, in Selection) Selection {
 	out := Selection{Turns: map[int]bool{}}
 
 	for topicIdx, sel := range in.Topics {
@@ -33,7 +33,7 @@ func ExpandSelection(sess *parser.Session, ts []topics.Topic, in Selection) Sele
 			continue
 		}
 		switch sess.Turns[idx].Role {
-		case parser.RoleSystem, parser.RoleSummary:
+		case session.RoleSystem, session.RoleSummary:
 			delete(out.Turns, idx)
 		}
 	}
@@ -57,14 +57,14 @@ func ExpandSelection(sess *parser.Session, ts []topics.Topic, in Selection) Sele
 // subagent invocations sharing the same turn list), this adjacency-based search
 // may pull in a partner from a different conversation branch. This is acceptable
 // for v1 because Claude Code sessions are strictly sequential.
-func pullUserAssistantPartner(sess *parser.Session, idx int, sel map[int]bool) {
+func pullUserAssistantPartner(sess *session.Session, idx int, sel map[int]bool) {
 	role := sess.Turns[idx].Role
-	var want parser.Role
+	var want session.Role
 	switch role {
-	case parser.RoleUser:
-		want = parser.RoleAssistant
-	case parser.RoleAssistant:
-		want = parser.RoleUser
+	case session.RoleUser:
+		want = session.RoleAssistant
+	case session.RoleAssistant:
+		want = session.RoleUser
 	default:
 		return
 	}
@@ -88,7 +88,7 @@ func pullUserAssistantPartner(sess *parser.Session, idx int, sel map[int]bool) {
 	}
 }
 
-func pullToolPartners(sess *parser.Session, sel map[int]bool) {
+func pullToolPartners(sess *session.Session, sel map[int]bool) {
 	useIdx := map[string]int{}
 	resultIdx := map[string]int{}
 	for i, turn := range sess.Turns {

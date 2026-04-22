@@ -6,13 +6,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
 // SessionLoadedMsg is emitted when a session has been parsed and clustered.
 type SessionLoadedMsg struct {
-	Session *parser.Session
+	Session *session.Session
 	Topics  []topics.Topic
 }
 
@@ -26,7 +26,7 @@ type SessionLoadErrMsg struct {
 // gapSeconds configures the topic clustering time-gap threshold (0 uses default).
 func LoadSessionCmd(path string, gapSeconds int) tea.Cmd {
 	return func() tea.Msg {
-		p := parser.NewClaude()
+		p := session.NewClaude()
 		sess, err := p.Parse(context.Background(), path)
 		if err != nil {
 			slog.Error("load session failed", "path", path, "err", err)

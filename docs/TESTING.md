@@ -12,7 +12,7 @@
 
 | Package              | Target |
 | -------------------- | ------ |
-| `internal/parser`    | 90%    |
+| `internal/session`    | 90%    |
 | `internal/topics`    | 85%    |
 | `internal/editor`    | 90%    |
 | `internal/tokenizer` | 85%    |
@@ -159,7 +159,7 @@ Do not assert on rendered strings except for narrow snapshot tests — `View()` 
 
 ```bash
 just test                                          # all tests
-go test ./internal/parser/... -v                   # specific package
+go test ./internal/session/... -v                   # specific package
 just test -- -race                                 # race detection
 go test ./... -coverprofile=cover.out              # coverage
 go tool cover -func=cover.out                      # coverage summary

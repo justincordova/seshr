@@ -11,13 +11,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 // Picker is the Session Picker Bubbletea model. See SPEC §3.1.
 type Picker struct {
-	metas     []parser.SessionMeta
-	allMetas  []parser.SessionMeta
+	metas     []session.SessionMeta
+	allMetas  []session.SessionMeta
 	cursor    int
 	offset    int
 	width     int
@@ -35,7 +35,7 @@ type Picker struct {
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
-func NewPicker(metas []parser.SessionMeta, th Theme) Picker {
+func NewPicker(metas []session.SessionMeta, th Theme) Picker {
 	p := Picker{
 		metas:     metas,
 		allMetas:  metas,
@@ -61,7 +61,7 @@ func (p Picker) Cursor() int { return p.cursor }
 func (p Picker) InConfirm() bool { return p.confirm != nil }
 
 // Metas returns the current session list (post-delete).
-func (p Picker) Metas() []parser.SessionMeta { return p.metas }
+func (p Picker) Metas() []session.SessionMeta { return p.metas }
 
 // rebuildGroups recomputes the project groups and flat row index from p.metas.
 func (p *Picker) rebuildGroups() {
@@ -88,17 +88,17 @@ func (p Picker) selectedRow() (PickerRow, bool) {
 
 // selectedSession returns the session meta at the cursor, or false if the
 // cursor is on a group header or there are no rows.
-func (p Picker) selectedSession() (parser.SessionMeta, bool) {
+func (p Picker) selectedSession() (session.SessionMeta, bool) {
 	row, ok := p.selectedRow()
 	if !ok || row.Kind != RowSession {
-		return parser.SessionMeta{}, false
+		return session.SessionMeta{}, false
 	}
 	return p.groups[row.GroupIdx].Sessions[row.SessionIdx], true
 }
 
 // Selected returns the currently highlighted SessionMeta, or the zero value
 // when the list is empty or cursor is on a group header.
-func (p Picker) Selected() (parser.SessionMeta, bool) {
+func (p Picker) Selected() (session.SessionMeta, bool) {
 	return p.selectedSession()
 }
 
@@ -433,7 +433,7 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	return line1
 }
 
-func (p Picker) renderSessionRow(m parser.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
+func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
 	// Faint project-colored gutter carries through into session rows so the
 	// whole project reads as one connected bar on the left.
 	gutterStyle := lipgloss.NewStyle().Foreground(projectColor).Bold(true)
@@ -484,7 +484,7 @@ func (p *Picker) applySearchFilter() {
 			haystack[i] = m.Project + " " + m.ID
 		}
 		p.search.Filter(haystack)
-		p.metas = make([]parser.SessionMeta, 0, len(p.search.Matches()))
+		p.metas = make([]session.SessionMeta, 0, len(p.search.Matches()))
 		for _, m := range p.search.Matches() {
 			p.metas = append(p.metas, p.allMetas[m.Index])
 		}
@@ -566,11 +566,11 @@ func clampOffset(cursor, offset, total, visible int) int {
 
 // OpenSessionMsg is emitted by the picker when enter is pressed on a session.
 type OpenSessionMsg struct {
-	Meta parser.SessionMeta
+	Meta session.SessionMeta
 }
 
 type OpenSessionAndReplayMsg struct {
-	Meta parser.SessionMeta
+	Meta session.SessionMeta
 }
 
 type RestoreRequestedMsg struct{ Path string }
@@ -607,7 +607,7 @@ func deleteSelected(p *Picker) error {
 	return nil
 }
 
-func removeMeta(metas []parser.SessionMeta, path string) []parser.SessionMeta {
+func removeMeta(metas []session.SessionMeta, path string) []session.SessionMeta {
 	for i, m := range metas {
 		if m.Path == path {
 			return append(metas[:i], metas[i+1:]...)

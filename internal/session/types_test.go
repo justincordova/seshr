@@ -1,16 +1,16 @@
-package parser_test
+package session_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSession_ZeroValue_HasUsableDefaults(t *testing.T) {
 	// Arrange / Act
-	s := parser.Session{}
+	s := session.Session{}
 
 	// Assert
 	assert.Empty(t, s.ID)
@@ -24,7 +24,7 @@ func TestSession_ZeroValue_HasUsableDefaults(t *testing.T) {
 
 func TestTurn_ZeroValue_HasUsableDefaults(t *testing.T) {
 	// Arrange / Act
-	turn := parser.Turn{}
+	turn := session.Turn{}
 
 	// Assert
 	assert.Empty(t, turn.Role)

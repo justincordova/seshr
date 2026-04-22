@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 // Topic is a contiguous run of turns grouped by a shared subject.
@@ -39,7 +39,7 @@ func DefaultOptions() Options {
 // compactBoundarySet returns a set of turn indices that begin a new compact
 // segment. A compact boundary at TurnIndex n means: if indices[k] == n (or the
 // previous index was < n and current is >= n), force a split.
-func compactBoundarySet(sess *parser.Session) map[int]struct{} {
+func compactBoundarySet(sess *session.Session) map[int]struct{} {
 	m := make(map[int]struct{}, len(sess.CompactBoundaries))
 	for _, cb := range sess.CompactBoundaries {
 		m[cb.TurnIndex] = struct{}{}
@@ -50,13 +50,13 @@ func compactBoundarySet(sess *parser.Session) map[int]struct{} {
 // Cluster groups sess.Turns into topics. System and summary turns are excluded.
 // Compact boundaries (from /compact calls) are treated as hard splits —
 // no topic may span a compact boundary regardless of other signal scores.
-func Cluster(sess *parser.Session, opts Options) []Topic {
+func Cluster(sess *session.Session, opts Options) []Topic {
 	if sess == nil || len(sess.Turns) == 0 {
 		return nil
 	}
 	var indices []int
 	for i, t := range sess.Turns {
-		if t.Role == parser.RoleSystem || t.Role == parser.RoleSummary {
+		if t.Role == session.RoleSystem || t.Role == session.RoleSummary {
 			continue
 		}
 		indices = append(indices, i)
@@ -97,11 +97,11 @@ func Cluster(sess *parser.Session, opts Options) []Topic {
 	return out
 }
 
-func buildTopic(sess *parser.Session, group []int, idx int) Topic {
-	turns := make([]parser.Turn, 0, len(group))
+func buildTopic(sess *session.Session, group []int, idx int) Topic {
+	turns := make([]session.Turn, 0, len(group))
 	var tokens, tools int
 	fileSet := map[string]struct{}{}
-	var first, last parser.Turn
+	var first, last session.Turn
 	for i, ti := range group {
 		tn := sess.Turns[ti]
 		turns = append(turns, tn)

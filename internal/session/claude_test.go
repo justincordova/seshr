@@ -1,18 +1,18 @@
-package parser_test
+package session_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClaude_Parse_SimpleSession_ReturnsAllTurns(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
@@ -21,17 +21,17 @@ func TestClaude_Parse_SimpleSession_ReturnsAllTurns(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	require.Len(t, s.Turns, 4)
-	assert.Equal(t, parser.RoleUser, s.Turns[0].Role)
+	assert.Equal(t, session.RoleUser, s.Turns[0].Role)
 	assert.Contains(t, s.Turns[0].Content, "REST API")
-	assert.Equal(t, parser.RoleAssistant, s.Turns[1].Role)
+	assert.Equal(t, session.RoleAssistant, s.Turns[1].Role)
 	assert.Contains(t, s.Turns[1].Content, "framework")
-	assert.Equal(t, parser.SourceClaude, s.Source)
+	assert.Equal(t, session.SourceClaude, s.Source)
 	assert.Equal(t, "sess-simple", s.ID)
 }
 
 func TestClaude_Parse_SimpleSession_UsesUsageTokens(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
@@ -44,7 +44,7 @@ func TestClaude_Parse_SimpleSession_UsesUsageTokens(t *testing.T) {
 
 func TestClaude_Parse_RawIndexMatchesLineNumber(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
@@ -58,7 +58,7 @@ func TestClaude_Parse_RawIndexMatchesLineNumber(t *testing.T) {
 
 func TestClaude_Parse_MalformedLine_IsSkipped(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/malformed.jsonl")
@@ -66,13 +66,13 @@ func TestClaude_Parse_MalformedLine_IsSkipped(t *testing.T) {
 	// Assert — 2 valid records survive, 1 garbage line is dropped, no error
 	require.NoError(t, err)
 	require.Len(t, s.Turns, 2)
-	assert.Equal(t, parser.RoleUser, s.Turns[0].Role)
-	assert.Equal(t, parser.RoleAssistant, s.Turns[1].Role)
+	assert.Equal(t, session.RoleUser, s.Turns[0].Role)
+	assert.Equal(t, session.RoleAssistant, s.Turns[1].Role)
 }
 
 func TestClaude_Parse_MultiTopic_AttachesToolResult(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
@@ -82,7 +82,7 @@ func TestClaude_Parse_MultiTopic_AttachesToolResult(t *testing.T) {
 	// First assistant turn has one tool_use "t1"; its tool_result should be attached.
 	var found bool
 	for _, turn := range s.Turns {
-		if turn.Role == parser.RoleAssistant && len(turn.ToolCalls) > 0 && turn.ToolCalls[0].ID == "t1" {
+		if turn.Role == session.RoleAssistant && len(turn.ToolCalls) > 0 && turn.ToolCalls[0].ID == "t1" {
 			assert.Len(t, turn.ToolResults, 1, "tool result should attach to originating assistant turn")
 			assert.Equal(t, "wrote package.json", turn.ToolResults[0].Content)
 			found = true
@@ -93,7 +93,7 @@ func TestClaude_Parse_MultiTopic_AttachesToolResult(t *testing.T) {
 
 func TestClaude_Parse_MultiTopic_ExtractsThinking(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
@@ -112,7 +112,7 @@ func TestClaude_Parse_MultiTopic_ExtractsThinking(t *testing.T) {
 
 func TestClaude_Parse_NonExistentFile_ReturnsError(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	_, err := p.Parse(context.Background(), "/nonexistent/path.jsonl")
@@ -122,11 +122,11 @@ func TestClaude_Parse_NonExistentFile_ReturnsError(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_AttachedToAssistant(t *testing.T) {
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
-	var bashTurn *parser.Turn
+	var bashTurn *session.Turn
 	for i := range s.Turns {
 		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_01" {
 			bashTurn = &s.Turns[i]
@@ -140,11 +140,11 @@ func TestClaude_Parse_EmbeddedToolResult_AttachedToAssistant(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_MultipleInOneRecord(t *testing.T) {
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
-	var readTurn *parser.Turn
+	var readTurn *session.Turn
 	for i := range s.Turns {
 		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_02" {
 			readTurn = &s.Turns[i]
@@ -158,11 +158,11 @@ func TestClaude_Parse_EmbeddedToolResult_MultipleInOneRecord(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_ErrorResult(t *testing.T) {
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
-	var errTurn *parser.Turn
+	var errTurn *session.Turn
 	for i := range s.Turns {
 		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "toolu_04" {
 			errTurn = &s.Turns[i]
@@ -176,12 +176,12 @@ func TestClaude_Parse_EmbeddedToolResult_ErrorResult(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
 	for _, turn := range s.Turns {
-		if turn.Role == parser.RoleUser {
+		if turn.Role == session.RoleUser {
 			assert.NotEmpty(t, turn.Content, "user turns with only tool_results should not appear as empty user turns")
 		}
 	}
@@ -189,7 +189,7 @@ func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
 
 func TestClaude_Parse_CompactBoundary_Detected(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
@@ -206,7 +206,7 @@ func TestClaude_Parse_CompactBoundary_Detected(t *testing.T) {
 
 func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
@@ -217,7 +217,7 @@ func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
 	for _, turn := range s.Turns {
 		if turn.IsCompactContinuation {
 			found = true
-			assert.Equal(t, parser.RoleUser, turn.Role)
+			assert.Equal(t, session.RoleUser, turn.Role)
 			assert.Contains(t, turn.Content, "This session is being continued")
 		}
 	}
@@ -226,7 +226,7 @@ func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
 
 func TestClaude_Parse_NoCompactBoundary_EmptySlice(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 
 	// Act
 	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
@@ -244,11 +244,11 @@ func TestClaude_Parse_EmbeddedToolResult_BlockArrayContent(t *testing.T) {
 		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"line one"},{"type":"text","text":"line two"}]}]}}` + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(input), 0o644))
 
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	s, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 
-	var found *parser.Turn
+	var found *session.Turn
 	for i := range s.Turns {
 		if len(s.Turns[i].ToolCalls) > 0 && s.Turns[i].ToolCalls[0].ID == "t1" {
 			found = &s.Turns[i]

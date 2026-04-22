@@ -1,11 +1,11 @@
-package parser_test
+package session_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ func TestScan_EmptyRoot_ReturnsEmpty(t *testing.T) {
 	root := t.TempDir()
 
 	// Act
-	got, err := parser.Scan(root)
+	got, err := session.Scan(root)
 
 	// Assert
 	require.NoError(t, err)
@@ -27,7 +27,7 @@ func TestScan_MissingRoot_ReturnsEmptyNotError(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist")
 
 	// Act
-	got, err := parser.Scan(root)
+	got, err := session.Scan(root)
 
 	// Assert
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestScan_ProjectsWithSessions_ReturnsMeta(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projA, "notes.txt"), []byte("ignore me"), 0o644))
 
 	// Act
-	got, err := parser.Scan(root)
+	got, err := session.Scan(root)
 
 	// Assert
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestScan_DetectsBackupSibling(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(proj, "y.jsonl"), []byte(`{}`+"\n"), 0o644))
 
 	// Act
-	got, err := parser.Scan(root)
+	got, err := session.Scan(root)
 
 	// Assert
 	require.NoError(t, err)

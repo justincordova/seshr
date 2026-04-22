@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 type ProjectGroup struct {
 	Name        string
 	DisplayName string
-	Sessions    []parser.SessionMeta
+	Sessions    []session.SessionMeta
 	TotalTokens int
 	Color       lipgloss.TerminalColor
 }
@@ -46,7 +46,7 @@ func ProjectDisplayName(raw string) string {
 	return parts[len(parts)-1]
 }
 
-func GroupByProject(metas []parser.SessionMeta, th Theme) []ProjectGroup {
+func GroupByProject(metas []session.SessionMeta, th Theme) []ProjectGroup {
 	groupMap := map[string]*ProjectGroup{}
 	var order []string
 
@@ -101,7 +101,7 @@ type SummaryStats struct {
 	BiggestProj   string
 }
 
-func ComputeSummary(metas []parser.SessionMeta) SummaryStats {
+func ComputeSummary(metas []session.SessionMeta) SummaryStats {
 	if len(metas) == 0 {
 		return SummaryStats{}
 	}

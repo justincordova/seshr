@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/logging"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/justincordova/seshr/internal/version"
 	"github.com/spf13/cobra"
@@ -59,7 +59,7 @@ func main() {
 				scanRoot = filepath.Join(home, ".claude", "projects")
 			}
 
-			metas, err := parser.Scan(scanRoot)
+			metas, err := session.Scan(scanRoot)
 			if err != nil {
 				slog.Error("scan sessions", "root", scanRoot, "err", err)
 				return fmt.Errorf("scan %s: %w", scanRoot, err)

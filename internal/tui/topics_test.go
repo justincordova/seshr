@@ -7,27 +7,27 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func demoSessionAndTopics() (*parser.Session, []topics.Topic) {
+func demoSessionAndTopics() (*session.Session, []topics.Topic) {
 	base := time.Unix(1_700_000_000, 0)
-	s := &parser.Session{
+	s := &session.Session{
 		Path:       "/tmp/demo.jsonl",
-		Source:     parser.SourceClaude,
+		Source:     session.SourceClaude,
 		ID:         "demo",
 		CreatedAt:  base,
 		ModifiedAt: base.Add(20 * time.Minute),
 		TokenCount: 100,
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Timestamp: base, Content: "set up express", Tokens: 10},
-			{Role: parser.RoleAssistant, Timestamp: base.Add(10 * time.Second), Content: "ok", Tokens: 20},
-			{Role: parser.RoleUser, Timestamp: base.Add(10 * time.Minute), Content: "switching to database setup now", Tokens: 10},
-			{Role: parser.RoleAssistant, Timestamp: base.Add(10*time.Minute + 5*time.Second), Content: "ok", Tokens: 60},
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Timestamp: base, Content: "set up express", Tokens: 10},
+			{Role: session.RoleAssistant, Timestamp: base.Add(10 * time.Second), Content: "ok", Tokens: 20},
+			{Role: session.RoleUser, Timestamp: base.Add(10 * time.Minute), Content: "switching to database setup now", Tokens: 10},
+			{Role: session.RoleAssistant, Timestamp: base.Add(10*time.Minute + 5*time.Second), Content: "ok", Tokens: 60},
 		},
 	}
 	tops := topics.Cluster(s, topics.DefaultOptions())
@@ -172,14 +172,14 @@ func TestOverview_StatsVisible_SwapsOutTopicPanel(t *testing.T) {
 
 func TestOverview_ZeroTimestamp_OmitsRelativeTime(t *testing.T) {
 	// Arrange — session with zero-valued turn timestamps.
-	s := &parser.Session{
+	s := &session.Session{
 		Path:       "/tmp/zero.jsonl",
-		Source:     parser.SourceClaude,
+		Source:     session.SourceClaude,
 		ID:         "zero",
 		TokenCount: 5,
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Content: "hi", Tokens: 3},
-			{Role: parser.RoleAssistant, Content: "yo", Tokens: 2},
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "hi", Tokens: 3},
+			{Role: session.RoleAssistant, Content: "yo", Tokens: 2},
 		},
 	}
 	tops := topics.Cluster(s, topics.DefaultOptions())
@@ -206,7 +206,7 @@ func TestOverview_EscKey_EmitsReturnToPickerMsg(t *testing.T) {
 }
 
 func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
+	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
 	m := tui.NewOverview(sess, ts, tui.CatppuccinMocha(), 0)
 
@@ -219,7 +219,7 @@ func TestOverview_RKeyEmitsOpenReplayMsg(t *testing.T) {
 }
 
 func TestOverview_SpaceSelectsTopic(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser}}}
+	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
 	m := tui.NewOverview(sess, ts, tui.CatppuccinMocha(), 0)
 
@@ -271,16 +271,16 @@ func TestOverview_MultipleCompactBoundaries_MiddleTopicsAreSafeToprune(t *testin
 	// topic 4 is after boundary 2 (active context). Topics 1–3 should all be
 	// pre-compact; only topic 4 is active.
 	base := time.Unix(1_700_000_000, 0)
-	sess := &parser.Session{
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Timestamp: base, Content: "a"},
-			{Role: parser.RoleAssistant, Timestamp: base.Add(1 * time.Second), Content: "b"},
-			{Role: parser.RoleUser, Timestamp: base.Add(2 * time.Second), Content: "c"},
-			{Role: parser.RoleAssistant, Timestamp: base.Add(3 * time.Second), Content: "d"},
-			{Role: parser.RoleUser, Timestamp: base.Add(4 * time.Second), Content: "e"},
-			{Role: parser.RoleAssistant, Timestamp: base.Add(5 * time.Second), Content: "f"},
+	sess := &session.Session{
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Timestamp: base, Content: "a"},
+			{Role: session.RoleAssistant, Timestamp: base.Add(1 * time.Second), Content: "b"},
+			{Role: session.RoleUser, Timestamp: base.Add(2 * time.Second), Content: "c"},
+			{Role: session.RoleAssistant, Timestamp: base.Add(3 * time.Second), Content: "d"},
+			{Role: session.RoleUser, Timestamp: base.Add(4 * time.Second), Content: "e"},
+			{Role: session.RoleAssistant, Timestamp: base.Add(5 * time.Second), Content: "f"},
 		},
-		CompactBoundaries: []parser.CompactBoundary{
+		CompactBoundaries: []session.CompactBoundary{
 			{TurnIndex: 2, Trigger: "auto"},
 			{TurnIndex: 4, Trigger: "manual"},
 		},
@@ -315,18 +315,18 @@ func TestOverview_SelectionStripShownInView(t *testing.T) {
 // that expanding any topic makes it much taller than the viewport can hold
 // at a small terminal height. Each turn's content uniquely identifies its
 // topic index so tests can assert which expansions were actually rendered.
-func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
+func manyTopicsSession(n int) (*session.Session, []topics.Topic) {
 	base := time.Unix(1_700_000_000, 0)
-	turns := make([]parser.Turn, 0, n*8)
+	turns := make([]session.Turn, 0, n*8)
 	tops := make([]topics.Topic, 0, n)
 	for i := 0; i < n; i++ {
 		start := len(turns)
 		for j := 0; j < 8; j++ {
-			role := parser.RoleUser
+			role := session.RoleUser
 			if j%2 == 1 {
-				role = parser.RoleAssistant
+				role = session.RoleAssistant
 			}
-			turns = append(turns, parser.Turn{
+			turns = append(turns, session.Turn{
 				Role:      role,
 				Timestamp: base.Add(time.Duration(i*10+j) * time.Minute),
 				Content:   fmt.Sprintf("payload-t%d-j%d", i, j),
@@ -343,9 +343,9 @@ func manyTopicsSession(n int) (*parser.Session, []topics.Topic) {
 			TokenCount:  80,
 		})
 	}
-	s := &parser.Session{
+	s := &session.Session{
 		Path:       "/tmp/many.jsonl",
-		Source:     parser.SourceClaude,
+		Source:     session.SourceClaude,
 		ID:         "many",
 		CreatedAt:  base,
 		ModifiedAt: base.Add(time.Duration(n*10) * time.Minute),

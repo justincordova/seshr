@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 const labelMaxLen = 40
 
 // LabelFor returns a label for a topic at 0-based position idx.
 // Fallback order: top-3 keywords → first user message → "Topic N".
-func LabelFor(turns []parser.Turn, idx int) string {
+func LabelFor(turns []session.Turn, idx int) string {
 	if len(turns) == 0 {
 		return fmt.Sprintf("Topic %d", idx+1)
 	}
@@ -24,7 +24,7 @@ func LabelFor(turns []parser.Turn, idx int) string {
 		return truncateLabel(strings.Join(kws, " "))
 	}
 	for _, tn := range turns {
-		if tn.Role == parser.RoleUser && strings.TrimSpace(tn.Content) != "" {
+		if tn.Role == session.RoleUser && strings.TrimSpace(tn.Content) != "" {
 			return truncateLabel(strings.TrimSpace(tn.Content))
 		}
 	}

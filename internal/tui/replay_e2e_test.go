@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestReplay_E2E_FromFixture(t *testing.T) {
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	sess, err := p.Parse(context.Background(), "../../testdata/replay_basic.jsonl")
 	require.NoError(t, err)
 	ts := topics.Cluster(sess, topics.DefaultOptions())

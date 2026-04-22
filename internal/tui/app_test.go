@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/seshr/internal/config"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
@@ -22,10 +22,10 @@ func TestApp_ViewNoSessions_ShowsEmptyMessage(t *testing.T) {
 }
 
 func TestApp_OpenSessionMsg_TransitionsToLoading(t *testing.T) {
-	app := tui.NewApp([]parser.SessionMeta{{
-		ID: "a", Path: "/p/a.jsonl", Project: "p", Source: parser.SourceClaude,
+	app := tui.NewApp([]session.SessionMeta{{
+		ID: "a", Path: "/p/a.jsonl", Project: "p", Source: session.SourceClaude,
 	}}, testCfg(), "")
-	next, cmd := app.Update(tui.OpenSessionMsg{Meta: parser.SessionMeta{Path: "/p/a.jsonl"}})
+	next, cmd := app.Update(tui.OpenSessionMsg{Meta: session.SessionMeta{Path: "/p/a.jsonl"}})
 	a := next.(tui.App)
 	assert.Contains(t, a.View(), "parsing")
 	require.NotNil(t, cmd)
@@ -33,14 +33,14 @@ func TestApp_OpenSessionMsg_TransitionsToLoading(t *testing.T) {
 
 func TestApp_SessionLoadedMsg_TransitionsToOverview(t *testing.T) {
 	app := tui.NewApp(nil, testCfg(), "")
-	sess := &parser.Session{
+	sess := &session.Session{
 		ID:         "x",
-		Source:     parser.SourceClaude,
+		Source:     session.SourceClaude,
 		CreatedAt:  time.Unix(0, 0),
 		ModifiedAt: time.Unix(60, 0),
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Timestamp: time.Unix(0, 0), Content: "hi", Tokens: 3},
-			{Role: parser.RoleAssistant, Timestamp: time.Unix(1, 0), Content: "yo", Tokens: 2},
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Timestamp: time.Unix(0, 0), Content: "hi", Tokens: 3},
+			{Role: session.RoleAssistant, Timestamp: time.Unix(1, 0), Content: "yo", Tokens: 2},
 		},
 		TokenCount: 5,
 	}
@@ -49,12 +49,12 @@ func TestApp_SessionLoadedMsg_TransitionsToOverview(t *testing.T) {
 	a := next.(tui.App)
 	out := a.View()
 	assert.NotContains(t, out, "parsing")
-	assert.Contains(t, out, string(parser.SourceClaude))
+	assert.Contains(t, out, string(session.SourceClaude))
 }
 
 func TestApp_ReturnToPickerMsg_GoesBack(t *testing.T) {
-	app := tui.NewApp([]parser.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "")
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "x", Tokens: 1}}}
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "")
+	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser, Content: "x", Tokens: 1}}}
 	loaded := tui.SessionLoadedMsg{Session: sess, Topics: topics.Cluster(sess, topics.DefaultOptions())}
 	a, _ := app.Update(loaded)
 	next, _ := a.(tui.App).Update(tui.ReturnToPickerMsg{})
@@ -100,7 +100,7 @@ func TestApp_QuitKey_StillQuitsInPicker(t *testing.T) {
 }
 
 func TestApp_OpenReplayTransitionsToReplayState(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
+	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser, Content: "hi"}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
 	app := tui.AppInOverview(sess, ts)
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -112,7 +112,7 @@ func TestApp_OpenReplayTransitionsToReplayState(t *testing.T) {
 }
 
 func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{Role: parser.RoleUser, Content: "hi"}}}
+	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser, Content: "hi"}}}
 	ts := []topics.Topic{{Label: "Only", TurnIndices: []int{0}}}
 	app := tui.AppInOverview(sess, ts)
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -126,13 +126,13 @@ func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
 }
 
 func TestApp_RestoreRequestedShowsConfirm(t *testing.T) {
-	app := tui.NewApp([]parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
 	next, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
 	assert.Equal(t, tui.StateConfirmRestore, next.(tui.App).State())
 }
 
 func TestApp_RestoreDoneReturnsToList(t *testing.T) {
-	app := tui.NewApp([]parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
 	a2, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
 	a3, _ := a2.(tui.App).Update(tui.RestoreDoneMsg{Path: "/x/a.jsonl"})
 	assert.Equal(t, tui.StateList, a3.(tui.App).State())

@@ -1,4 +1,4 @@
-package parser
+package session
 
 import (
 	"bufio"
@@ -15,7 +15,7 @@ import (
 // Claude parses Claude Code JSONL session files per SPEC §6.2.
 type Claude struct{}
 
-// NewClaude returns a Claude Code JSONL parser.
+// NewClaude returns a Claude Code JSONL session.
 func NewClaude() *Claude { return &Claude{} }
 
 // Source returns the human-readable source name.

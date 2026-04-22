@@ -11,18 +11,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/justincordova/seshr/internal/editor"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
 // compactDividerAfter returns a set of topic indices after which a compact
 // divider should be rendered. For each compact boundary, the divider goes
 // after the last topic whose turns all precede the boundary TurnIndex.
-func compactDividerAfter(sess *parser.Session, tops []topics.Topic) map[int]parser.CompactBoundary {
+func compactDividerAfter(sess *session.Session, tops []topics.Topic) map[int]session.CompactBoundary {
 	if sess == nil || len(sess.CompactBoundaries) == 0 {
 		return nil
 	}
-	result := make(map[int]parser.CompactBoundary, len(sess.CompactBoundaries))
+	result := make(map[int]session.CompactBoundary, len(sess.CompactBoundaries))
 	for _, cb := range sess.CompactBoundaries {
 		// Find the last topic index whose last turn falls before cb.TurnIndex.
 		dividerAfter := -1
@@ -45,7 +45,7 @@ func compactDividerAfter(sess *parser.Session, tops []topics.Topic) map[int]pars
 // isPreCompact returns true when all of a topic's turns fall before the
 // last compact boundary in the session. Only topics after the final boundary
 // are in the active context; everything before any boundary is inactive.
-func isPreCompact(sess *parser.Session, top topics.Topic) bool {
+func isPreCompact(sess *session.Session, top topics.Topic) bool {
 	if sess == nil || len(sess.CompactBoundaries) == 0 || len(top.TurnIndices) == 0 {
 		return false
 	}
@@ -61,7 +61,7 @@ func isPreCompact(sess *parser.Session, top topics.Topic) bool {
 
 // renderCompactDivider renders the accent-colored rule shown between pre-compact
 // and post-compact topics.
-func renderCompactDivider(cb parser.CompactBoundary, width int) string {
+func renderCompactDivider(cb session.CompactBoundary, width int) string {
 	var meta string
 	if cb.Trigger != "" {
 		meta = cb.Trigger
@@ -89,7 +89,7 @@ func renderCompactDivider(cb parser.CompactBoundary, width int) string {
 // Overview is the Topic Overview Bubbletea model per SPEC §3.2.
 // It also hosts selection and pruning (previously the separate Editor screen).
 type Overview struct {
-	sess      *parser.Session
+	sess      *session.Session
 	topics    []topics.Topic
 	allTopics []topics.Topic
 	cursor    int
@@ -111,7 +111,7 @@ type Overview struct {
 
 // NewOverview constructs the screen from a parsed session and its topics.
 // Topics are displayed in chronological order (oldest first).
-func NewOverview(sess *parser.Session, tops []topics.Topic, th Theme, gapSec int) Overview {
+func NewOverview(sess *session.Session, tops []topics.Topic, th Theme, gapSec int) Overview {
 	sorted := make([]topics.Topic, len(tops))
 	copy(sorted, tops)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -131,7 +131,7 @@ func NewOverview(sess *parser.Session, tops []topics.Topic, th Theme, gapSec int
 	}
 }
 
-func topicStartTime(sess *parser.Session, top topics.Topic) time.Time {
+func topicStartTime(sess *session.Session, top topics.Topic) time.Time {
 	if sess == nil || len(top.TurnIndices) == 0 {
 		return time.Time{}
 	}
@@ -849,7 +849,7 @@ const maxExpandedPreviews = 8
 
 // turnPreviewLine returns a non-blank preview string for any turn type.
 // For turns with no text content it falls back to describing tool calls/results.
-func turnPreviewLine(tn parser.Turn) string {
+func turnPreviewLine(tn session.Turn) string {
 	if line := firstLine(tn.Content); line != "" {
 		return line
 	}
@@ -876,7 +876,7 @@ func turnPreviewLine(tn parser.Turn) string {
 
 // renderExpandedCapped writes expanded turn previews into b, consuming at most
 // maxLines lines. Returns the number of lines written.
-func renderExpandedCapped(b *strings.Builder, st Styles, sess *parser.Session, top topics.Topic, maxLines int) int {
+func renderExpandedCapped(b *strings.Builder, st Styles, sess *session.Session, top topics.Topic, maxLines int) int {
 	if sess == nil || maxLines <= 0 {
 		return 0
 	}
@@ -914,13 +914,13 @@ func renderExpandedCapped(b *strings.Builder, st Styles, sess *parser.Session, t
 	return written
 }
 
-func roleBadge(r parser.Role) string {
+func roleBadge(r session.Role) string {
 	switch r {
-	case parser.RoleUser:
+	case session.RoleUser:
 		return pill("USER", colBase, colGreen)
-	case parser.RoleAssistant:
+	case session.RoleAssistant:
 		return pill("AI", colBase, colBlue)
-	case parser.RoleToolResult:
+	case session.RoleToolResult:
 		return pill("TOOL", colBase, colLavender)
 	default:
 		return pill(strings.ToUpper(string(r)), colBase, colOverlay0)
@@ -936,7 +936,7 @@ func firstLine(s string) string {
 	return ""
 }
 
-func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
+func renderStats(st Styles, sess *session.Session, tops []topics.Topic) string {
 	// Token split: user and assistant tokens come from tn.Tokens (billing
 	// counts when available, estimate otherwise). Tool-result tokens are stored
 	// on sess.ToolResultTokens by attachToolResult using the same estimator,
@@ -954,13 +954,13 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 	fileSet := map[string]struct{}{}
 	for _, tn := range sess.Turns {
 		switch tn.Role {
-		case parser.RoleUser:
+		case session.RoleUser:
 			userTokens += tn.Tokens
-		case parser.RoleAssistant:
+		case session.RoleAssistant:
 			asstTokens += tn.Tokens
 			toolCalls += len(tn.ToolCalls)
 			toolResults += len(tn.ToolResults)
-		case parser.RoleToolResult:
+		case session.RoleToolResult:
 			// Orphan: attachment failed. Count its results but not its tokens
 			// (already in sess.TokenCount; excluding from split avoids skewing
 			// user/asst proportions with an unclassified turn).
@@ -1065,7 +1065,7 @@ func renderStats(st Styles, sess *parser.Session, tops []topics.Topic) string {
 }
 
 // pruneCmd runs the prune operation asynchronously.
-func pruneCmd(sess *parser.Session, sel editor.Selection) tea.Cmd {
+func pruneCmd(sess *session.Session, sel editor.Selection) tea.Cmd {
 	return func() tea.Msg {
 		if err := editor.PruneSession(sess, sel); err != nil {
 			return PruneErrMsg{Err: err}

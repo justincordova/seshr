@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/justincordova/seshr/internal/editor"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,9 +24,9 @@ func TestPrune_OmitsSelectedTurns(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(src, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
 
-	sess := &parser.Session{
+	sess := &session.Session{
 		Path: src,
-		Turns: []parser.Turn{
+		Turns: []session.Turn{
 			{RawIndex: 0}, {RawIndex: 1}, {RawIndex: 2}, {RawIndex: 3},
 		},
 	}
@@ -48,9 +48,9 @@ func TestPrune_EmptySelectionKeepsAllTurns(t *testing.T) {
 	src := filepath.Join(dir, "session.jsonl")
 	require.NoError(t, os.WriteFile(src, []byte(`{"type":"user"}`+"\n"+`{"type":"assistant"}`+"\n"), 0o644))
 
-	sess := &parser.Session{
+	sess := &session.Session{
 		Path:  src,
-		Turns: []parser.Turn{{RawIndex: 0}, {RawIndex: 1}},
+		Turns: []session.Turn{{RawIndex: 0}, {RawIndex: 1}},
 	}
 	dst := filepath.Join(t.TempDir(), "out.jsonl")
 
@@ -72,7 +72,7 @@ func TestPruneSession_EndToEnd(t *testing.T) {
 	}, "\n") + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o644))
 
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	sess, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 
@@ -94,7 +94,7 @@ func TestPruneSession_LockedReturnsErrLocked(t *testing.T) {
 	l, err := editor.TryLock(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Release() })
-	sess := &parser.Session{Path: path}
+	sess := &session.Session{Path: path}
 
 	err = editor.PruneSession(sess, editor.Selection{})
 
@@ -112,9 +112,9 @@ func TestPrune_UsesRawIndexNotTurnIndex(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(src, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
 
-	sess := &parser.Session{
+	sess := &session.Session{
 		Path: src,
-		Turns: []parser.Turn{
+		Turns: []session.Turn{
 			{RawIndex: 0},
 			{RawIndex: 2},
 			{RawIndex: 3},
@@ -145,9 +145,9 @@ func TestPrune_RemovesAttachedToolResultLines(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(src, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
 
-	sess := &parser.Session{
+	sess := &session.Session{
 		Path: src,
-		Turns: []parser.Turn{
+		Turns: []session.Turn{
 			{RawIndex: 0},
 			{RawIndex: 1, ExtraLineIndices: []int{2}},
 			{RawIndex: 3},
@@ -171,9 +171,9 @@ func TestPrune_SamePathAsSource_ReturnsError(t *testing.T) {
 	src := filepath.Join(dir, "session.jsonl")
 	require.NoError(t, os.WriteFile(src, []byte(`{"type":"user"}`+"\n"), 0o644))
 
-	sess := &parser.Session{
+	sess := &session.Session{
 		Path:  src,
-		Turns: []parser.Turn{{RawIndex: 0}},
+		Turns: []session.Turn{{RawIndex: 0}},
 	}
 
 	err := editor.Prune(sess, editor.Selection{Turns: map[int]bool{0: true}}, src)
@@ -194,7 +194,7 @@ func TestPruneSession_EndToEndWithToolResult(t *testing.T) {
 	}, "\n") + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o644))
 
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	sess, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 

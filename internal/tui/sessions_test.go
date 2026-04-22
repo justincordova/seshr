@@ -7,17 +7,17 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func fixtures() []parser.SessionMeta {
-	return []parser.SessionMeta{
-		{ID: "a", Path: "/p/a.jsonl", Project: "proj-a", Source: parser.SourceClaude, ModifiedAt: time.Now().Add(-1 * time.Hour)},
-		{ID: "b", Path: "/p/b.jsonl", Project: "proj-b", Source: parser.SourceClaude, ModifiedAt: time.Now().Add(-24 * time.Hour)},
-		{ID: "c", Path: "/p/c.jsonl", Project: "proj-c", Source: parser.SourceClaude, ModifiedAt: time.Now().Add(-72 * time.Hour)},
+func fixtures() []session.SessionMeta {
+	return []session.SessionMeta{
+		{ID: "a", Path: "/p/a.jsonl", Project: "proj-a", Source: session.SourceClaude, ModifiedAt: time.Now().Add(-1 * time.Hour)},
+		{ID: "b", Path: "/p/b.jsonl", Project: "proj-b", Source: session.SourceClaude, ModifiedAt: time.Now().Add(-24 * time.Hour)},
+		{ID: "c", Path: "/p/c.jsonl", Project: "proj-c", Source: session.SourceClaude, ModifiedAt: time.Now().Add(-72 * time.Hour)},
 	}
 }
 
@@ -194,11 +194,11 @@ func TestPicker_SpaceKey_OnGroupHeader_TogglesCollapse(t *testing.T) {
 
 func TestPicker_DeleteFailure_SurfacedInView(t *testing.T) {
 	// Arrange — single project with one session, cursor starts on group header
-	m := tui.NewPicker([]parser.SessionMeta{{
+	m := tui.NewPicker([]session.SessionMeta{{
 		ID:      "ghost",
 		Path:    "/nonexistent/dir/ghost.jsonl",
 		Project: "proj-ghost",
-		Source:  parser.SourceClaude,
+		Source:  session.SourceClaude,
 	}}, tui.CatppuccinMocha())
 	// Expand the group, then navigate to the session row
 	m = expandCurrentGroup(m)
@@ -222,11 +222,11 @@ func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 	require.NoError(t, os.MkdirAll(proj, 0o755))
 	jsonlPath := filepath.Join(proj, "x.jsonl")
 	require.NoError(t, os.WriteFile(jsonlPath, []byte(`{"type":"user"}`+"\n"), 0o644))
-	m := tui.NewPicker([]parser.SessionMeta{{
+	m := tui.NewPicker([]session.SessionMeta{{
 		ID:      "x",
 		Path:    jsonlPath,
 		Project: "proj",
-		Source:  parser.SourceClaude,
+		Source:  session.SourceClaude,
 	}}, tui.CatppuccinMocha())
 	// Expand the group, then navigate to the session row
 	m = expandCurrentGroup(m)
@@ -248,7 +248,7 @@ func TestPicker_ConfirmY_DeletesFileAndEntry(t *testing.T) {
 }
 
 func TestPicker_RKeyOnBackupRowEmitsRestoreMsg(t *testing.T) {
-	metas := []parser.SessionMeta{
+	metas := []session.SessionMeta{
 		{ID: "a", Path: "/x/a.jsonl", HasBackup: true},
 	}
 	p := tui.NewPicker(metas, tui.CatppuccinMocha())
@@ -263,7 +263,7 @@ func TestPicker_RKeyOnBackupRowEmitsRestoreMsg(t *testing.T) {
 }
 
 func TestPicker_RKeyOnNonBackupRowNoOp(t *testing.T) {
-	metas := []parser.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: false}}
+	metas := []session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: false}}
 	p := tui.NewPicker(metas, tui.CatppuccinMocha())
 	// Expand the group, then navigate to the session row
 	p = expandCurrentGroup(p)

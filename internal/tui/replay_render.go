@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/sahilm/fuzzy"
 )
@@ -47,15 +47,15 @@ func catppuccinStyleConfig() ansi.StyleConfig {
 }
 
 // RenderRoleBadge returns a styled role badge using the pill chrome primitive.
-func RenderRoleBadge(role parser.Role, t Theme) string {
+func RenderRoleBadge(role session.Role, t Theme) string {
 	switch role {
-	case parser.RoleUser:
+	case session.RoleUser:
 		return pill("USER", t.UserColor, t.Background)
-	case parser.RoleAssistant:
+	case session.RoleAssistant:
 		return pill("AI", t.AssistantColor, t.Background)
 	case "tool_use":
 		return pill("TOOL", t.ToolUseColor, t.Background)
-	case parser.RoleToolResult:
+	case session.RoleToolResult:
 		return pill("RSLT", t.ToolResultColor, t.Background)
 	default:
 		return pill("????", t.ToolResultColor, t.Background)
@@ -87,7 +87,7 @@ func RenderTimestampDelta(prev, curr time.Time) string {
 }
 
 // RenderTurnHeader renders the one-line header: badge left, delta+tokens right.
-func RenderTurnHeader(turn parser.Turn, prev time.Time, width int, s Styles, th Theme) string {
+func RenderTurnHeader(turn session.Turn, prev time.Time, width int, s Styles, th Theme) string {
 	badge := RenderRoleBadge(turn.Role, th)
 	delta := RenderTimestampDelta(prev, turn.Timestamp)
 	tokens := fmt.Sprintf("~%d tok", turn.Tokens)
@@ -121,7 +121,7 @@ func RenderMarkdownBody(md string, width int) (string, error) {
 const toolResultPreviewLines = 20
 
 // RenderToolCall renders a tool call as a panel with pretty-printed JSON input.
-func RenderToolCall(tc parser.ToolCall, width int, s Styles) string {
+func RenderToolCall(tc session.ToolCall, width int, s Styles) string {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, tc.Input, "", "  "); err != nil {
 		pretty.Reset()
@@ -133,7 +133,7 @@ func RenderToolCall(tc parser.ToolCall, width int, s Styles) string {
 
 // RenderAgentToolCall renders an Agent (subagent) tool call with a distinct
 // badge and description extracted from the input JSON.
-func RenderAgentToolCall(tc parser.ToolCall, width int, th Theme) string {
+func RenderAgentToolCall(tc session.ToolCall, width int, th Theme) string {
 	var input struct {
 		Description     string `json:"description"`
 		SubagentType    string `json:"subagent_type"`
@@ -239,7 +239,7 @@ func wrapLine(line string, contentW int) string {
 // RenderSidebar renders the topic list column for Replay mode.
 // active is the index of the currently-playing topic; -1 for none.
 // sess is used to determine compact boundary positions for dividers.
-func RenderSidebar(sess *parser.Session, ts []topics.Topic, active, width int, th Theme) string {
+func RenderSidebar(sess *session.Session, ts []topics.Topic, active, width int, th Theme) string {
 	if width < 4 {
 		width = 4
 	}
@@ -266,7 +266,7 @@ func RenderSidebar(sess *parser.Session, ts []topics.Topic, active, width int, t
 // excerpt. The selected match is highlighted; others are dimmed.
 // Matches with no displayable content are skipped.
 // scrollTop is the persisted scroll offset; the returned int is the updated offset.
-func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedIdx int, width, height, scrollTop int, s Styles, th Theme) (string, int) {
+func RenderSearchResults(sess *session.Session, matches []fuzzy.Match, selectedIdx int, width, height, scrollTop int, s Styles, th Theme) (string, int) {
 	if len(matches) == 0 {
 		return dimStyle.Render("No matches."), 0
 	}
@@ -380,7 +380,7 @@ func RenderSearchResults(sess *parser.Session, matches []fuzzy.Match, selectedId
 // ComputeSearchScrollTop calculates the scroll offset for search results
 // without rendering. This is called from Update() on the pointer receiver
 // so the result can be persisted on the model.
-func ComputeSearchScrollTop(sess *parser.Session, matches []fuzzy.Match, selectedIdx, width, height, scrollTop int) int {
+func ComputeSearchScrollTop(sess *session.Session, matches []fuzzy.Match, selectedIdx, width, height, scrollTop int) int {
 	if len(matches) == 0 || height <= 0 {
 		return 0
 	}
@@ -457,7 +457,7 @@ func ComputeSearchScrollTop(sess *parser.Session, matches []fuzzy.Match, selecte
 
 // buildToolExcerpt builds a fallback excerpt from tool call names when a turn
 // has no text content.
-func buildToolExcerpt(turn parser.Turn, width int) string {
+func buildToolExcerpt(turn session.Turn, width int) string {
 	if len(turn.ToolCalls) == 0 {
 		return ""
 	}

@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/editor"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -80,7 +80,7 @@ type App struct {
 	cfg          config.Config
 	width        int
 	height       int
-	session      *parser.Session
+	session      *session.Session
 	topicsCache  []topics.Topic
 	restorePath  string
 	restoreModal Confirm
@@ -117,7 +117,7 @@ func (a App) State() string {
 }
 
 // AppInOverview returns an App pre-seeded in stateOverview, useful for tests.
-func AppInOverview(sess *parser.Session, ts []topics.Topic) App {
+func AppInOverview(sess *session.Session, ts []topics.Topic) App {
 	th := CatppuccinMocha()
 	cfg := config.Default()
 	return App{
@@ -133,7 +133,7 @@ func AppInOverview(sess *parser.Session, ts []topics.Topic) App {
 
 // NewApp returns the root model with a pre-populated session list.
 // cfg is the loaded user configuration; pass config.Default() in tests.
-func NewApp(metas []parser.SessionMeta, cfg config.Config, scanRoot string) App {
+func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string) App {
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -383,7 +383,7 @@ func (a App) View() string {
 type RestoreDoneMsg struct{ Path string }
 type RestoreErrMsg struct{ Err error }
 type RescanDoneMsg struct {
-	Metas []parser.SessionMeta
+	Metas []session.SessionMeta
 }
 
 func restoreCmd(path string) tea.Cmd {
@@ -397,7 +397,7 @@ func restoreCmd(path string) tea.Cmd {
 
 func rescanCmd(scanRoot string) tea.Cmd {
 	return func() tea.Msg {
-		metas, _ := parser.Scan(scanRoot)
+		metas, _ := session.Scan(scanRoot)
 		return RescanDoneMsg{Metas: metas}
 	}
 }

@@ -3,7 +3,7 @@ package topics
 import (
 	"strings"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 const (
@@ -21,7 +21,7 @@ var explicitMarkers = []string{
 }
 
 // TimeGapScore returns weightTimeGap when the gap strictly exceeds opts.GapThreshold.
-func TimeGapScore(prev, cur parser.Turn, opts Options) float64 {
+func TimeGapScore(prev, cur session.Turn, opts Options) float64 {
 	if prev.Timestamp.IsZero() || cur.Timestamp.IsZero() {
 		return 0
 	}
@@ -33,8 +33,8 @@ func TimeGapScore(prev, cur parser.Turn, opts Options) float64 {
 
 // ExplicitMarkerScore returns weightExplicitMarker when cur is a user turn
 // containing one of the explicit marker phrases.
-func ExplicitMarkerScore(_, cur parser.Turn) float64 {
-	if cur.Role != parser.RoleUser {
+func ExplicitMarkerScore(_, cur session.Turn) float64 {
+	if cur.Role != session.RoleUser {
 		return 0
 	}
 	low := strings.ToLower(cur.Content)
@@ -59,7 +59,7 @@ func FileShiftScore(prev, cur []string, opts Options) float64 {
 }
 
 // KeywordScore returns weightKeyword when keyword overlap < opts.KeywordOverlapThreshold.
-func KeywordScore(prev, cur parser.Turn, opts Options) float64 {
+func KeywordScore(prev, cur session.Turn, opts Options) float64 {
 	kPrev := topKeywords(prev.Content, 5)
 	kCur := topKeywords(cur.Content, 5)
 	if len(kPrev) == 0 || len(kCur) == 0 {

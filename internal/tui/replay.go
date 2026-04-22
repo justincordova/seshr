@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -21,7 +21,7 @@ const (
 
 // Replay is the Bubbletea model for the Replay screen (SPEC §3.3).
 type Replay struct {
-	sess               *parser.Session
+	sess               *session.Session
 	topicsList         []topics.Topic
 	cursor             int
 	expandedTool       int
@@ -45,7 +45,7 @@ type Replay struct {
 }
 
 // NewReplay constructs a Replay model with sensible defaults.
-func NewReplay(sess *parser.Session, ts []topics.Topic, th Theme) Replay {
+func NewReplay(sess *session.Session, ts []topics.Topic, th Theme) Replay {
 	return Replay{
 		sess:         sess,
 		topicsList:   ts,
@@ -605,7 +605,7 @@ func (m Replay) renderMain(width int) string {
 	return b.String()
 }
 
-func (m Replay) turnVisible(turn parser.Turn) bool {
+func (m Replay) turnVisible(turn session.Turn) bool {
 	if turn.Content != "" {
 		return true
 	}

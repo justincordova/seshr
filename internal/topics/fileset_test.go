@@ -3,26 +3,26 @@ package topics_test
 import (
 	"testing"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractFiles_ReadTool_ReturnsPath(t *testing.T) {
 	// Arrange
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Read",
 		Input: []byte(`{"file_path":"/src/auth.go"}`),
 	}
 	// Act
-	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	got := topics.ExtractFiles([]session.ToolCall{tc})
 	// Assert
 	assert.ElementsMatch(t, []string{"/src/auth.go"}, got)
 }
 
 func TestExtractFiles_WriteAndEdit_ReturnsPaths(t *testing.T) {
 	// Arrange
-	calls := []parser.ToolCall{
+	calls := []session.ToolCall{
 		{Name: "Write", Input: []byte(`{"file_path":"/src/a.go","content":"x"}`)},
 		{Name: "Edit", Input: []byte(`{"file_path":"/src/b.go","old_string":"a","new_string":"b"}`)},
 	}
@@ -34,19 +34,19 @@ func TestExtractFiles_WriteAndEdit_ReturnsPaths(t *testing.T) {
 
 func TestExtractFiles_Glob_UsesPattern(t *testing.T) {
 	// Arrange
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Glob",
 		Input: []byte(`{"pattern":"src/**/*.go"}`),
 	}
 	// Act
-	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	got := topics.ExtractFiles([]session.ToolCall{tc})
 	// Assert
 	assert.ElementsMatch(t, []string{"src/**/*.go"}, got)
 }
 
 func TestExtractFiles_Deduplicates(t *testing.T) {
 	// Arrange
-	calls := []parser.ToolCall{
+	calls := []session.ToolCall{
 		{Name: "Read", Input: []byte(`{"file_path":"/a.go"}`)},
 		{Name: "Read", Input: []byte(`{"file_path":"/a.go"}`)},
 	}
@@ -58,36 +58,36 @@ func TestExtractFiles_Deduplicates(t *testing.T) {
 
 func TestExtractFiles_BashCommand_Ignored(t *testing.T) {
 	// Arrange
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Bash",
 		Input: []byte(`{"command":"cat /etc/hosts"}`),
 	}
 	// Act
-	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	got := topics.ExtractFiles([]session.ToolCall{tc})
 	// Assert
 	assert.Empty(t, got)
 }
 
 func TestExtractFiles_BashWithPathKey_Ignored(t *testing.T) {
 	// Arrange — Bash input that contains a "path" key (should still be skipped)
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Bash",
 		Input: []byte(`{"command":"cat /etc/hosts","path":"/etc/hosts"}`),
 	}
 	// Act
-	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	got := topics.ExtractFiles([]session.ToolCall{tc})
 	// Assert
 	assert.Empty(t, got)
 }
 
 func TestExtractFiles_MalformedJSON_Skipped(t *testing.T) {
 	// Arrange
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Read",
 		Input: []byte(`{not valid json`),
 	}
 	// Act
-	got := topics.ExtractFiles([]parser.ToolCall{tc})
+	got := topics.ExtractFiles([]session.ToolCall{tc})
 	// Assert
 	assert.Empty(t, got)
 }

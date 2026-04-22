@@ -5,20 +5,20 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func sampleSession() *parser.Session {
-	return &parser.Session{
+func sampleSession() *session.Session {
+	return &session.Session{
 		ID: "s1",
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Content: "hello", Timestamp: time.Unix(100, 0)},
-			{Role: parser.RoleAssistant, Content: "hi", Timestamp: time.Unix(110, 0)},
-			{Role: parser.RoleUser, Content: "next", Timestamp: time.Unix(120, 0)},
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "hello", Timestamp: time.Unix(100, 0)},
+			{Role: session.RoleAssistant, Content: "hi", Timestamp: time.Unix(110, 0)},
+			{Role: session.RoleUser, Content: "next", Timestamp: time.Unix(120, 0)},
 		},
 	}
 }
@@ -189,14 +189,14 @@ func TestReplay_ThinkingIndicatorInHeader(t *testing.T) {
 }
 
 func TestReplay_EnterOnToolResultTurnExpands(t *testing.T) {
-	sess := &parser.Session{
+	sess := &session.Session{
 		ID: "s2",
-		Turns: []parser.Turn{
-			{Role: parser.RoleUser, Content: "run ls"},
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "run ls"},
 			{
-				Role:        parser.RoleAssistant,
-				ToolCalls:   []parser.ToolCall{{ID: "t1", Name: "Bash", Input: []byte(`{"command":"ls"}`)}},
-				ToolResults: []parser.ToolResult{{ID: "t1", Content: "a\nb"}},
+				Role:        session.RoleAssistant,
+				ToolCalls:   []session.ToolCall{{ID: "t1", Name: "Bash", Input: []byte(`{"command":"ls"}`)}},
+				ToolResults: []session.ToolResult{{ID: "t1", Content: "a\nb"}},
 			},
 		},
 	}
@@ -210,11 +210,11 @@ func TestReplay_EnterOnToolResultTurnExpands(t *testing.T) {
 }
 
 func TestReplay_EscWhileExpandedCollapses(t *testing.T) {
-	sess := &parser.Session{
-		Turns: []parser.Turn{
+	sess := &session.Session{
+		Turns: []session.Turn{
 			{
-				Role:        parser.RoleAssistant,
-				ToolResults: []parser.ToolResult{{ID: "t1", Content: "x"}},
+				Role:        session.RoleAssistant,
+				ToolResults: []session.ToolResult{{ID: "t1", Content: "x"}},
 			},
 		},
 	}
@@ -259,9 +259,9 @@ func TestReplay_View_NarrowHidesSidebar(t *testing.T) {
 }
 
 func TestReplay_View_ExpandedShowsOnlyViewport(t *testing.T) {
-	sess := &parser.Session{Turns: []parser.Turn{{
-		Role:        parser.RoleAssistant,
-		ToolResults: []parser.ToolResult{{ID: "t1", Content: "EXPANDED_MARKER"}},
+	sess := &session.Session{Turns: []session.Turn{{
+		Role:        session.RoleAssistant,
+		ToolResults: []session.ToolResult{{ID: "t1", Content: "EXPANDED_MARKER"}},
 	}}}
 	m := tui.NewReplay(sess, []topics.Topic{{TurnIndices: []int{0}}}, tui.CatppuccinMocha())
 	m = m.SetSize(120, 40).(tui.Replay)

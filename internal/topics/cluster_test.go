@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,30 +45,30 @@ func TestDefaultOptions_MatchesSpecDefaults(t *testing.T) {
 	assert.Greater(t, opts.BoundaryThreshold, 0.0)
 }
 
-func session(turns ...parser.Turn) *parser.Session {
-	s := &parser.Session{Turns: turns}
+func makeSession(turns ...session.Turn) *session.Session {
+	s := &session.Session{Turns: turns}
 	for _, t := range turns {
 		s.TokenCount += t.Tokens
 	}
 	return s
 }
 
-func userTurn(ts time.Time, content string, tokens int) parser.Turn {
-	return parser.Turn{Role: parser.RoleUser, Timestamp: ts, Content: content, Tokens: tokens}
+func userTurn(ts time.Time, content string, tokens int) session.Turn {
+	return session.Turn{Role: session.RoleUser, Timestamp: ts, Content: content, Tokens: tokens}
 }
 
-func asstTurn(ts time.Time, content string, tokens int) parser.Turn {
-	return parser.Turn{Role: parser.RoleAssistant, Timestamp: ts, Content: content, Tokens: tokens}
+func asstTurn(ts time.Time, content string, tokens int) session.Turn {
+	return session.Turn{Role: session.RoleAssistant, Timestamp: ts, Content: content, Tokens: tokens}
 }
 
 func TestCluster_EmptySession_ReturnsNoTopics(t *testing.T) {
-	got := topics.Cluster(&parser.Session{}, topics.DefaultOptions())
+	got := topics.Cluster(&session.Session{}, topics.DefaultOptions())
 	assert.Empty(t, got)
 }
 
 func TestCluster_NoBoundaries_ReturnsSingleTopic(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "set up express server", 10),
 		asstTurn(base.Add(2*time.Second), "express server set up", 15),
 		userTurn(base.Add(5*time.Second), "add a health route to the express server", 10),
@@ -82,7 +82,7 @@ func TestCluster_NoBoundaries_ReturnsSingleTopic(t *testing.T) {
 
 func TestCluster_TimeGap_SplitsAtGap(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "hi", 5),
 		asstTurn(base.Add(10*time.Second), "hello", 3),
 		userTurn(base.Add(5*time.Minute), "new question", 4),
@@ -96,7 +96,7 @@ func TestCluster_TimeGap_SplitsAtGap(t *testing.T) {
 
 func TestCluster_ExplicitMarker_SplitsOnMarker(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "set up express", 10),
 		asstTurn(base.Add(2*time.Second), "done", 3),
 		userTurn(base.Add(10*time.Minute), "actually, can you write a recipe instead", 10),
@@ -110,13 +110,13 @@ func TestCluster_ExplicitMarker_SplitsOnMarker(t *testing.T) {
 
 func TestCluster_TopicFieldsPopulated(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "add jwt auth middleware", 20),
-		parser.Turn{
-			Role:      parser.RoleAssistant,
+		session.Turn{
+			Role:      session.RoleAssistant,
 			Timestamp: base.Add(5 * time.Minute),
 			Content:   "adding jwt middleware",
-			ToolCalls: []parser.ToolCall{
+			ToolCalls: []session.ToolCall{
 				{Name: "Write", Input: []byte(`{"file_path":"/src/auth.go","content":"..."}`)},
 				{Name: "Read", Input: []byte(`{"file_path":"/src/auth.go"}`)},
 			},
@@ -134,9 +134,9 @@ func TestCluster_TopicFieldsPopulated(t *testing.T) {
 
 func TestCluster_SystemAndSummaryTurns_Excluded(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "work item", 10),
-		parser.Turn{Role: parser.RoleSystem, Timestamp: base.Add(1 * time.Second), Content: "sys"},
+		session.Turn{Role: session.RoleSystem, Timestamp: base.Add(1 * time.Second), Content: "sys"},
 		asstTurn(base.Add(2*time.Second), "ok", 5),
 	)
 	got := topics.Cluster(s, topics.DefaultOptions())
@@ -148,14 +148,14 @@ func TestCluster_CompactBoundary_ForcesHardSplit(t *testing.T) {
 	// Arrange: two turns very close together in time (would normally be one topic),
 	// but a compact boundary sits between them.
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "set up express", 10),
 		asstTurn(base.Add(1*time.Second), "express done", 8),
 		userTurn(base.Add(2*time.Second), "add rate limiting", 10),
 		asstTurn(base.Add(3*time.Second), "rate limiting added", 8),
 	)
 	// Compact boundary between index 1 and index 2 (TurnIndex=2)
-	s.CompactBoundaries = []parser.CompactBoundary{
+	s.CompactBoundaries = []session.CompactBoundary{
 		{TurnIndex: 2, Trigger: "manual", PreTokens: 1000},
 	}
 
@@ -172,11 +172,11 @@ func TestCluster_CompactBoundary_DoesNotSplitWithinSameGroup(t *testing.T) {
 	// A boundary at TurnIndex=0 should not create an empty group —
 	// if it points to the very first turn it's a no-op for splitting.
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "hello", 5),
 		asstTurn(base.Add(1*time.Second), "hi", 3),
 	)
-	s.CompactBoundaries = []parser.CompactBoundary{
+	s.CompactBoundaries = []session.CompactBoundary{
 		{TurnIndex: 0, Trigger: "manual"},
 	}
 
@@ -189,7 +189,7 @@ func TestCluster_CompactBoundary_DoesNotSplitWithinSameGroup(t *testing.T) {
 
 func TestCluster_MultipleCompactBoundaries_MultipleSplits(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
-	s := session(
+	s := makeSession(
 		userTurn(base, "topic a", 5),
 		asstTurn(base.Add(1*time.Second), "done a", 3),
 		userTurn(base.Add(2*time.Second), "topic b", 5),
@@ -197,7 +197,7 @@ func TestCluster_MultipleCompactBoundaries_MultipleSplits(t *testing.T) {
 		userTurn(base.Add(4*time.Second), "topic c", 5),
 		asstTurn(base.Add(5*time.Second), "done c", 3),
 	)
-	s.CompactBoundaries = []parser.CompactBoundary{
+	s.CompactBoundaries = []session.CompactBoundary{
 		{TurnIndex: 2, Trigger: "manual"},
 		{TurnIndex: 4, Trigger: "auto"},
 	}
@@ -211,7 +211,7 @@ func TestCluster_MultipleCompactBoundaries_MultipleSplits(t *testing.T) {
 
 func TestCluster_MultiTopicFixture_ThreeBoundaries(t *testing.T) {
 	// Arrange
-	p := parser.NewClaude()
+	p := session.NewClaude()
 	sess, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
 	require.NoError(t, err)
 	require.NotNil(t, sess)

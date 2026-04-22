@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
@@ -17,13 +17,13 @@ func TestRenderRoleBadge_KnownRoles(t *testing.T) {
 	th := tui.CatppuccinMocha()
 
 	cases := []struct {
-		role  parser.Role
+		role  session.Role
 		token string
 	}{
-		{parser.RoleUser, "USER"},
-		{parser.RoleAssistant, "AI"},
+		{session.RoleUser, "USER"},
+		{session.RoleAssistant, "AI"},
 		{"tool_use", "TOOL"},
-		{parser.RoleToolResult, "RSLT"},
+		{session.RoleToolResult, "RSLT"},
 	}
 
 	for _, tc := range cases {
@@ -71,7 +71,7 @@ func TestRenderTurnHeader_ContainsAllParts(t *testing.T) {
 	th := tui.CatppuccinMocha()
 	prev := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	curr := prev.Add(3*time.Minute + 22*time.Second)
-	turn := parser.Turn{Role: parser.RoleAssistant, Timestamp: curr, Tokens: 890}
+	turn := session.Turn{Role: session.RoleAssistant, Timestamp: curr, Tokens: 890}
 
 	got := tui.RenderTurnHeader(turn, prev, 80, s, th)
 
@@ -99,7 +99,7 @@ func TestRenderMarkdownBody_EmptyInputReturnsEmpty(t *testing.T) {
 
 func TestRenderToolCall_BoxContainsNameAndInput(t *testing.T) {
 	s := tui.NewStyles(tui.CatppuccinMocha())
-	tc := parser.ToolCall{Name: "Bash", Input: []byte(`{"command":"ls -la"}`)}
+	tc := session.ToolCall{Name: "Bash", Input: []byte(`{"command":"ls -la"}`)}
 
 	got := tui.RenderToolCall(tc, 60, s)
 
@@ -166,7 +166,7 @@ func TestRenderSidebar_ActiveHighlighted(t *testing.T) {
 
 func TestRenderAgentToolCall_ShowsDescription(t *testing.T) {
 	th := tui.CatppuccinMocha()
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Agent",
 		Input: []byte(`{"description":"Fix replay scrolling","subagent_type":"code-reviewer","prompt":"do stuff"}`),
 	}
@@ -180,7 +180,7 @@ func TestRenderAgentToolCall_ShowsDescription(t *testing.T) {
 
 func TestRenderAgentToolCall_BackgroundTag(t *testing.T) {
 	th := tui.CatppuccinMocha()
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Agent",
 		Input: []byte(`{"description":"Background task","run_in_background":true}`),
 	}
@@ -194,7 +194,7 @@ func TestRenderAgentToolCall_BackgroundTag(t *testing.T) {
 
 func TestRenderAgentToolCall_FallbackToSubagentType(t *testing.T) {
 	th := tui.CatppuccinMocha()
-	tc := parser.ToolCall{
+	tc := session.ToolCall{
 		Name:  "Agent",
 		Input: []byte(`{"subagent_type":"code-reviewer"}`),
 	}

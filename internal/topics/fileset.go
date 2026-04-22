@@ -3,13 +3,13 @@ package topics
 import (
 	"encoding/json"
 
-	"github.com/justincordova/seshr/internal/parser"
+	"github.com/justincordova/seshr/internal/session"
 )
 
 // ExtractFiles pulls unique file paths from tool-call Input JSON blobs.
 // Only file-oriented tools are inspected; Bash is intentionally skipped
 // (heuristic false-positive rate too high).
-func ExtractFiles(calls []parser.ToolCall) []string {
+func ExtractFiles(calls []session.ToolCall) []string {
 	seen := make(map[string]struct{})
 	for _, c := range calls {
 		if c.Name == "Bash" {
