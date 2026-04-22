@@ -21,6 +21,7 @@ func main() {
 	var (
 		debug         bool
 		showVersion   bool
+		noLive        bool
 		dirOverride   string
 		themeOverride string
 	)
@@ -76,9 +77,14 @@ func main() {
 			claudeStore := claudeBackend.NewStore(scanRoot)
 			reg.RegisterStore(claudeStore)
 			reg.RegisterEditor(claudeBackend.NewEditor(claudeStore))
+			if !noLive {
+				home, _ := os.UserHomeDir()
+				sidecarDir := filepath.Join(home, ".claude", "sessions")
+				reg.RegisterDetector(claudeBackend.NewDetector(scanRoot, sidecarDir))
+			}
 			defer func() { _ = reg.Close() }()
 
-			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot, reg), tea.WithAltScreen())
+			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot, reg, noLive), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				slog.Error("tui exited with error", "err", err)
 				return fmt.Errorf("run tui: %w", err)
@@ -90,6 +96,7 @@ func main() {
 
 	root.Flags().BoolVar(&debug, "debug", false, "enable debug logging")
 	root.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
+	root.Flags().BoolVar(&noLive, "no-live", false, "disable live session detection")
 	root.Flags().StringVar(&dirOverride, "dir", "", "directory to scan for sessions (default ~/.claude/projects)")
 	root.Flags().StringVar(&themeOverride, "theme", "", "color theme: catppuccin-mocha, nord, dracula")
 

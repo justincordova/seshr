@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
+	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/session"
 )
 
@@ -32,6 +33,9 @@ type Picker struct {
 	groups    []ProjectGroup
 	collapsed map[string]bool
 	flatRows  []PickerRow
+
+	// liveIndex maps session ID → live state; updated by the app on each slow tick.
+	liveIndex map[string]*backend.LiveSession
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
@@ -434,25 +438,47 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 }
 
 func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
-	// Faint project-colored gutter carries through into session rows so the
-	// whole project reads as one connected bar on the left.
+	live := p.liveIndex[m.ID]
+
+	// Gutter
 	gutterStyle := lipgloss.NewStyle().Foreground(projectColor).Bold(true)
 	if !selected {
 		gutterStyle = lipgloss.NewStyle().Foreground(projectColor).Faint(true)
 	}
 	gutter := gutterStyle.Render("▌")
 
-	glyphStyle := lipgloss.NewStyle().Foreground(colOverlay1)
-	if selected {
-		glyphStyle = lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true)
+	// Glyph: live vs ended
+	var glyph string
+	if live != nil {
+		switch live.Status {
+		case backend.StatusWorking:
+			glyph = lipgloss.NewStyle().Foreground(p.theme.Success).Bold(true).Render("●")
+		case backend.StatusWaiting:
+			glyph = lipgloss.NewStyle().Foreground(p.theme.Warning).Bold(true).Render("●")
+		default:
+			glyph = lipgloss.NewStyle().Foreground(colOverlay1).Render("◌")
+		}
+		if live.Ambiguous {
+			glyph = lipgloss.NewStyle().Foreground(colOverlay1).Render("◌")
+		}
+	} else {
+		glyphStyle := lipgloss.NewStyle().Foreground(colOverlay1)
+		if selected {
+			glyphStyle = lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true)
+		}
+		glyph = glyphStyle.Render("▸")
 	}
-	glyph := glyphStyle.Render("▸")
 
+	// ID
 	idStyle := lipgloss.NewStyle().Foreground(colOverlay1)
 	if selected {
 		idStyle = lipgloss.NewStyle().Foreground(p.theme.Foreground)
 	}
 	id := idStyle.Render(truncate(m.ID, 20))
+
+	// Source badge (fixed-width dim)
+	badgeStyle := lipgloss.NewStyle().Foreground(colSubtext0)
+	badge := badgeStyle.Render(sourceBadge(m.Source))
 
 	sessMetaStyle := lipgloss.NewStyle().Foreground(colSubtext0)
 	tokStr := sessMetaStyle.Render(humanizeTokens(int64(m.TokenCount)))
@@ -462,17 +488,55 @@ func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.Te
 		backup = "  " + successStyle.Render("↶")
 	}
 
+	// Right side: live status or age
+	var statusStr string
+	if live != nil {
+		switch {
+		case live.Ambiguous:
+			statusStr = sessMetaStyle.Render("? live")
+		case live.Status == backend.StatusWorking && live.CurrentTask != "":
+			statusStr = lipgloss.NewStyle().Foreground(p.theme.Success).Render("working · " + truncate(live.CurrentTask, 30))
+		case live.Status == backend.StatusWorking:
+			statusStr = lipgloss.NewStyle().Foreground(p.theme.Success).Render("working")
+		default:
+			statusStr = lipgloss.NewStyle().Foreground(p.theme.Warning).Render("waiting")
+		}
+		// TODO phase 6: append ctx N% ⚠ when ContextTokens/ContextWindow > 0.
+	}
+
+	// TODO phase 7: responsive column-drop for width < 80 and < 100.
 	if width >= 80 {
-		age := sessMetaStyle.Render(humanize.Time(m.ModifiedAt))
 		left := gutter + "   " + glyph + " " + id
-		right := tokStr + "  " + age + backup
+		var right string
+		if live != nil {
+			right = badge + "  " + tokStr + "  " + statusStr + backup
+		} else {
+			age := sessMetaStyle.Render(humanize.Time(m.ModifiedAt))
+			right = badge + "  " + tokStr + "  " + age + backup
+		}
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 		if gap < 2 {
 			gap = 2
 		}
 		return left + strings.Repeat(" ", gap) + right
 	}
-	return gutter + "   " + glyph + " " + id + "  " + tokStr + backup
+	right := tokStr + backup
+	if live != nil {
+		right = badge + "  " + tokStr + "  " + statusStr + backup
+	}
+	return gutter + "   " + glyph + " " + id + "  " + right
+}
+
+// sourceBadge returns the fixed-width source name for a session's source kind.
+func sourceBadge(kind session.SourceKind) string {
+	switch kind {
+	case session.SourceClaude:
+		return "claude  "
+	case session.SourceOpenCode:
+		return "opencode"
+	default:
+		return string(kind)
+	}
 }
 
 func (p *Picker) applySearchFilter() {

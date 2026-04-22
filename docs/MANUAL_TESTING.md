@@ -96,6 +96,14 @@ tail -f ~/.seshr/debug.log
 - [ ] `--version` prints the git tag via ldflags (not `dev`)
 - [ ] Continuation chain session from multiple JSONL files presents as one session with "continued across N files" note
 
+## Phase 4 — Claude live detection
+
+- [ ] Launch `claude` in another terminal; seshr shows the session as live within 10s
+- [ ] Kill claude; the row reverts to ended within 20s (hysteresis lands in Phase 6; pre-hysteresis this is immediate)
+- [ ] `./seshr --no-live` launches with all sessions shown as ended; no pulse dots visible
+- [ ] Badge column reads `claude` on Claude Code sessions
+- [ ] Live row shows `● working · <task>` (green) or `● waiting` (yellow) correctly
+
 ---
 
 ## Regression Pass (before any tag)

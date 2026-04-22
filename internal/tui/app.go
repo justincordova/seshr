@@ -94,6 +94,7 @@ type App struct {
 	settings     Settings
 	registry     *backend.Registry
 	scanner      *backend.ProcessScanner
+	LiveDisabled bool
 }
 
 // overlayActive reports whether any overlay is currently shown.
@@ -137,20 +138,22 @@ func AppInOverview(sess *session.Session, ts []topics.Topic) App {
 // NewApp returns the root model with a pre-populated session list.
 // cfg is the loaded user configuration; pass config.Default() in tests.
 // reg may be nil in tests that don't exercise live detection or store access.
-func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string, reg *backend.Registry) App {
+// noLive disables live detection if true.
+func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string, reg *backend.Registry, noLive bool) App {
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return App{
-		state:    stateList,
-		picker:   NewPicker(metas, th),
-		spinner:  sp,
-		styles:   NewStyles(th),
-		theme:    th,
-		cfg:      cfg,
-		scanRoot: scanRoot,
-		registry: reg,
-		scanner:  backend.NewProcessScanner(),
+		state:        stateList,
+		picker:       NewPicker(metas, th),
+		spinner:      sp,
+		styles:       NewStyles(th),
+		theme:        th,
+		cfg:          cfg,
+		scanRoot:     scanRoot,
+		registry:     reg,
+		scanner:      backend.NewProcessScanner(),
+		LiveDisabled: noLive,
 	}
 }
 

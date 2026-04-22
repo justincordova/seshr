@@ -19,6 +19,10 @@ type Theme struct {
 
 	ProjectPalette []lipgloss.AdaptiveColor
 
+	// Status colors for live session indicators.
+	Success lipgloss.AdaptiveColor // working / green
+	Warning lipgloss.AdaptiveColor // waiting / yellow
+
 	// Role badge colors for replay message headers.
 	UserColor       lipgloss.AdaptiveColor
 	AssistantColor  lipgloss.AdaptiveColor
@@ -59,6 +63,9 @@ func CatppuccinMocha() Theme {
 			{Dark: "#fab387", Light: "#fe640b"},
 			{Dark: "#94e2d5", Light: "#179299"},
 		},
+
+		Success: lipgloss.AdaptiveColor{Light: "#40a02b", Dark: "#a6e3a1"},
+		Warning: lipgloss.AdaptiveColor{Light: "#df8e1d", Dark: "#f9e2af"},
 
 		UserColor:       lipgloss.AdaptiveColor{Light: "#40a02b", Dark: "#a6e3a1"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#89b4fa"},
@@ -102,6 +109,9 @@ func Nord() Theme {
 			auroraRed, {Dark: "#88C0D0", Light: "#88C0D0"},
 		},
 
+		Success: auroraGreen,
+		Warning: auroraYellow,
+
 		UserColor:       lipgloss.AdaptiveColor{Light: "#A3BE8C", Dark: "#A3BE8C"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#5E81AC", Dark: "#88C0D0"},
 		ToolUseColor:    lipgloss.AdaptiveColor{Light: "#EBCB8B", Dark: "#EBCB8B"},
@@ -142,6 +152,9 @@ func Dracula() Theme {
 			{Dark: "#FF5555", Light: "#FF5555"},
 			{Dark: "#6272A4", Light: "#6272A4"},
 		},
+
+		Success: lipgloss.AdaptiveColor{Dark: "#50FA7B", Light: "#50FA7B"},
+		Warning: lipgloss.AdaptiveColor{Dark: "#FFB86C", Light: "#FFB86C"},
 
 		UserColor:       lipgloss.AdaptiveColor{Light: "#50FA7B", Dark: "#50FA7B"},
 		AssistantColor:  lipgloss.AdaptiveColor{Light: "#6272A4", Dark: "#8BE9FD"},
