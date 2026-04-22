@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -98,6 +99,14 @@ type App struct {
 	registry     *backend.Registry
 	scanner      *backend.ProcessScanner
 	LiveDisabled bool
+
+	// Live detection state (Phase 6).
+	liveIndex     *LiveIndex
+	scanFailCount int
+	lastScanErr   error
+	fastActive    bool // true when the fast ticker is running
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // overlayActive reports whether any overlay is currently shown.
@@ -146,6 +155,7 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
+	ctx, cancel := context.WithCancel(context.Background())
 	return App{
 		state:        stateList,
 		picker:       NewPicker(metas, th, reg),
@@ -157,10 +167,19 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 		registry:     reg,
 		scanner:      backend.NewProcessScanner(),
 		LiveDisabled: noLive,
+		liveIndex:    NewLiveIndex(),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 }
 
-func (a App) Init() tea.Cmd { return a.picker.Init() }
+func (a App) Init() tea.Cmd {
+	cmds := []tea.Cmd{a.picker.Init()}
+	if !a.LiveDisabled {
+		cmds = append(cmds, slowTickCmd())
+	}
+	return tea.Batch(cmds...)
+}
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ── Window resize: always propagate ──────────────────────────────────────
@@ -231,6 +250,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.theme = ThemeByName(sm.Cfg.Theme)
 		a.styles = NewStyles(a.theme)
 		return a, nil
+	}
+
+	// ── Quit: cancel the app context ─────────────────────────────────────────
+	if _, ok := msg.(tea.QuitMsg); ok {
+		if a.cancel != nil {
+			a.cancel()
+		}
+		return a, nil
+	}
+
+	// ── Slow tick (10s): run detectors, reconcile live index ─────────────────
+	if stm, ok := msg.(liveSlowMsg); ok {
+		return a.handleSlowTick(stm.At)
+	}
+
+	// ── Fast tick (2s): incremental load for live sessions ───────────────────
+	if _, ok := msg.(liveFastMsg); ok {
+		return a.handleFastTick()
 	}
 
 	switch m := msg.(type) {
@@ -418,6 +455,81 @@ func restoreViaRegistryCmd(id string, kind session.SourceKind, reg *backend.Regi
 		}
 		return RestoreDoneMsg{Path: id}
 	}
+}
+
+// handleSlowTick runs all detectors, reconciles the live index, and manages
+// the fast ticker and failure banner.
+func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
+	if a.LiveDisabled || a.registry == nil {
+		return a, nil
+	}
+	// Skip while overlay is active.
+	if a.overlayActive() {
+		return a, slowTickCmd()
+	}
+
+	snap, err := a.scanner.Scan(a.ctx)
+	if err != nil {
+		a.scanFailCount++
+		a.lastScanErr = err
+		if a.scanFailCount >= 3 && !a.cfg.LiveDetectionLastOK.IsZero() {
+			a.picker.banner = "live detection paused · press ? for details"
+		}
+		return a, slowTickCmd()
+	}
+	a.scanFailCount = 0
+	a.lastScanErr = nil
+	a.picker.banner = ""
+
+	// Run all detectors.
+	var detected []*backend.LiveSession
+	for _, d := range a.registry.Detectors() {
+		lives, err := d.DetectLive(a.ctx, snap)
+		if err != nil {
+			slog.Warn("detector failed", "kind", d.Kind(), "err", err)
+			continue
+		}
+		for i := range lives {
+			cp := lives[i]
+			detected = append(detected, &cp)
+		}
+	}
+
+	// Reconcile with hysteresis.
+	_ = a.liveIndex.Reconcile(detected)
+
+	// Start or stop the fast ticker.
+	var cmds []tea.Cmd
+	liveCount := len(a.liveIndex.Snapshot())
+	if liveCount > 0 && !a.fastActive {
+		a.fastActive = true
+		cmds = append(cmds, fastTickCmd())
+	} else if liveCount == 0 {
+		a.fastActive = false
+	}
+	cmds = append(cmds, slowTickCmd())
+	return a, tea.Batch(cmds...)
+}
+
+// handleFastTick performs incremental loads for live sessions.
+func (a App) handleFastTick() (App, tea.Cmd) {
+	if a.LiveDisabled {
+		return a, nil
+	}
+	// Suspend while overlay is active.
+	if a.overlayActive() {
+		return a, nil
+	}
+
+	liveCount := len(a.liveIndex.Snapshot())
+	if !shouldRunFastTick(liveCount, false) {
+		a.fastActive = false
+		return a, nil
+	}
+
+	// TODO Phase 6 full: per-live incremental load and CurrentTask refresh.
+	// For now, re-schedule only.
+	return a, fastTickCmd()
 }
 
 func rescanCmd(store backend.SessionStore) tea.Cmd {

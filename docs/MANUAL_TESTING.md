@@ -96,6 +96,16 @@ tail -f ~/.seshr/debug.log
 - [ ] `--version` prints the git tag via ldflags (not `dev`)
 - [ ] Continuation chain session from multiple JSONL files presents as one session with "continued across N files" note
 
+## Phase 6 — Live tickers, hysteresis, and detection banner
+
+- [ ] Fast tick: send a message in claude; seshr reflects the new turn within ~2s (once fully wired in Phase 6 fast tick)
+- [ ] Hysteresis: briefly make Claude idle (status momentarily Waiting); the picker row does not flicker to Waiting for at least 20s
+- [ ] Slow tick failure banner: temporarily alias ps to a non-existent bin; after ~30s the banner appears; restore and confirm it disappears on next success
+- [ ] Overlays suspend tickers: open help (?); verify no rerender storms during a live tail
+- [ ] Context warning: synthesize a live session with ContextTokens > 80% of ContextWindow; row shows `ctx N% ⚠`
+
+---
+
 ## Phase 4 — Claude live detection
 
 - [ ] Launch `claude` in another terminal; seshr shows the session as live within 10s

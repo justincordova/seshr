@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Config holds user preferences loaded from ~/.seshr/config.json.
@@ -16,6 +17,12 @@ type Config struct {
 	GapThresholdSeconds int      `json:"gap_threshold_seconds"`
 	SessionDirs         []string `json:"session_dirs"`
 	SchemaVersion       int      `json:"schema_version"`
+
+	// Phase 6: live detection health.
+	LiveDetectionLastOK time.Time `json:"live_detection_last_ok,omitempty"`
+
+	// Phase 7: first-launch welcome.
+	WelcomeShown bool `json:"welcome_shown,omitempty"`
 }
 
 func Default() Config {

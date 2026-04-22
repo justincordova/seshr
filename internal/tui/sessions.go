@@ -36,6 +36,7 @@ type Picker struct {
 	// liveIndex maps session ID → live state; updated by the app on each slow tick.
 	liveIndex map[string]*backend.LiveSession
 	registry  *backend.Registry
+	banner    string // set by App when live detection fails
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
@@ -241,12 +242,14 @@ func (p Picker) View() string {
 
 	header := p.renderHeader(cw)
 	statsStrip := p.renderStats(cw)
+	bannerLine := p.renderBanner(cw)
 	errLine := p.renderDeleteErr(cw)
 	searchBar := p.search.View(cw)
 	footer := p.renderFooter(cw)
 
 	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
+		lipgloss.Height(bannerLine) + lipgloss.Height(errLine) +
+		lipgloss.Height(searchBar) + lipgloss.Height(footer)
 
 	mainH := p.height - fixedH
 	if mainH < 6 {
@@ -254,7 +257,11 @@ func (p Picker) View() string {
 	}
 	main := p.renderSessionPanel(cw, mainH)
 
-	parts := []string{header, statsStrip, main}
+	parts := []string{header, statsStrip}
+	if bannerLine != "" {
+		parts = append(parts, bannerLine)
+	}
+	parts = append(parts, main)
 	if errLine != "" {
 		parts = append(parts, errLine)
 	}
@@ -263,6 +270,17 @@ func (p Picker) View() string {
 	}
 	parts = append(parts, footer)
 	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), p.width)
+}
+
+func (p Picker) renderBanner(width int) string {
+	if p.banner == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Foreground(colSubtext0).
+		Width(width).
+		Padding(0, 2).
+		Render("  " + p.banner)
 }
 
 func (p Picker) renderDeleteErr(width int) string {
@@ -503,7 +521,14 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		default:
 			statusStr = lipgloss.NewStyle().Foreground(p.theme.Warning).Render("waiting")
 		}
-		// TODO phase 6: append ctx N% ⚠ when ContextTokens/ContextWindow > 0.
+		// Append context warning if ≥ 80%.
+		if live.ContextTokens > 0 && live.ContextWindow > 0 {
+			pct := live.ContextTokens * 100 / live.ContextWindow
+			if pct >= 80 {
+				ctxWarn := lipgloss.NewStyle().Foreground(p.theme.Warning).Render(fmt.Sprintf("ctx %d%% ⚠", pct))
+				statusStr += " · " + ctxWarn
+			}
+		}
 	}
 
 	// TODO phase 7: responsive column-drop for width < 80 and < 100.
