@@ -34,13 +34,15 @@ type Picker struct {
 	flatRows  []PickerRow
 
 	// liveIndex maps session ID → live state; updated by the app on each slow tick.
-	liveIndex map[string]*backend.LiveSession
-	registry  *backend.Registry
-	banner    string // set by App when live detection fails
+	liveIndex   map[string]*backend.LiveSession
+	registry    *backend.Registry
+	banner      string // set by App when live detection fails
+	showWelcome bool   // show first-launch welcome
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
 // reg may be nil; it is used for deletion operations.
+// showWelcome displays the first-launch banner until any keypress.
 func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Picker {
 	p := Picker{
 		metas:     metas,
@@ -114,6 +116,14 @@ func (p Picker) Init() tea.Cmd { return nil }
 
 // Update satisfies tea.Model.
 func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Dismiss welcome banner on any keypress.
+	if p.showWelcome {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			p.showWelcome = false
+			// TODO: persist config.WelcomeShown = true via a command.
+		}
+	}
+
 	if p.confirm != nil {
 		if km, ok := msg.(tea.KeyMsg); ok {
 			m, _ := p.confirm.Update(km)
@@ -241,15 +251,16 @@ func (p Picker) View() string {
 	cw := contentWidth(p.width)
 
 	header := p.renderHeader(cw)
+	welcomeLine := p.renderWelcome(cw)
 	statsStrip := p.renderStats(cw)
 	bannerLine := p.renderBanner(cw)
 	errLine := p.renderDeleteErr(cw)
 	searchBar := p.search.View(cw)
 	footer := p.renderFooter(cw)
 
-	fixedH := lipgloss.Height(header) + lipgloss.Height(statsStrip) +
-		lipgloss.Height(bannerLine) + lipgloss.Height(errLine) +
-		lipgloss.Height(searchBar) + lipgloss.Height(footer)
+	fixedH := lipgloss.Height(header) + lipgloss.Height(welcomeLine) +
+		lipgloss.Height(statsStrip) + lipgloss.Height(bannerLine) +
+		lipgloss.Height(errLine) + lipgloss.Height(searchBar) + lipgloss.Height(footer)
 
 	mainH := p.height - fixedH
 	if mainH < 6 {
@@ -257,7 +268,11 @@ func (p Picker) View() string {
 	}
 	main := p.renderSessionPanel(cw, mainH)
 
-	parts := []string{header, statsStrip}
+	parts := []string{header}
+	if welcomeLine != "" {
+		parts = append(parts, welcomeLine)
+	}
+	parts = append(parts, statsStrip)
 	if bannerLine != "" {
 		parts = append(parts, bannerLine)
 	}
@@ -270,6 +285,17 @@ func (p Picker) View() string {
 	}
 	parts = append(parts, footer)
 	return centerBlock(lipgloss.JoinVertical(lipgloss.Left, parts...), p.width)
+}
+
+func (p Picker) renderWelcome(width int) string {
+	if !p.showWelcome {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Foreground(colSubtext0).
+		Width(width).
+		Padding(0, 2).
+		Render("Welcome to seshr. Select a session to open, or press ? for help.")
 }
 
 func (p Picker) renderBanner(width int) string {
@@ -531,9 +557,9 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 	}
 
-	// TODO phase 7: responsive column-drop for width < 80 and < 100.
-	if width >= 80 {
-		left := gutter + "   " + glyph + " " + id
+	left := gutter + "   " + glyph + " " + id
+	if width >= 100 {
+		// Full layout: badge + tok + status/age.
 		var right string
 		if live != nil {
 			right = badge + "  " + tokStr + "  " + statusStr + backup
@@ -547,9 +573,32 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 		return left + strings.Repeat(" ", gap) + right
 	}
-	right := tokStr + backup
+	if width >= 80 {
+		// Compact: drop badge column, keep tok + status/age.
+		var right string
+		if live != nil {
+			right = tokStr + "  " + statusStr + backup
+		} else {
+			age := sessMetaStyle.Render(humanize.Time(m.UpdatedAt))
+			right = tokStr + "  " + age + backup
+		}
+		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+		if gap < 2 {
+			gap = 2
+		}
+		return left + strings.Repeat(" ", gap) + right
+	}
+	// Narrow: just id + tok, task truncated to 20.
+	var right string
 	if live != nil {
-		right = badge + "  " + tokStr + "  " + statusStr + backup
+		shortTask := truncate(live.CurrentTask, 20)
+		if shortTask != "" {
+			right = tokStr + "  " + sessMetaStyle.Render(shortTask) + backup
+		} else {
+			right = tokStr + backup
+		}
+	} else {
+		right = tokStr + backup
 	}
 	return gutter + "   " + glyph + " " + id + "  " + right
 }

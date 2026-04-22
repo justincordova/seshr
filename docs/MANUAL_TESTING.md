@@ -96,6 +96,19 @@ tail -f ~/.seshr/debug.log
 - [ ] `--version` prints the git tag via ldflags (not `dev`)
 - [ ] Continuation chain session from multiple JSONL files presents as one session with "continued across N files" note
 
+## Phase 7 — Landing page, resume overlay, and picker polish
+
+- [ ] Enter on picker opens landing page (not topics directly)
+- [ ] Landing page shows correct content for live vs ended sessions
+- [ ] `c` key on landing opens resume overlay; enter copies to clipboard; `✓ copied` appears and fades after 2s
+- [ ] `esc esc` from landing page returns to picker at the same row
+- [ ] First-launch welcome banner shows on fresh config; dismissed on any keypress; never shown again
+- [ ] Resize terminal across 70 / 90 / 120 cols; picker rows adapt layout correctly
+- [ ] Badge column visible at ≥100 cols, hidden at 80-99, narrow mode at <80
+- [ ] `t` key on landing goes to Topic Overview; `r` goes to Replay
+
+---
+
 ## Phase 6 — Live tickers, hysteresis, and detection banner
 
 - [ ] Fast tick: send a message in claude; seshr reflects the new turn within ~2s (once fully wired in Phase 6 fast tick)

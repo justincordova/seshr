@@ -22,6 +22,9 @@ func (a App) currentBindings() []key.Binding {
 	case stateList:
 		k := DefaultPickerKeys()
 		return []key.Binding{k.Up, k.Down, k.Open, k.Replay, k.Delete, k.Restore, k.Search, k.Quit}
+	case stateLanding:
+		k := DefaultLandingKeys()
+		return []key.Binding{k.Topics, k.Replay, k.Resume, k.Info, k.Back, k.Quit}
 	case stateOverview:
 		k := DefaultOverviewKeys()
 		return []key.Binding{k.Up, k.Down, k.Expand, k.FoldAll, k.Select, k.ToggleAll, k.Prune, k.Replay, k.Stats, k.Search, k.Back, k.Quit}
@@ -46,6 +49,8 @@ const (
 	ovHelp                 // ? — keybinding reference
 	ovLogView              // L — debug log viewer
 	ovSettings             // , — settings popup
+	ovResume               // c — resume command
+	ovInfo                 // i — session info
 )
 
 type appState int
@@ -53,6 +58,7 @@ type appState int
 const (
 	stateList appState = iota
 	stateLoading
+	stateLanding // landing page (Phase 7)
 	stateOverview
 	stateError
 	stateReplay
@@ -63,6 +69,7 @@ const (
 const (
 	StateList           = "list"
 	StateLoading        = "loading"
+	StateLanding        = "landing"
 	StateOverview       = "overview"
 	StateError          = "error"
 	StateReplay         = "replay"
@@ -100,6 +107,12 @@ type App struct {
 	scanner      *backend.ProcessScanner
 	LiveDisabled bool
 
+	// Phase 7: landing page and resume overlay.
+	landing         LandingModel
+	resumeOverlay   ResumeOverlayModel
+	currentView     *SessionView
+	currentViewMeta backend.SessionMeta
+
 	// Live detection state (Phase 6).
 	liveIndex     *LiveIndex
 	scanFailCount int
@@ -119,6 +132,8 @@ func (a App) State() string {
 		return StateList
 	case stateLoading:
 		return StateLoading
+	case stateLanding:
+		return StateLanding
 	case stateOverview:
 		return StateOverview
 	case stateReplay:
@@ -156,9 +171,13 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	ctx, cancel := context.WithCancel(context.Background())
+	picker := NewPicker(metas, th, reg)
+	if !cfg.WelcomeShown {
+		picker.showWelcome = true
+	}
 	return App{
 		state:        stateList,
-		picker:       NewPicker(metas, th, reg),
+		picker:       picker,
 		spinner:      sp,
 		styles:       NewStyles(th),
 		theme:        th,
@@ -221,6 +240,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.overlay = ovNone
 				}
 				return a, cmd
+			case ovResume:
+				nm, cmd := a.resumeOverlay.Update(msg)
+				a.resumeOverlay = nm.(ResumeOverlayModel)
+				return a, cmd
 			}
 		}
 		return a, nil
@@ -274,6 +297,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case OpenSessionMsg:
 		a.state = stateLoading
 		a.loading = m.Meta.ID
+		a.currentViewMeta = m.Meta
 		return a, tea.Batch(a.spinner.Tick, LoadSessionByIDCmd(m.Meta, a.registry, a.cfg.GapThresholdSeconds))
 	case OpenSessionAndReplayMsg:
 		a.state = stateLoading
@@ -295,6 +319,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state = stateReplay
 			return a, a.replay.Init()
 		}
+		// Build a SessionView and go to landing.
+		if a.registry != nil {
+			if store, ok := a.registry.Store(m.Session.Source); ok {
+				view := &SessionView{
+					Meta:            a.currentViewMeta,
+					Session:         m.Session,
+					Topics:          m.Topics,
+					TurnsLoadedFrom: 0,
+					TurnsLoadedTo:   len(m.Session.Turns),
+					TotalTurns:      len(m.Session.Turns),
+				}
+				_ = store // future: use store for LoadIncremental
+				view.Live = a.liveIndex.Lookup(view.Meta.ID)
+				a.currentView = view
+				a.landing = NewLandingModel(view, a.theme)
+				a.state = stateLanding
+				return a, nil
+			}
+		}
 		a.state = stateOverview
 		return a, nil
 	case SessionLoadErrMsg:
@@ -304,6 +347,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case ReturnToPickerMsg:
 		a.state = stateList
+		return a, nil
+	case OpenOverviewMsg:
+		a.state = stateOverview
+		return a, nil
+	case OpenResumeOverlayMsg:
+		if a.currentView != nil {
+			a.resumeOverlay = NewResumeOverlay(a.currentView.Meta.Kind, a.currentView.Meta.ID, a.theme)
+			a.overlay = ovResume
+		}
+		return a, nil
+	case CloseResumeOverlayMsg:
+		a.overlay = ovNone
 		return a, nil
 	case OpenReplayMsg:
 		a.replay = NewReplay(a.session, a.topicsCache, a.theme)
@@ -351,6 +406,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateList:
 		pm, cmd := a.picker.Update(msg)
 		a.picker = pm.(Picker)
+		return a, cmd
+	case stateLanding:
+		lm, cmd := a.landing.Update(msg)
+		a.landing = lm.(LandingModel)
 		return a, cmd
 	case stateOverview:
 		om, cmd := a.overview.Update(msg)
@@ -410,6 +469,8 @@ func (a App) View() string {
 	switch a.state {
 	case stateLoading:
 		base = a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
+	case stateLanding:
+		base = a.landing.View()
 	case stateOverview:
 		base = a.overview.View()
 	case stateReplay:
@@ -431,7 +492,13 @@ func (a App) View() string {
 		return a.help.View()
 	case ovSettings:
 		return a.settings.View()
+	case ovResume:
+		return a.resumeOverlay.View()
 	}
+
+	// On non-picker screens, show a live-count badge in the view.
+	// TODO: append the badge to the actual footer line; for now just return base.
+	_ = a.liveIndex
 	return base
 }
 
