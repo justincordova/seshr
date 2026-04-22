@@ -93,6 +93,7 @@ type App struct {
 	logView      LogViewer
 	settings     Settings
 	registry     *backend.Registry
+	scanner      *backend.ProcessScanner
 }
 
 // overlayActive reports whether any overlay is currently shown.
@@ -149,6 +150,7 @@ func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string, reg
 		cfg:      cfg,
 		scanRoot: scanRoot,
 		registry: reg,
+		scanner:  backend.NewProcessScanner(),
 	}
 }
 

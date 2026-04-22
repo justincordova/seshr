@@ -1,0 +1,7 @@
+    1     0  0.0     4096 /sbin/launchd
+  312   310  0.1    12288 /usr/bin/sshd
+  421   312  0.0     8192 bash
+  850   421  2.1   131072 claude --resume abc123
+  851   850  0.5    65536 node /opt/homebrew/lib/node_modules/@opencode-ai/opencode/dist/index.js
+  852   851 12.3   204800 opencode
+  900   421  0.0    16384 zsh

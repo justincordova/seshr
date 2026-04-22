@@ -64,11 +64,17 @@ func parsePS(out []byte) ([]ProcInfo, error) {
 }
 
 // isAgentCandidate returns true when the command string suggests a Claude or
-// OpenCode agent process — checked on the first two argv tokens.
+// OpenCode agent process — checked on the first two argv tokens (base name or
+// full path may contain the agent name, e.g. node launchers for opencode).
 func isAgentCandidate(command string) bool {
 	tokens := strings.Fields(command)
 	for i := 0; i < 2 && i < len(tokens); i++ {
-		base := filepath.Base(tokens[i])
+		tok := tokens[i]
+		// Check both the full token and the base name.
+		if strings.Contains(tok, "claude") || strings.Contains(tok, "opencode") {
+			return true
+		}
+		base := filepath.Base(tok)
 		if strings.Contains(base, "claude") || strings.Contains(base, "opencode") {
 			return true
 		}
