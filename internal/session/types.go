@@ -2,12 +2,12 @@ package session
 
 import "time"
 
-// Source identifies which agent platform produced a session.
-// v1 ships with only SourceClaude.
-type Source string
+// SourceKind identifies which agent platform produced a session.
+type SourceKind string
 
 const (
-	SourceClaude Source = "Claude Code"
+	SourceClaude   SourceKind = "Claude Code"
+	SourceOpenCode SourceKind = "OpenCode"
 )
 
 // Role labels a turn. Values mirror Claude Code JSONL record types plus
@@ -35,7 +35,7 @@ type CompactBoundary struct {
 type Session struct {
 	ID                string
 	Path              string
-	Source            Source
+	Source            SourceKind
 	CreatedAt         time.Time
 	ModifiedAt        time.Time
 	TokenCount        int

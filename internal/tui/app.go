@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/editor"
 	"github.com/justincordova/seshr/internal/session"
@@ -91,6 +92,7 @@ type App struct {
 	help         Help
 	logView      LogViewer
 	settings     Settings
+	registry     *backend.Registry
 }
 
 // overlayActive reports whether any overlay is currently shown.
@@ -133,7 +135,8 @@ func AppInOverview(sess *session.Session, ts []topics.Topic) App {
 
 // NewApp returns the root model with a pre-populated session list.
 // cfg is the loaded user configuration; pass config.Default() in tests.
-func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string) App {
+// reg may be nil in tests that don't exercise live detection or store access.
+func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string, reg *backend.Registry) App {
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -145,6 +148,7 @@ func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string) App
 		theme:    th,
 		cfg:      cfg,
 		scanRoot: scanRoot,
+		registry: reg,
 	}
 }
 

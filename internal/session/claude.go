@@ -18,8 +18,8 @@ type Claude struct{}
 // NewClaude returns a Claude Code JSONL session.
 func NewClaude() *Claude { return &Claude{} }
 
-// Source returns the human-readable source name.
-func (c *Claude) Source() Source { return SourceClaude }
+// Kind returns the source kind for this parser.
+func (c *Claude) Kind() SourceKind { return SourceClaude }
 
 // Detect returns true for any path ending in .jsonl. Narrow by design —
 // Phase 7 will refine when the OpenCode parser lands.

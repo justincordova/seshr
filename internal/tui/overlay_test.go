@@ -121,7 +121,7 @@ func TestApp_LogViewer_EscCloses(t *testing.T) {
 // ── Responsive: minimum terminal size ────────────────────────────────────────
 
 func TestApp_TooSmall_ShowsWarning(t *testing.T) {
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	next, _ := app.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	out := next.(tui.App).View()
 	assert.True(t, strings.Contains(out, "too small") || strings.Contains(out, "Terminal too small"),
@@ -129,7 +129,7 @@ func TestApp_TooSmall_ShowsWarning(t *testing.T) {
 }
 
 func TestApp_TooSmall_ClearsWhenAdequate(t *testing.T) {
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	a1, _ := app.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	require.Contains(t, a1.(tui.App).View(), "too small")
 
@@ -161,7 +161,7 @@ func TestApp_SettingsOverlay_ResizenDoesNotPanic(t *testing.T) {
 
 func newAppWithSize(t *testing.T, w, h int) tui.App {
 	t.Helper()
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	next, _ := app.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	return next.(tui.App)
 }

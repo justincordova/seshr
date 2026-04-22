@@ -18,7 +18,7 @@ type SessionMeta struct {
 	ID         string // filename stem (no .jsonl extension)
 	Path       string // absolute path to the .jsonl file
 	Project    string // parent directory name, e.g. "-Users-j-myproject"
-	Source     Source
+	Source     SourceKind
 	Size       int64
 	ModifiedAt time.Time
 	HasBackup  bool // true if a sibling <Path>.bak exists — see SPEC §4.5

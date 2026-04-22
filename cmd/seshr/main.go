@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/seshr/internal/backend"
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/logging"
 	"github.com/justincordova/seshr/internal/session"
@@ -70,7 +72,13 @@ func main() {
 				slog.Info("positional path arg ignored in phase 2", "path", args[0])
 			}
 
-			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot), tea.WithAltScreen())
+			reg := backend.NewRegistry()
+			claudeStore := claudeBackend.NewStore(scanRoot)
+			reg.RegisterStore(claudeStore)
+			reg.RegisterEditor(claudeBackend.NewEditor(claudeStore))
+			defer func() { _ = reg.Close() }()
+
+			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot, reg), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				slog.Error("tui exited with error", "err", err)
 				return fmt.Errorf("run tui: %w", err)

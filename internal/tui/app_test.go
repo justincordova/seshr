@@ -17,14 +17,14 @@ import (
 func testCfg() config.Config { return config.Default() }
 
 func TestApp_ViewNoSessions_ShowsEmptyMessage(t *testing.T) {
-	out := tui.NewApp(nil, testCfg(), "").View()
+	out := tui.NewApp(nil, testCfg(), "", nil).View()
 	assert.Contains(t, out, "No sessions found")
 }
 
 func TestApp_OpenSessionMsg_TransitionsToLoading(t *testing.T) {
 	app := tui.NewApp([]session.SessionMeta{{
 		ID: "a", Path: "/p/a.jsonl", Project: "p", Source: session.SourceClaude,
-	}}, testCfg(), "")
+	}}, testCfg(), "", nil)
 	next, cmd := app.Update(tui.OpenSessionMsg{Meta: session.SessionMeta{Path: "/p/a.jsonl"}})
 	a := next.(tui.App)
 	assert.Contains(t, a.View(), "parsing")
@@ -32,7 +32,7 @@ func TestApp_OpenSessionMsg_TransitionsToLoading(t *testing.T) {
 }
 
 func TestApp_SessionLoadedMsg_TransitionsToOverview(t *testing.T) {
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	sess := &session.Session{
 		ID:         "x",
 		Source:     session.SourceClaude,
@@ -53,7 +53,7 @@ func TestApp_SessionLoadedMsg_TransitionsToOverview(t *testing.T) {
 }
 
 func TestApp_ReturnToPickerMsg_GoesBack(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "")
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "", nil)
 	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser, Content: "x", Tokens: 1}}}
 	loaded := tui.SessionLoadedMsg{Session: sess, Topics: topics.Cluster(sess, topics.DefaultOptions())}
 	a, _ := app.Update(loaded)
@@ -62,7 +62,7 @@ func TestApp_ReturnToPickerMsg_GoesBack(t *testing.T) {
 }
 
 func TestApp_SessionLoadErrMsg_ShowsErrorState(t *testing.T) {
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	next, _ := app.Update(tui.SessionLoadErrMsg{Path: "/x", Err: errBoom})
 	out := next.(tui.App).View()
 	assert.Contains(t, out, "error:")
@@ -71,7 +71,7 @@ func TestApp_SessionLoadErrMsg_ShowsErrorState(t *testing.T) {
 
 func TestApp_QuitKey_QuitsInErrorState(t *testing.T) {
 	// Arrange
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	next, _ := app.Update(tui.SessionLoadErrMsg{Path: "/x", Err: errTest})
 	errApp := next.(tui.App)
 
@@ -92,7 +92,7 @@ type appTestErr string
 func (e appTestErr) Error() string { return string(e) }
 
 func TestApp_QuitKey_StillQuitsInPicker(t *testing.T) {
-	app := tui.NewApp(nil, testCfg(), "")
+	app := tui.NewApp(nil, testCfg(), "", nil)
 	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	require.NotNil(t, cmd)
 	_, ok := cmd().(tea.QuitMsg)
@@ -126,13 +126,13 @@ func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
 }
 
 func TestApp_RestoreRequestedShowsConfirm(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "", nil)
 	next, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
 	assert.Equal(t, tui.StateConfirmRestore, next.(tui.App).State())
 }
 
 func TestApp_RestoreDoneReturnsToList(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "")
+	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "", nil)
 	a2, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
 	a3, _ := a2.(tui.App).Update(tui.RestoreDoneMsg{Path: "/x/a.jsonl"})
 	assert.Equal(t, tui.StateList, a3.(tui.App).State())
