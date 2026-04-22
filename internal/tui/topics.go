@@ -229,7 +229,8 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o.pruning = false
 		o.status = fmt.Sprintf("pruned %d turns", msg.RemovedTurns)
 		o.selected = map[int]bool{}
-		return o, tea.Batch(LoadSessionCmd(o.sess.Path, o.gapSec), clearStatusCmd())
+		// TODO Phase 7: reload via registry after prune.
+		return o, clearStatusCmd()
 	case PruneErrMsg:
 		o.pruning = false
 		o.status = msg.Err.Error()

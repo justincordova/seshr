@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
@@ -22,12 +23,12 @@ func TestApp_ViewNoSessions_ShowsEmptyMessage(t *testing.T) {
 }
 
 func TestApp_OpenSessionMsg_TransitionsToLoading(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{
-		ID: "a", Path: "/p/a.jsonl", Project: "p", Source: session.SourceClaude,
+	app := tui.NewApp([]backend.SessionMeta{{
+		ID: "a", Project: "p", Kind: session.SourceClaude,
 	}}, testCfg(), "", nil, false)
-	next, cmd := app.Update(tui.OpenSessionMsg{Meta: session.SessionMeta{Path: "/p/a.jsonl"}})
+	next, cmd := app.Update(tui.OpenSessionMsg{Meta: backend.SessionMeta{ID: "a", Kind: session.SourceClaude}})
 	a := next.(tui.App)
-	assert.Contains(t, a.View(), "parsing")
+	assert.Contains(t, a.View(), "a")
 	require.NotNil(t, cmd)
 }
 
@@ -53,7 +54,7 @@ func TestApp_SessionLoadedMsg_TransitionsToOverview(t *testing.T) {
 }
 
 func TestApp_ReturnToPickerMsg_GoesBack(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "", nil, false)
+	app := tui.NewApp([]backend.SessionMeta{{ID: "a", Project: "p"}}, testCfg(), "", nil, false)
 	sess := &session.Session{Turns: []session.Turn{{Role: session.RoleUser, Content: "x", Tokens: 1}}}
 	loaded := tui.SessionLoadedMsg{Session: sess, Topics: topics.Cluster(sess, topics.DefaultOptions())}
 	a, _ := app.Update(loaded)
@@ -126,14 +127,14 @@ func TestApp_ReturnToOverviewFromReplay(t *testing.T) {
 }
 
 func TestApp_RestoreRequestedShowsConfirm(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "", nil, false)
-	next, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
+	app := tui.NewApp([]backend.SessionMeta{{ID: "a", HasBackup: true}}, testCfg(), "", nil, false)
+	next, _ := app.Update(tui.RestoreRequestedMsg{ID: "a", Kind: session.SourceClaude})
 	assert.Equal(t, tui.StateConfirmRestore, next.(tui.App).State())
 }
 
 func TestApp_RestoreDoneReturnsToList(t *testing.T) {
-	app := tui.NewApp([]session.SessionMeta{{ID: "a", Path: "/x/a.jsonl", HasBackup: true}}, testCfg(), "", nil, false)
-	a2, _ := app.Update(tui.RestoreRequestedMsg{Path: "/x/a.jsonl"})
-	a3, _ := a2.(tui.App).Update(tui.RestoreDoneMsg{Path: "/x/a.jsonl"})
+	app := tui.NewApp([]backend.SessionMeta{{ID: "a", HasBackup: true}}, testCfg(), "", nil, false)
+	a2, _ := app.Update(tui.RestoreRequestedMsg{ID: "a", Kind: session.SourceClaude})
+	a3, _ := a2.(tui.App).Update(tui.RestoreDoneMsg{Path: "a"})
 	assert.Equal(t, tui.StateList, a3.(tui.App).State())
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,7 +12,6 @@ import (
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/logging"
-	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/justincordova/seshr/internal/version"
 	"github.com/spf13/cobra"
@@ -62,15 +62,8 @@ func main() {
 				scanRoot = filepath.Join(home, ".claude", "projects")
 			}
 
-			metas, err := session.Scan(scanRoot)
-			if err != nil {
-				slog.Error("scan sessions", "root", scanRoot, "err", err)
-				return fmt.Errorf("scan %s: %w", scanRoot, err)
-			}
-			slog.Info("scanned sessions", "root", scanRoot, "count", len(metas))
-
 			if len(args) == 1 {
-				slog.Info("positional path arg ignored in phase 2", "path", args[0])
+				slog.Info("positional path arg ignored", "path", args[0])
 			}
 
 			reg := backend.NewRegistry()
@@ -83,6 +76,13 @@ func main() {
 				reg.RegisterDetector(claudeBackend.NewDetector(scanRoot, sidecarDir))
 			}
 			defer func() { _ = reg.Close() }()
+
+			metas, err := claudeStore.Scan(context.Background())
+			if err != nil {
+				slog.Error("scan sessions", "root", scanRoot, "err", err)
+				return fmt.Errorf("scan %s: %w", scanRoot, err)
+			}
+			slog.Info("scanned sessions", "root", scanRoot, "count", len(metas))
 
 			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot, reg, noLive), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {

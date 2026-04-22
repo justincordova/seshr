@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/justincordova/seshr/internal/session"
+	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,11 +12,11 @@ import (
 
 func TestGroupByProject_TwoProjects_SortedByMostRecent(t *testing.T) {
 	// Arrange
-	metas := []session.SessionMeta{
-		{ID: "a", Project: "proj-b", ModifiedAt: time.Now().Add(-1 * time.Hour)},
-		{ID: "b", Project: "proj-a", ModifiedAt: time.Now().Add(-2 * time.Hour)},
-		{ID: "c", Project: "proj-a", ModifiedAt: time.Now().Add(-3 * time.Hour)},
-		{ID: "d", Project: "proj-b", ModifiedAt: time.Now().Add(-48 * time.Hour)},
+	metas := []backend.SessionMeta{
+		{ID: "a", Project: "proj-b", UpdatedAt: time.Now().Add(-1 * time.Hour)},
+		{ID: "b", Project: "proj-a", UpdatedAt: time.Now().Add(-2 * time.Hour)},
+		{ID: "c", Project: "proj-a", UpdatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "d", Project: "proj-b", UpdatedAt: time.Now().Add(-48 * time.Hour)},
 	}
 	th := tui.CatppuccinMocha()
 
@@ -34,10 +34,10 @@ func TestGroupByProject_TwoProjects_SortedByMostRecent(t *testing.T) {
 
 func TestGroupByProject_SessionsWithinGroup_SortedByModifiedAt(t *testing.T) {
 	// Arrange
-	metas := []session.SessionMeta{
-		{ID: "old", Project: "proj", ModifiedAt: time.Now().Add(-72 * time.Hour)},
-		{ID: "new", Project: "proj", ModifiedAt: time.Now().Add(-1 * time.Hour)},
-		{ID: "mid", Project: "proj", ModifiedAt: time.Now().Add(-24 * time.Hour)},
+	metas := []backend.SessionMeta{
+		{ID: "old", Project: "proj", UpdatedAt: time.Now().Add(-72 * time.Hour)},
+		{ID: "new", Project: "proj", UpdatedAt: time.Now().Add(-1 * time.Hour)},
+		{ID: "mid", Project: "proj", UpdatedAt: time.Now().Add(-24 * time.Hour)},
 	}
 	th := tui.CatppuccinMocha()
 
@@ -54,9 +54,9 @@ func TestGroupByProject_SessionsWithinGroup_SortedByModifiedAt(t *testing.T) {
 
 func TestGroupByProject_TotalTokens(t *testing.T) {
 	// Arrange
-	metas := []session.SessionMeta{
-		{ID: "a", Project: "proj", TokenCount: 100, ModifiedAt: time.Now()},
-		{ID: "b", Project: "proj", TokenCount: 200, ModifiedAt: time.Now().Add(-1 * time.Hour)},
+	metas := []backend.SessionMeta{
+		{ID: "a", Project: "proj", TokenCount: 100, UpdatedAt: time.Now()},
+		{ID: "b", Project: "proj", TokenCount: 200, UpdatedAt: time.Now().Add(-1 * time.Hour)},
 	}
 	th := tui.CatppuccinMocha()
 
@@ -70,9 +70,9 @@ func TestGroupByProject_TotalTokens(t *testing.T) {
 
 func TestBuildFlatRows_ExpandAndCollapse(t *testing.T) {
 	// Arrange
-	metas := []session.SessionMeta{
-		{ID: "a", Project: "proj-a", ModifiedAt: time.Now()},
-		{ID: "b", Project: "proj-b", ModifiedAt: time.Now().Add(-1 * time.Hour)},
+	metas := []backend.SessionMeta{
+		{ID: "a", Project: "proj-a", UpdatedAt: time.Now()},
+		{ID: "b", Project: "proj-b", UpdatedAt: time.Now().Add(-1 * time.Hour)},
 	}
 	th := tui.CatppuccinMocha()
 	groups := tui.GroupByProject(metas, th)
@@ -110,8 +110,8 @@ func TestProjectDisplayName(t *testing.T) {
 }
 
 func TestGroupByProject_PopulatesDisplayName(t *testing.T) {
-	metas := []session.SessionMeta{
-		{ID: "a", Project: "-Users-x-projects-myapp", ModifiedAt: time.Now()},
+	metas := []backend.SessionMeta{
+		{ID: "a", Project: "-Users-x-projects-myapp", UpdatedAt: time.Now()},
 	}
 	th := tui.CatppuccinMocha()
 	groups := tui.GroupByProject(metas, th)
@@ -126,12 +126,12 @@ func TestComputeSummary_Empty(t *testing.T) {
 }
 
 func TestComputeSummary_FiveMetas(t *testing.T) {
-	metas := []session.SessionMeta{
-		{ID: "a", Project: "p1", TokenCount: 100, Size: 1000, ModifiedAt: time.Now().Add(-1 * time.Hour)},
-		{ID: "b", Project: "p1", TokenCount: 200, Size: 2000, ModifiedAt: time.Now().Add(-2 * time.Hour)},
-		{ID: "c", Project: "p2", TokenCount: 300, Size: 3000, ModifiedAt: time.Now().Add(-3 * time.Hour)},
-		{ID: "d", Project: "p2", TokenCount: 400, Size: 4000, ModifiedAt: time.Now().Add(-4 * time.Hour)},
-		{ID: "e", Project: "p3", TokenCount: 500, Size: 5000, ModifiedAt: time.Now().Add(-5 * time.Hour)},
+	metas := []backend.SessionMeta{
+		{ID: "a", Project: "p1", TokenCount: 100, SizeBytes: 1000, UpdatedAt: time.Now().Add(-1 * time.Hour)},
+		{ID: "b", Project: "p1", TokenCount: 200, SizeBytes: 2000, UpdatedAt: time.Now().Add(-2 * time.Hour)},
+		{ID: "c", Project: "p2", TokenCount: 300, SizeBytes: 3000, UpdatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "d", Project: "p2", TokenCount: 400, SizeBytes: 4000, UpdatedAt: time.Now().Add(-4 * time.Hour)},
+		{ID: "e", Project: "p3", TokenCount: 500, SizeBytes: 5000, UpdatedAt: time.Now().Add(-5 * time.Hour)},
 	}
 	s := tui.ComputeSummary(metas)
 	assert.Equal(t, 5, s.TotalSessions)

@@ -31,7 +31,7 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 		return backend.PruneResult{}, err
 	}
 
-	p := session.NewClaude()
+	p := NewClaude()
 	sess, err := p.Parse(ctx, path)
 	if err != nil {
 		return backend.PruneResult{}, err

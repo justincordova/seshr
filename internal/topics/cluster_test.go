@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
@@ -211,7 +212,7 @@ func TestCluster_MultipleCompactBoundaries_MultipleSplits(t *testing.T) {
 
 func TestCluster_MultiTopicFixture_ThreeBoundaries(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 	sess, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
 	require.NoError(t, err)
 	require.NotNil(t, sess)

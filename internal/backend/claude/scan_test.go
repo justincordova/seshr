@@ -1,11 +1,12 @@
-package session_test
+package claude_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/justincordova/seshr/internal/session"
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,8 @@ func TestScan_EmptyRoot_ReturnsEmpty(t *testing.T) {
 	root := t.TempDir()
 
 	// Act
-	got, err := session.Scan(root)
+	store := claudeBackend.NewStore(root)
+	got, err := store.Scan(context.Background())
 
 	// Assert
 	require.NoError(t, err)
@@ -27,7 +29,8 @@ func TestScan_MissingRoot_ReturnsEmptyNotError(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist")
 
 	// Act
-	got, err := session.Scan(root)
+	store := claudeBackend.NewStore(root)
+	got, err := store.Scan(context.Background())
 
 	// Assert
 	require.NoError(t, err)
@@ -48,16 +51,16 @@ func TestScan_ProjectsWithSessions_ReturnsMeta(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projA, "notes.txt"), []byte("ignore me"), 0o644))
 
 	// Act
-	got, err := session.Scan(root)
+	store := claudeBackend.NewStore(root)
+	got, err := store.Scan(context.Background())
 
 	// Assert
 	require.NoError(t, err)
 	require.Len(t, got, 3)
 	for _, m := range got {
 		assert.NotEmpty(t, m.ID)
-		assert.NotEmpty(t, m.Path)
 		assert.NotEmpty(t, m.Project)
-		assert.False(t, m.ModifiedAt.IsZero())
+		assert.False(t, m.UpdatedAt.IsZero())
 	}
 }
 
@@ -71,7 +74,8 @@ func TestScan_DetectsBackupSibling(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(proj, "y.jsonl"), []byte(`{}`+"\n"), 0o644))
 
 	// Act
-	got, err := session.Scan(root)
+	store := claudeBackend.NewStore(root)
+	got, err := store.Scan(context.Background())
 
 	// Assert
 	require.NoError(t, err)

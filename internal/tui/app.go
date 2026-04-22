@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -84,6 +85,8 @@ type App struct {
 	session      *session.Session
 	topicsCache  []topics.Topic
 	restorePath  string
+	restoreID    string
+	restoreKind  session.SourceKind
 	restoreModal Confirm
 	prevState    appState
 	autoReplay   bool
@@ -139,13 +142,13 @@ func AppInOverview(sess *session.Session, ts []topics.Topic) App {
 // cfg is the loaded user configuration; pass config.Default() in tests.
 // reg may be nil in tests that don't exercise live detection or store access.
 // noLive disables live detection if true.
-func NewApp(metas []session.SessionMeta, cfg config.Config, scanRoot string, reg *backend.Registry, noLive bool) App {
+func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg *backend.Registry, noLive bool) App {
 	th := ThemeByName(cfg.Theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return App{
 		state:        stateList,
-		picker:       NewPicker(metas, th),
+		picker:       NewPicker(metas, th, reg),
 		spinner:      sp,
 		styles:       NewStyles(th),
 		theme:        th,
@@ -233,13 +236,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case OpenSessionMsg:
 		a.state = stateLoading
-		a.loading = m.Meta.Path
-		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path, a.cfg.GapThresholdSeconds))
+		a.loading = m.Meta.ID
+		return a, tea.Batch(a.spinner.Tick, LoadSessionByIDCmd(m.Meta, a.registry, a.cfg.GapThresholdSeconds))
 	case OpenSessionAndReplayMsg:
 		a.state = stateLoading
-		a.loading = m.Meta.Path
+		a.loading = m.Meta.ID
 		a.autoReplay = true
-		return a, tea.Batch(a.spinner.Tick, LoadSessionCmd(m.Meta.Path, a.cfg.GapThresholdSeconds))
+		return a, tea.Batch(a.spinner.Tick, LoadSessionByIDCmd(m.Meta, a.registry, a.cfg.GapThresholdSeconds))
 	case SessionLoadedMsg:
 		a.session = m.Session
 		a.topicsCache = m.Topics
@@ -274,14 +277,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateOverview
 		return a, nil
 	case RestoreRequestedMsg:
-		a.restorePath = m.Path
+		a.restorePath = m.ID + ":" + string(m.Kind)
+		a.restoreID = m.ID
+		a.restoreKind = m.Kind
 		a.restoreModal = NewConfirm("Restore from backup?", "This will overwrite the current session file with the backup.", a.theme)
 		a.state = stateConfirmRestore
 		return a, nil
 	case RestoreDoneMsg:
 		a.overview = NewOverview(a.session, a.topicsCache, a.theme, a.cfg.GapThresholdSeconds)
 		a.state = stateList
-		return a, rescanCmd(a.scanRoot)
+		var store backend.SessionStore
+		if a.registry != nil {
+			store, _ = a.registry.Store(session.SourceClaude)
+		}
+		return a, rescanCmd(store)
 	case RestoreErrMsg:
 		a.lastErr = m.Err.Error()
 		a.prevState = a.state
@@ -289,7 +298,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case RescanDoneMsg:
 		if m.Metas != nil {
-			a.picker = NewPicker(m.Metas, a.theme)
+			a.picker = NewPicker(m.Metas, a.theme, a.registry)
 		}
 		return a, nil
 	case spinner.TickMsg:
@@ -321,7 +330,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.restoreModal = c
 			if c.Done() {
 				if c.Confirmed() {
-					return a, restoreCmd(a.restorePath)
+					return a, restoreViaRegistryCmd(a.restoreID, a.restoreKind, a.registry)
 				}
 				a.state = stateList
 			}
@@ -392,21 +401,31 @@ func (a App) View() string {
 type RestoreDoneMsg struct{ Path string }
 type RestoreErrMsg struct{ Err error }
 type RescanDoneMsg struct {
-	Metas []session.SessionMeta
+	Metas []backend.SessionMeta
 }
 
-func restoreCmd(path string) tea.Cmd {
+func restoreViaRegistryCmd(id string, kind session.SourceKind, reg *backend.Registry) tea.Cmd {
 	return func() tea.Msg {
-		if err := editor.Restore(path); err != nil {
+		if reg == nil {
+			return RestoreErrMsg{Err: editor.ErrNoBackup}
+		}
+		ed, ok := reg.Editor(kind)
+		if !ok {
+			return RestoreErrMsg{Err: editor.ErrNoBackup}
+		}
+		if err := ed.RestoreBackup(context.Background(), id); err != nil {
 			return RestoreErrMsg{Err: err}
 		}
-		return RestoreDoneMsg{Path: path}
+		return RestoreDoneMsg{Path: id}
 	}
 }
 
-func rescanCmd(scanRoot string) tea.Cmd {
+func rescanCmd(store backend.SessionStore) tea.Cmd {
+	if store == nil {
+		return nil
+	}
 	return func() tea.Msg {
-		metas, _ := session.Scan(scanRoot)
+		metas, _ := store.Scan(context.Background())
 		return RescanDoneMsg{Metas: metas}
 	}
 }

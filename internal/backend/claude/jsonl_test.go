@@ -1,10 +1,11 @@
-package session_test
+package claude_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,10 +13,10 @@ import (
 
 func TestClaude_Parse_SimpleSession_ReturnsAllTurns(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/simple.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -31,10 +32,10 @@ func TestClaude_Parse_SimpleSession_ReturnsAllTurns(t *testing.T) {
 
 func TestClaude_Parse_SimpleSession_UsesUsageTokens(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/simple.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -44,10 +45,10 @@ func TestClaude_Parse_SimpleSession_UsesUsageTokens(t *testing.T) {
 
 func TestClaude_Parse_RawIndexMatchesLineNumber(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/simple.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -58,10 +59,10 @@ func TestClaude_Parse_RawIndexMatchesLineNumber(t *testing.T) {
 
 func TestClaude_Parse_MalformedLine_IsSkipped(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/malformed.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/malformed.jsonl")
 
 	// Assert — 2 valid records survive, 1 garbage line is dropped, no error
 	require.NoError(t, err)
@@ -72,10 +73,10 @@ func TestClaude_Parse_MalformedLine_IsSkipped(t *testing.T) {
 
 func TestClaude_Parse_MultiTopic_AttachesToolResult(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/multi_topic.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -93,10 +94,10 @@ func TestClaude_Parse_MultiTopic_AttachesToolResult(t *testing.T) {
 
 func TestClaude_Parse_MultiTopic_ExtractsThinking(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/multi_topic.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/multi_topic.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -112,7 +113,7 @@ func TestClaude_Parse_MultiTopic_ExtractsThinking(t *testing.T) {
 
 func TestClaude_Parse_NonExistentFile_ReturnsError(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
 	_, err := p.Parse(context.Background(), "/nonexistent/path.jsonl")
@@ -122,8 +123,8 @@ func TestClaude_Parse_NonExistentFile_ReturnsError(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_AttachedToAssistant(t *testing.T) {
-	p := session.NewClaude()
-	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	p := claudeBackend.NewClaude()
+	s, err := p.Parse(context.Background(), "../../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
 	var bashTurn *session.Turn
@@ -140,8 +141,8 @@ func TestClaude_Parse_EmbeddedToolResult_AttachedToAssistant(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_MultipleInOneRecord(t *testing.T) {
-	p := session.NewClaude()
-	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	p := claudeBackend.NewClaude()
+	s, err := p.Parse(context.Background(), "../../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
 	var readTurn *session.Turn
@@ -158,8 +159,8 @@ func TestClaude_Parse_EmbeddedToolResult_MultipleInOneRecord(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_ErrorResult(t *testing.T) {
-	p := session.NewClaude()
-	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	p := claudeBackend.NewClaude()
+	s, err := p.Parse(context.Background(), "../../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
 	var errTurn *session.Turn
@@ -176,8 +177,8 @@ func TestClaude_Parse_EmbeddedToolResult_ErrorResult(t *testing.T) {
 }
 
 func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
-	p := session.NewClaude()
-	s, err := p.Parse(context.Background(), "../../testdata/embedded_tool_results.jsonl")
+	p := claudeBackend.NewClaude()
+	s, err := p.Parse(context.Background(), "../../../testdata/embedded_tool_results.jsonl")
 	require.NoError(t, err)
 
 	for _, turn := range s.Turns {
@@ -189,10 +190,10 @@ func TestClaude_Parse_EmbeddedToolResult_NoOrphanUserTurns(t *testing.T) {
 
 func TestClaude_Parse_CompactBoundary_Detected(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/compact_boundary.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -206,10 +207,10 @@ func TestClaude_Parse_CompactBoundary_Detected(t *testing.T) {
 
 func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/compact_boundary.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/compact_boundary.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -226,10 +227,10 @@ func TestClaude_Parse_CompactContinuation_Marked(t *testing.T) {
 
 func TestClaude_Parse_NoCompactBoundary_EmptySlice(t *testing.T) {
 	// Arrange
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 
 	// Act
-	s, err := p.Parse(context.Background(), "../../testdata/simple.jsonl")
+	s, err := p.Parse(context.Background(), "../../../testdata/simple.jsonl")
 
 	// Assert
 	require.NoError(t, err)
@@ -244,7 +245,7 @@ func TestClaude_Parse_EmbeddedToolResult_BlockArrayContent(t *testing.T) {
 		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"line one"},{"type":"text","text":"line two"}]}]}}` + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(input), 0o644))
 
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 	s, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 

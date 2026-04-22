@@ -1,4 +1,4 @@
-package session
+package claude
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/tokenizer"
 )
 
@@ -19,7 +20,7 @@ type Claude struct{}
 func NewClaude() *Claude { return &Claude{} }
 
 // Kind returns the source kind for this parser.
-func (c *Claude) Kind() SourceKind { return SourceClaude }
+func (c *Claude) Kind() session.SourceKind { return session.SourceClaude }
 
 // Detect returns true for any path ending in .jsonl. Narrow by design —
 // Phase 7 will refine when the OpenCode parser lands.
@@ -28,7 +29,7 @@ func (c *Claude) Detect(path string) bool {
 }
 
 // Parse streams the JSONL at path into a Session.
-func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
+func (c *Claude) Parse(ctx context.Context, path string) (*session.Session, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -40,9 +41,9 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	sess := &Session{
+	sess := &session.Session{
 		Path:       path,
-		Source:     SourceClaude,
+		Source:     session.SourceClaude,
 		ModifiedAt: info.ModTime(),
 	}
 
@@ -61,7 +62,7 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 		if len(b) == 0 {
 			continue
 		}
-		// Capture session ID from the first parseable line before Turn
+		// Capture session ID from the first parseable line before session.Turn
 		// filtering (infrastructure records carry sessionId too).
 		if sess.ID == "" {
 			sess.ID = turnSessionID(b)
@@ -81,7 +82,7 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 			sess.CreatedAt = turn.Timestamp
 		}
 		// tool_result records attach to the matching assistant turn if found.
-		if turn.Role == RoleToolResult && attachToolResult(sess, turn) {
+		if turn.Role == session.RoleToolResult && attachToolResult(sess, turn) {
 			continue
 		}
 		sess.Turns = append(sess.Turns, turn)
@@ -99,15 +100,15 @@ func (c *Claude) Parse(ctx context.Context, path string) (*Session, error) {
 // subtype "compact_boundary". If so it returns the boundary and ok=true.
 // nextTurnIndex is the length of sess.Turns at the point this line was read,
 // which becomes the first-turn-after-boundary index.
-func parseCompactBoundary(b []byte, nextTurnIndex int) (CompactBoundary, bool) {
+func parseCompactBoundary(b []byte, nextTurnIndex int) (session.CompactBoundary, bool) {
 	var rec rawRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
-		return CompactBoundary{}, false
+		return session.CompactBoundary{}, false
 	}
 	if rec.Type != "system" || rec.Subtype != "compact_boundary" {
-		return CompactBoundary{}, false
+		return session.CompactBoundary{}, false
 	}
-	return CompactBoundary{
+	return session.CompactBoundary{
 		TurnIndex:  nextTurnIndex,
 		Trigger:    rec.CompactMetadata.Trigger,
 		PreTokens:  rec.CompactMetadata.PreTokens,
@@ -115,57 +116,57 @@ func parseCompactBoundary(b []byte, nextTurnIndex int) (CompactBoundary, bool) {
 	}, true
 }
 
-// parseLine converts one JSONL line into a Turn. Returns ok=false when the
+// parseLine converts one JSONL line into a session.Turn. Returns ok=false when the
 // line is malformed, has an unknown type, or is of a type we intentionally
 // drop (file-history-snapshot, progress). Logged at warn for unknown types.
-func parseLine(b []byte, lineNum int) (Turn, bool) {
+func parseLine(b []byte, lineNum int) (session.Turn, bool) {
 	var rec rawRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
 		slog.Warn("skipping malformed jsonl line", "line", lineNum, "err", err)
-		return Turn{}, false
+		return session.Turn{}, false
 	}
 	switch rec.Type {
 	case "user":
 		t := userTurn(rec, lineNum)
-		if t.Role == RoleToolResult {
+		if t.Role == session.RoleToolResult {
 			return t, len(t.ToolResults) > 0
 		}
 		if t.Content == "" {
-			return Turn{}, false
+			return session.Turn{}, false
 		}
 		return t, true
 	case "assistant":
 		t := assistantTurn(rec, lineNum)
 		if t.Content == "" && len(t.ToolCalls) == 0 && t.Thinking == "" {
-			return Turn{}, false
+			return session.Turn{}, false
 		}
 		return t, true
 	case "tool_result":
 		return toolResultTurn(rec, lineNum), true
 	case "system", "summary":
-		return Turn{}, false
+		return session.Turn{}, false
 	case "", "file-history-snapshot", "progress", "hook":
 		// Infrastructure records, silently ignored.
-		return Turn{}, false
+		return session.Turn{}, false
 	default:
 		slog.Warn("unknown record type", "type", rec.Type, "line", lineNum)
-		return Turn{}, false
+		return session.Turn{}, false
 	}
 }
 
-// userTurn builds a Turn from a user JSONL record. Content may be a plain
+// userTurn builds a session.Turn from a user JSONL record. Content may be a plain
 // string or an array of content blocks. When blocks contain tool_result
 // entries (the standard pattern in Claude Code JSONL), those are extracted
-// and the turn is returned with RoleToolResult for attachment to the
+// and the turn is returned with session.RoleToolResult for attachment to the
 // originating assistant turn.
-func userTurn(rec rawRecord, lineNum int) Turn {
+func userTurn(rec rawRecord, lineNum int) session.Turn {
 	msg, _ := decodeMessage(rec.Message)
 	blocks, _ := decodeBlocks(msg.Content)
 
 	if len(blocks) == 0 {
 		content := flattenContent(msg.Content)
-		return Turn{
-			Role:                  RoleUser,
+		return session.Turn{
+			Role:                  session.RoleUser,
 			Timestamp:             rec.Timestamp,
 			Content:               content,
 			RawIndex:              lineNum,
@@ -174,13 +175,13 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 		}
 	}
 
-	var toolResults []ToolResult
+	var toolResults []session.ToolResult
 	var textParts []string
 	for _, bl := range blocks {
 		switch bl.Type {
 		case "tool_result":
 			content := extractBlockContent(bl.Content)
-			toolResults = append(toolResults, ToolResult{
+			toolResults = append(toolResults, session.ToolResult{
 				ID:      bl.ToolUseID,
 				Content: content,
 				IsError: bl.IsError,
@@ -192,8 +193,8 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 
 	if len(toolResults) > 0 && len(textParts) == 0 {
 		content := toolResults[0].Content
-		return Turn{
-			Role:        RoleToolResult,
+		return session.Turn{
+			Role:        session.RoleToolResult,
 			Timestamp:   rec.Timestamp,
 			Content:     content,
 			ToolResults: toolResults,
@@ -203,8 +204,8 @@ func userTurn(rec rawRecord, lineNum int) Turn {
 	}
 
 	content := strings.Join(textParts, "\n\n")
-	return Turn{
-		Role:                  RoleUser,
+	return session.Turn{
+		Role:                  session.RoleUser,
 		Timestamp:             rec.Timestamp,
 		Content:               content,
 		RawIndex:              lineNum,
@@ -239,14 +240,14 @@ func extractBlockContent(raw json.RawMessage) string {
 	return out
 }
 
-// assistantTurn builds a Turn from an assistant record, extracting text,
+// assistantTurn builds a session.Turn from an assistant record, extracting text,
 // thinking, and tool_use blocks from the content array.
-func assistantTurn(rec rawRecord, lineNum int) Turn {
+func assistantTurn(rec rawRecord, lineNum int) session.Turn {
 	msg, _ := decodeMessage(rec.Message)
 	blocks, _ := decodeBlocks(msg.Content)
 
-	turn := Turn{
-		Role:      RoleAssistant,
+	turn := session.Turn{
+		Role:      session.RoleAssistant,
 		Timestamp: rec.Timestamp,
 		RawIndex:  lineNum,
 	}
@@ -268,7 +269,7 @@ func assistantTurn(rec rawRecord, lineNum int) Turn {
 			}
 			turn.Thinking += bl.Thinking
 		case "tool_use":
-			turn.ToolCalls = append(turn.ToolCalls, ToolCall{
+			turn.ToolCalls = append(turn.ToolCalls, session.ToolCall{
 				ID:    bl.ID,
 				Name:  bl.Name,
 				Input: bl.Input,
@@ -293,14 +294,14 @@ func assistantTurn(rec rawRecord, lineNum int) Turn {
 
 // toolResultTurn builds a standalone tool-result turn. If attachToolResult
 // finds a matching assistant turn it is merged there instead.
-func toolResultTurn(rec rawRecord, lineNum int) Turn {
+func toolResultTurn(rec rawRecord, lineNum int) session.Turn {
 	msg, _ := decodeMessage(rec.Message)
 	content := flattenContent(msg.Content)
-	return Turn{
-		Role:      RoleToolResult,
+	return session.Turn{
+		Role:      session.RoleToolResult,
 		Timestamp: rec.Timestamp,
 		Content:   content,
-		ToolResults: []ToolResult{{
+		ToolResults: []session.ToolResult{{
 			ID:      rec.ToolUseID,
 			Content: content,
 			IsError: msg.IsError,
@@ -313,7 +314,7 @@ func toolResultTurn(rec rawRecord, lineNum int) Turn {
 // attachToolResult walks backwards through sess.Turns looking for assistant
 // turns that issued matching tool_use_ids. Returns true if ALL tool results
 // were attached.
-func attachToolResult(sess *Session, turn Turn) bool {
+func attachToolResult(sess *session.Session, turn session.Turn) bool {
 	if len(turn.ToolResults) == 0 {
 		return false
 	}
@@ -403,5 +404,5 @@ func turnSessionID(b []byte) string {
 
 // Compile-time guard so refactors that remove Parse don't silently break.
 var _ interface {
-	Parse(context.Context, string) (*Session, error)
+	Parse(context.Context, string) (*session.Session, error)
 } = (*Claude)(nil)

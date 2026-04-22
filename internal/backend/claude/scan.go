@@ -1,4 +1,4 @@
-package session
+package claude
 
 import (
 	"errors"
@@ -9,28 +9,27 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/justincordova/seshr/internal/session"
 )
 
-// SessionMeta is lightweight metadata produced by Scan. The heavy fields
-// (turn count, token total, topics) are filled in by Parse when the user
-// actually opens the session.
-type SessionMeta struct {
-	ID         string // filename stem (no .jsonl extension)
-	Path       string // absolute path to the .jsonl file
-	Project    string // parent directory name, e.g. "-Users-j-myproject"
-	Source     SourceKind
+// claudeMeta is lightweight Claude-specific metadata produced by scanDir.
+type claudeMeta struct {
+	ID         string
+	Path       string
+	Project    string
+	Source     session.SourceKind
 	Size       int64
 	ModifiedAt time.Time
-	HasBackup  bool // true if a sibling <Path>.bak exists — see SPEC §4.5
-	TurnCount  int  // populated by quick parse during Scan
-	TokenCount int  // populated by quick parse during Scan
+	HasBackup  bool
+	TurnCount  int
+	TokenCount int
 }
 
-// Scan walks one level deep into root and returns metadata for every
-// .jsonl file found. A missing root is treated as "no sessions" rather
-// than an error, since that's the first-run case. Results are sorted by
-// ModifiedAt descending (most-recent first).
-func Scan(root string) ([]SessionMeta, error) {
+// scanDir walks one level deep into root and returns Claude-specific metadata
+// for every .jsonl file found. A missing root is treated as "no sessions".
+// Results are sorted by ModifiedAt descending (most-recent first).
+func scanDir(root string) ([]claudeMeta, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -39,7 +38,7 @@ func Scan(root string) ([]SessionMeta, error) {
 		return nil, fmt.Errorf("read %s: %w", root, err)
 	}
 
-	var out []SessionMeta
+	var out []claudeMeta
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -50,7 +49,6 @@ func Scan(root string) ([]SessionMeta, error) {
 			slog.Warn("skipping project dir", "path", projDir, "err", err)
 			continue
 		}
-		// Index of .bak files keyed by the name they back up.
 		backups := map[string]bool{}
 		for _, pe := range projEntries {
 			if !pe.IsDir() && strings.HasSuffix(pe.Name(), ".jsonl.bak") {
@@ -66,11 +64,11 @@ func Scan(root string) ([]SessionMeta, error) {
 				slog.Warn("stat jsonl", "path", pe.Name(), "err", err)
 				continue
 			}
-			out = append(out, SessionMeta{
+			out = append(out, claudeMeta{
 				ID:         strings.TrimSuffix(pe.Name(), ".jsonl"),
 				Path:       filepath.Join(projDir, pe.Name()),
 				Project:    e.Name(),
-				Source:     SourceClaude,
+				Source:     session.SourceClaude,
 				Size:       info.Size(),
 				ModifiedAt: info.ModTime(),
 				HasBackup:  backups[pe.Name()],

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/editor"
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +73,7 @@ func TestPruneSession_EndToEnd(t *testing.T) {
 	}, "\n") + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o644))
 
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 	sess, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 
@@ -194,7 +195,7 @@ func TestPruneSession_EndToEndWithToolResult(t *testing.T) {
 	}, "\n") + "\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o644))
 
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 	sess, err := p.Parse(context.Background(), path)
 	require.NoError(t, err)
 

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/justincordova/seshr/internal/editor"
-	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +20,7 @@ func TestRestore_ReturnsExactOriginalBytes(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(dst, src, 0o644))
 
-	p := session.NewClaude()
+	p := claudeBackend.NewClaude()
 	sess, err := p.Parse(context.Background(), dst)
 	require.NoError(t, err)
 	ts := topics.Cluster(sess, topics.DefaultOptions())

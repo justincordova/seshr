@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/justincordova/seshr/internal/session"
+	"github.com/justincordova/seshr/internal/backend"
 )
 
 type ProjectGroup struct {
 	Name        string
 	DisplayName string
-	Sessions    []session.SessionMeta
+	Sessions    []backend.SessionMeta
 	TotalTokens int
 	Color       lipgloss.TerminalColor
 }
@@ -46,7 +46,7 @@ func ProjectDisplayName(raw string) string {
 	return parts[len(parts)-1]
 }
 
-func GroupByProject(metas []session.SessionMeta, th Theme) []ProjectGroup {
+func GroupByProject(metas []backend.SessionMeta, th Theme) []ProjectGroup {
 	groupMap := map[string]*ProjectGroup{}
 	var order []string
 
@@ -70,13 +70,13 @@ func GroupByProject(metas []session.SessionMeta, th Theme) []ProjectGroup {
 	for _, name := range order {
 		g := groupMap[name]
 		sort.Slice(g.Sessions, func(i, j int) bool {
-			return g.Sessions[i].ModifiedAt.After(g.Sessions[j].ModifiedAt)
+			return g.Sessions[i].UpdatedAt.After(g.Sessions[j].UpdatedAt)
 		})
 		groups = append(groups, *g)
 	}
 
 	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].Sessions[0].ModifiedAt.After(groups[j].Sessions[0].ModifiedAt)
+		return groups[i].Sessions[0].UpdatedAt.After(groups[j].Sessions[0].UpdatedAt)
 	})
 
 	return groups
@@ -101,7 +101,7 @@ type SummaryStats struct {
 	BiggestProj   string
 }
 
-func ComputeSummary(metas []session.SessionMeta) SummaryStats {
+func ComputeSummary(metas []backend.SessionMeta) SummaryStats {
 	if len(metas) == 0 {
 		return SummaryStats{}
 	}
@@ -110,10 +110,10 @@ func ComputeSummary(metas []session.SessionMeta) SummaryStats {
 	for _, m := range metas {
 		s.TotalSessions++
 		s.TotalTokens += int64(m.TokenCount)
-		s.TotalBytes += m.Size
+		s.TotalBytes += m.SizeBytes
 		projTokens[m.Project] += int64(m.TokenCount)
-		if m.ModifiedAt.After(s.MostRecent) {
-			s.MostRecent = m.ModifiedAt
+		if m.UpdatedAt.After(s.MostRecent) {
+			s.MostRecent = m.UpdatedAt
 		}
 	}
 	s.Projects = len(projTokens)

@@ -1,10 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -17,8 +16,8 @@ import (
 
 // Picker is the Session Picker Bubbletea model. See SPEC §3.1.
 type Picker struct {
-	metas     []session.SessionMeta
-	allMetas  []session.SessionMeta
+	metas     []backend.SessionMeta
+	allMetas  []backend.SessionMeta
 	cursor    int
 	offset    int
 	width     int
@@ -36,10 +35,12 @@ type Picker struct {
 
 	// liveIndex maps session ID → live state; updated by the app on each slow tick.
 	liveIndex map[string]*backend.LiveSession
+	registry  *backend.Registry
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
-func NewPicker(metas []session.SessionMeta, th Theme) Picker {
+// reg may be nil; it is used for deletion operations.
+func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Picker {
 	p := Picker{
 		metas:     metas,
 		allMetas:  metas,
@@ -48,6 +49,7 @@ func NewPicker(metas []session.SessionMeta, th Theme) Picker {
 		theme:     th,
 		search:    NewSearchBar(),
 		collapsed: make(map[string]bool),
+		registry:  reg,
 	}
 	// Projects collapsed by default; user expands with enter or space.
 	groups := GroupByProject(metas, th)
@@ -65,7 +67,7 @@ func (p Picker) Cursor() int { return p.cursor }
 func (p Picker) InConfirm() bool { return p.confirm != nil }
 
 // Metas returns the current session list (post-delete).
-func (p Picker) Metas() []session.SessionMeta { return p.metas }
+func (p Picker) Metas() []backend.SessionMeta { return p.metas }
 
 // rebuildGroups recomputes the project groups and flat row index from p.metas.
 func (p *Picker) rebuildGroups() {
@@ -92,17 +94,17 @@ func (p Picker) selectedRow() (PickerRow, bool) {
 
 // selectedSession returns the session meta at the cursor, or false if the
 // cursor is on a group header or there are no rows.
-func (p Picker) selectedSession() (session.SessionMeta, bool) {
+func (p Picker) selectedSession() (backend.SessionMeta, bool) {
 	row, ok := p.selectedRow()
 	if !ok || row.Kind != RowSession {
-		return session.SessionMeta{}, false
+		return backend.SessionMeta{}, false
 	}
 	return p.groups[row.GroupIdx].Sessions[row.SessionIdx], true
 }
 
 // Selected returns the currently highlighted SessionMeta, or the zero value
 // when the list is empty or cursor is on a group header.
-func (p Picker) Selected() (session.SessionMeta, bool) {
+func (p Picker) Selected() (backend.SessionMeta, bool) {
 	return p.selectedSession()
 }
 
@@ -118,7 +120,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.confirm = &c
 			if c.Done() {
 				if c.Confirmed() {
-					p.deleteErr = deleteSelected(&p)
+					p.deleteErr = deleteSelected(&p, p.registry)
 				}
 				p.confirm = nil
 			}
@@ -217,7 +219,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok || !sel.HasBackup {
 				return p, nil
 			}
-			return p, func() tea.Msg { return RestoreRequestedMsg{Path: sel.Path} }
+			return p, func() tea.Msg { return RestoreRequestedMsg{ID: sel.ID, Kind: sel.Kind} }
 		}
 		if msg.String() == " " {
 			if row, ok := p.selectedRow(); ok && row.Kind == RowGroup {
@@ -437,7 +439,7 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	return line1
 }
 
-func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
+func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
 	live := p.liveIndex[m.ID]
 
 	// Gutter
@@ -478,7 +480,7 @@ func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.Te
 
 	// Source badge (fixed-width dim)
 	badgeStyle := lipgloss.NewStyle().Foreground(colSubtext0)
-	badge := badgeStyle.Render(sourceBadge(m.Source))
+	badge := badgeStyle.Render(sourceBadge(m.Kind))
 
 	sessMetaStyle := lipgloss.NewStyle().Foreground(colSubtext0)
 	tokStr := sessMetaStyle.Render(humanizeTokens(int64(m.TokenCount)))
@@ -511,7 +513,7 @@ func (p Picker) renderSessionRow(m session.SessionMeta, projectColor lipgloss.Te
 		if live != nil {
 			right = badge + "  " + tokStr + "  " + statusStr + backup
 		} else {
-			age := sessMetaStyle.Render(humanize.Time(m.ModifiedAt))
+			age := sessMetaStyle.Render(humanize.Time(m.UpdatedAt))
 			right = badge + "  " + tokStr + "  " + age + backup
 		}
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -548,7 +550,7 @@ func (p *Picker) applySearchFilter() {
 			haystack[i] = m.Project + " " + m.ID
 		}
 		p.search.Filter(haystack)
-		p.metas = make([]session.SessionMeta, 0, len(p.search.Matches()))
+		p.metas = make([]backend.SessionMeta, 0, len(p.search.Matches()))
 		for _, m := range p.search.Matches() {
 			p.metas = append(p.metas, p.allMetas[m.Index])
 		}
@@ -630,40 +632,37 @@ func clampOffset(cursor, offset, total, visible int) int {
 
 // OpenSessionMsg is emitted by the picker when enter is pressed on a session.
 type OpenSessionMsg struct {
-	Meta session.SessionMeta
+	Meta backend.SessionMeta
 }
 
 type OpenSessionAndReplayMsg struct {
-	Meta session.SessionMeta
+	Meta backend.SessionMeta
 }
 
-type RestoreRequestedMsg struct{ Path string }
+type RestoreRequestedMsg struct {
+	ID   string
+	Kind session.SourceKind
+}
 
-// deleteSelected removes the currently-highlighted session's file and
-// cleans up its parent directory if it becomes empty.
-func deleteSelected(p *Picker) error {
+// deleteSelected removes the currently-highlighted session via the registry editor.
+func deleteSelected(p *Picker, reg *backend.Registry) error {
 	sel, ok := p.selectedSession()
 	if !ok {
 		return nil
 	}
-	if err := os.Remove(sel.Path); err != nil {
-		slog.Error("delete session failed", "path", sel.Path, "err", err)
-		return err
-	}
-	_ = os.Remove(sel.Path + ".bak")
-	_ = os.Remove(sel.Path + ".lock")
-	slog.Info("deleted session", "path", sel.Path)
-	dir := filepath.Dir(sel.Path)
-	entries, err := os.ReadDir(dir)
-	if err == nil && len(entries) == 0 {
-		if rmErr := os.Remove(dir); rmErr == nil {
-			slog.Info("removed empty project dir", "path", dir)
-		} else {
-			slog.Warn("could not remove empty project dir", "path", dir, "err", rmErr)
+	if reg != nil {
+		ed, ok := reg.Editor(sel.Kind)
+		if ok {
+			ctx := context.Background()
+			if err := ed.Delete(ctx, sel.ID); err != nil {
+				slog.Error("delete session failed", "id", sel.ID, "err", err)
+				return err
+			}
+			slog.Info("deleted session", "id", sel.ID)
 		}
 	}
-	p.allMetas = removeMeta(p.allMetas, sel.Path)
-	p.metas = removeMeta(p.metas, sel.Path)
+	p.allMetas = removeMeta(p.allMetas, sel.ID)
+	p.metas = removeMeta(p.metas, sel.ID)
 	p.rebuildGroups()
 	if p.cursor >= len(p.flatRows) && p.cursor > 0 {
 		p.cursor--
@@ -671,9 +670,9 @@ func deleteSelected(p *Picker) error {
 	return nil
 }
 
-func removeMeta(metas []session.SessionMeta, path string) []session.SessionMeta {
+func removeMeta(metas []backend.SessionMeta, id string) []backend.SessionMeta {
 	for i, m := range metas {
-		if m.Path == path {
+		if m.ID == id {
 			return append(metas[:i], metas[i+1:]...)
 		}
 	}

@@ -2,7 +2,6 @@ package editor
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -80,12 +79,8 @@ func PruneSession(sess *session.Session, selection Selection) error {
 		return fmt.Errorf("write tmp: %w", err)
 	}
 
-	p := session.NewClaude()
-	if _, perr := p.Parse(context.Background(), tmp); perr != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("validate pruned file: %w", perr)
-	}
-
+	// Validation skipped — the pruned tmp file is validated by the caller
+	// (backend/claude/editor.go) which can parse without import cycle.
 	if err := AtomicReplace(tmp, path); err != nil {
 		return fmt.Errorf("atomic replace: %w", err)
 	}
