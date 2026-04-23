@@ -94,6 +94,9 @@ func main() {
 			switch {
 			case ocErr == nil:
 				reg.RegisterStore(ocStore)
+				if !noLive {
+					reg.RegisterDetector(ocBackend.NewDetector(ocStore))
+				}
 				slog.Info("opencode backend registered", "db", ocPath)
 			case errors.Is(ocErr, ocBackend.ErrNoDatabase):
 				slog.Debug("opencode backend skipped — no database found", "path", ocPath)
