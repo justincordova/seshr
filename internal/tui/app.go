@@ -633,14 +633,16 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-// handleFastTick performs incremental loads for live sessions.
+// handleFastTick performs incremental loads for the currently-open live
+// session. We scope the tail to the view the user is actively looking at:
+// other live sessions have their status refreshed by the slow tick detector
+// pass, and tailing them too would multiply DB work with no UI benefit.
 func (a App) handleFastTick() (App, tea.Cmd) {
 	if a.LiveDisabled {
 		return a, nil
 	}
-	// Suspend while overlay is active.
 	if a.overlayActive() {
-		return a, nil
+		return a, fastTickCmd()
 	}
 
 	liveCount := len(a.liveIndex.Snapshot())
@@ -649,8 +651,29 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 		return a, nil
 	}
 
-	// TODO Phase 6 full: per-live incremental load and CurrentTask refresh.
-	// For now, re-schedule only.
+	// Only tail if the user is actively viewing a live session.
+	if a.currentView != nil && a.currentView.Live != nil && a.registry != nil {
+		store, ok := a.registry.Store(a.currentView.Meta.Kind)
+		if ok {
+			turns, newCur, err := store.LoadIncremental(a.ctx, a.currentView.Meta.ID, a.currentView.Cursor)
+			switch {
+			case err != nil:
+				slog.Warn("fast-tick incremental load failed",
+					"session", a.currentView.Meta.ID,
+					"kind", a.currentView.Meta.Kind,
+					"err", err)
+			case len(turns) > 0:
+				a.currentView.Append(turns, newCur)
+				slog.Debug("fast-tick appended turns",
+					"session", a.currentView.Meta.ID, "count", len(turns))
+			default:
+				// No new turns — still advance the cursor if it changed
+				// (e.g., cold-cursor fall-through in OC).
+				a.currentView.Cursor = newCur
+			}
+		}
+	}
+
 	return a, fastTickCmd()
 }
 

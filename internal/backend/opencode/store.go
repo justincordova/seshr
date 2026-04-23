@@ -1,7 +1,6 @@
 package opencode
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -80,18 +79,4 @@ func (s *Store) hasBackup(id string) bool {
 		}
 	}
 	return false
-}
-
-// LoadIncremental tails a session using a (time_created, id) cursor.
-// Populated in Phase 10; Phase 8 returns nil, cur, nil so the TUI fast-tick
-// path doesn't crash when it encounters an OC session.
-func (s *Store) LoadIncremental(_ context.Context, _ string, cur backend.Cursor) ([]session.Turn, backend.Cursor, error) {
-	return nil, cur, nil
-}
-
-// LoadRange returns turns [from, to) from the session's current chain.
-// Populated in Phase 10; Phase 8 returns an empty slice (not an error) so
-// the memory-window eviction path in the TUI degrades to no-op for OC.
-func (s *Store) LoadRange(_ context.Context, _ string, _, _ int) ([]session.Turn, error) {
-	return nil, nil
 }
