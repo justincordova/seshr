@@ -94,6 +94,7 @@ func main() {
 			switch {
 			case ocErr == nil:
 				reg.RegisterStore(ocStore)
+				reg.RegisterEditor(ocBackend.NewEditor(ocStore, ocBackupDir))
 				if !noLive {
 					reg.RegisterDetector(ocBackend.NewDetector(ocStore))
 				}

@@ -349,6 +349,16 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if o.pruning || o.selectedCount() == 0 {
 				return o, nil
 			}
+			// OpenCode prune goes through the registry-backed editor
+			// (backend/opencode.Editor) rather than the Claude-only JSONL
+			// pruner. Full TUI wiring for that path is a post-Phase-11 item
+			// (see docs/plans/phase-12-polish-and-docs-plan.md). Until
+			// then, show a non-destructive toast so the feature fails
+			// visibly rather than silently doing nothing.
+			if o.sess != nil && o.sess.Source == session.SourceOpenCode {
+				o.status = "opencode prune is not yet wired in the UI (Phase 12)"
+				return o, clearStatusCmd()
+			}
 			sel := o.currentSelection()
 			preCount, preTok, activeCount, activeTok := o.selectionContext()
 			var confirmTitle, confirmBody string
