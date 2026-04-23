@@ -11,11 +11,23 @@ import (
 
 // Sidecar holds the live-session metadata written by Claude Code to
 // ~/.claude/sessions/<pid>.json.
+//
+// startedAt in the on-disk format is Unix milliseconds (number), not an
+// RFC3339 string. We decode into int64 and expose it as time.Time via
+// StartedAt() to keep callers source-format-agnostic.
 type Sidecar struct {
-	PID       int       `json:"pid"`
-	SessionID string    `json:"sessionId"`
-	CWD       string    `json:"cwd"`
-	StartedAt time.Time `json:"startedAt"`
+	PID         int    `json:"pid"`
+	SessionID   string `json:"sessionId"`
+	CWD         string `json:"cwd"`
+	StartedAtMS int64  `json:"startedAt"`
+}
+
+// StartedAt returns StartedAtMS as a time.Time. Zero when StartedAtMS is 0.
+func (s Sidecar) StartedAt() time.Time {
+	if s.StartedAtMS == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(s.StartedAtMS)
 }
 
 // ReadSidecars globs dir for *.json files and decodes each as a Sidecar.

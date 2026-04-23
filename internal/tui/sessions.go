@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -66,6 +67,92 @@ func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Pic
 // Cursor returns the current selection index.
 func (p Picker) Cursor() int { return p.cursor }
 
+// SetLiveIndex replaces the picker's live-session map. Called by the app
+// after each slow-tick reconcile so the picker rows can render pulsing
+// status, current-task, and context-warning info.
+//
+// SetLiveIndex also synthesizes SessionMeta entries for any live sessions
+// not present in the picker's existing metas (e.g. a Claude session that
+// was just opened and hasn't written a transcript yet, so the launch-time
+// Scan didn't see it). Synthesized rows show up at the top of their
+// project group; the group is auto-expanded so the live row is visible.
+func (p *Picker) SetLiveIndex(idx map[string]*backend.LiveSession) {
+	p.liveIndex = idx
+	p.syncLiveMetas()
+}
+
+// syncLiveMetas augments allMetas with synthesized entries for live sessions
+// not already present, then rebuilds groups and auto-expands any group that
+// contains a live session.
+func (p *Picker) syncLiveMetas() {
+	if len(p.liveIndex) == 0 {
+		return
+	}
+
+	known := make(map[string]struct{}, len(p.allMetas))
+	for _, m := range p.allMetas {
+		known[m.ID] = struct{}{}
+	}
+
+	added := false
+	for id, live := range p.liveIndex {
+		if _, ok := known[id]; ok {
+			continue
+		}
+		p.allMetas = append(p.allMetas, synthMetaFromLive(live))
+		added = true
+	}
+
+	if added {
+		// metas mirrors allMetas when no search filter is active.
+		// (Phase 7 picker has no persistent filter that we'd clobber here.)
+		p.metas = p.allMetas
+		p.rebuildGroups()
+	}
+
+	// Auto-expand any group containing a live session so the row is visible.
+	for _, g := range p.groups {
+		for _, m := range g.Sessions {
+			if _, isLive := p.liveIndex[m.ID]; isLive {
+				if p.collapsed[g.Name] {
+					p.collapsed[g.Name] = false
+					p.rebuildGroups()
+				}
+				break
+			}
+		}
+	}
+}
+
+// synthMetaFromLive builds a SessionMeta for a live session that wasn't
+// found by Scan (e.g. no transcript file yet). Project is derived from CWD
+// using the source's encoding rules.
+func synthMetaFromLive(live *backend.LiveSession) backend.SessionMeta {
+	project := projectFromLive(live)
+	return backend.SessionMeta{
+		ID:        live.SessionID,
+		Kind:      live.Kind,
+		Project:   project,
+		Directory: live.CWD,
+		Title:     "",
+		UpdatedAt: live.LastActivity,
+		CreatedAt: live.LastActivity,
+	}
+}
+
+// projectFromLive returns the project-name string used for grouping. Each
+// source has its own encoding (Claude uses /-replaced-paths). Falls back to
+// the cwd basename or "live" when cwd is unknown.
+func projectFromLive(live *backend.LiveSession) string {
+	if live.Project != "" {
+		return live.Project
+	}
+	if live.CWD == "" {
+		return "live"
+	}
+	return live.CWD
+}
+
 // InConfirm reports whether a confirm modal is currently shown.
 func (p Picker) InConfirm() bool { return p.confirm != nil }
 
@@ -75,7 +162,25 @@ func (p Picker) Metas() []backend.SessionMeta { return p.metas }
 // rebuildGroups recomputes the project groups and flat row index from p.metas.
 func (p *Picker) rebuildGroups() {
 	p.groups = GroupByProject(p.metas, p.theme)
+	p.sortLiveToTop()
 	p.flatRows = BuildFlatRows(p.groups, p.collapsed)
+}
+
+func (p *Picker) sortLiveToTop() {
+	if len(p.liveIndex) == 0 {
+		return
+	}
+	for i := range p.groups {
+		g := &p.groups[i]
+		sort.SliceStable(g.Sessions, func(a, b int) bool {
+			aLive := p.liveIndex[g.Sessions[a].ID] != nil
+			bLive := p.liveIndex[g.Sessions[b].ID] != nil
+			if aLive != bLive {
+				return aLive
+			}
+			return g.Sessions[a].UpdatedAt.After(g.Sessions[b].UpdatedAt)
+		})
+	}
 }
 
 func (p *Picker) toggleCollapse(row PickerRow) {
@@ -348,11 +453,16 @@ func (p Picker) renderStats(width int) string {
 	}
 	items := []statItem{
 		{"SESSIONS", fmt.Sprintf("%d", sum.TotalSessions)},
-		{"PROJECTS", fmt.Sprintf("%d", sum.Projects)},
-		{"TOKENS", humanize.Comma(sum.TotalTokens)},
-		{"SIZE", humanizeSize(sum.TotalBytes)},
-		{"LATEST", humanize.Time(sum.MostRecent)},
 	}
+	if liveCount := len(p.liveIndex); liveCount > 0 {
+		items = append(items, statItem{"LIVE", fmt.Sprintf("%d", liveCount)})
+	}
+	items = append(items,
+		statItem{"PROJECTS", fmt.Sprintf("%d", sum.Projects)},
+		statItem{"TOKENS", humanize.Comma(sum.TotalTokens)},
+		statItem{"SIZE", humanizeSize(sum.TotalBytes)},
+		statItem{"LATEST", humanize.Time(sum.MostRecent)},
+	)
 
 	var parts []string
 	for i, it := range items {

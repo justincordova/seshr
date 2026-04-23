@@ -14,11 +14,16 @@ import (
 )
 
 // LandingKeys are the keybindings for the Landing page.
+//
+// Note: Info (i) is intentionally omitted — it requires an InfoOverlay
+// component which is folded into the planned Session Cockpit redesign
+// (see docs/designs/session-cockpit.md). LivePicker currently returns to
+// the picker without applying a live-only filter; the filter trigger is a
+// Phase 12 polish item.
 type LandingKeys struct {
 	Topics     key.Binding
 	Replay     key.Binding
 	Resume     key.Binding
-	Info       key.Binding
 	LivePicker key.Binding
 	Back       key.Binding
 	Search     key.Binding
@@ -31,7 +36,6 @@ func DefaultLandingKeys() LandingKeys {
 		Topics:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "topics")),
 		Replay:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
 		Resume:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "resume")),
-		Info:       key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "info")),
 		LivePicker: key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("ctrl+l", "live picker")),
 		Back:       key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 		Search:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
@@ -74,6 +78,17 @@ func (m LandingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return OpenReplayMsg{} }
 		case key.Matches(km, m.keys.Resume):
 			return m, func() tea.Msg { return OpenResumeOverlayMsg{} }
+		case key.Matches(km, m.keys.LivePicker):
+			// TODO(phase-12-polish): apply live-only filter on the picker.
+			// For now, plain return-to-picker.
+			return m, func() tea.Msg { return ReturnToPickerMsg{} }
+		case key.Matches(km, m.keys.Search):
+			// Delegate to topics: switch and forward the '/' keystroke so
+			// the topics search bar opens. tea.Sequence preserves order.
+			return m, tea.Sequence(
+				func() tea.Msg { return OpenOverviewMsg{} },
+				func() tea.Msg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}} },
+			)
 		case key.Matches(km, m.keys.Quit), km.String() == "q":
 			return m, tea.Quit
 		}
@@ -90,11 +105,38 @@ func (m LandingModel) View() string {
 		return ""
 	}
 	cw := contentWidth(m.width)
-	var b strings.Builder
 
+	header := renderHeaderTitle(cw, "· Session")
+	body := m.renderBody(cw)
+	footerHints := []string{
+		kbdPill("t", "topics"),
+		kbdPill("r", "replay"),
+		kbdPill("c", "resume"),
+		kbdPill("esc", "back"),
+	}
+	footer := renderCenteredFooter(footerHints, cw)
+
+	// Size the panel to fill remaining vertical space when we know height.
+	mainH := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
+	if m.height == 0 || mainH < 12 {
+		mainH = lipgloss.Height(body) + 4
+	}
+	main := panel("", body, cw, mainH)
+
+	return centerBlock(
+		lipgloss.JoinVertical(lipgloss.Left, header, main, footer),
+		m.width,
+	)
+}
+
+// renderBody builds the inner content of the panel as raw lines.
+// Padding/border are applied by panel(); this function returns plain text.
+func (m LandingModel) renderBody(cw int) string {
 	sess := m.view.Session
 	meta := m.meta
 	live := m.view.Live
+
+	var b strings.Builder
 
 	// ── Header line ──────────────────────────────────────────────────────────
 	stateStr := ""
@@ -111,11 +153,11 @@ func (m LandingModel) View() string {
 		stateStr = lipgloss.NewStyle().Foreground(m.th.Muted).Render("ended " + humanize.Time(meta.UpdatedAt))
 	}
 	idStyle := lipgloss.NewStyle().Foreground(m.th.Foreground).Bold(true)
-	header := idStyle.Render(truncate(meta.ID, 36)) + " · " +
+	headerLine := idStyle.Render(truncate(meta.ID, 36)) + " · " +
 		dimStyle.Render(meta.Project) + " · " +
 		dimStyle.Render(sourceBadge(meta.Kind)) + " · " +
 		stateStr
-	b.WriteString(lipgloss.NewStyle().Width(cw).Padding(1, 2, 0).Render(header))
+	b.WriteString(headerLine)
 	b.WriteString("\n")
 
 	// ── Stats line ───────────────────────────────────────────────────────────
@@ -135,32 +177,26 @@ func (m LandingModel) View() string {
 			statsItems = append(statsItems, lipgloss.NewStyle().Foreground(m.th.Warning).Render(fmt.Sprintf("context %d%% ⚠", pct)))
 		}
 	}
-	statsLine := dimStyle.Render(strings.Join(statsItems, " · "))
-	b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(statsLine))
+	b.WriteString(dimStyle.Render(strings.Join(statsItems, " · ")))
 	b.WriteString("\n\n")
 
 	// ── Key facts ────────────────────────────────────────────────────────────
 	labelStyle := lipgloss.NewStyle().Foreground(m.th.Accent).Width(18)
 	if live != nil {
 		if live.CurrentTask != "" {
-			b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(
-				labelStyle.Render("Current action:") + dimStyle.Render(truncate(live.CurrentTask, 60)+" · "+humanize.Time(live.LastActivity)),
-			))
+			b.WriteString(labelStyle.Render("Current action:") +
+				dimStyle.Render(truncate(live.CurrentTask, 60)+" · "+humanize.Time(live.LastActivity)))
 			b.WriteString("\n")
 		}
 	} else {
-		firstPrompt := firstUserContent(sess)
-		if firstPrompt != "" {
-			b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(
-				labelStyle.Render("First prompt:") + dimStyle.Render(fmt.Sprintf("%q", truncate(firstPrompt, 60))),
-			))
+		if firstPrompt := firstUserContent(sess); firstPrompt != "" {
+			b.WriteString(labelStyle.Render("First prompt:") +
+				dimStyle.Render(fmt.Sprintf("%q", truncate(firstPrompt, 60))))
 			b.WriteString("\n")
 		}
-		lastAction := lastToolUseLine(sess)
-		if lastAction != "" {
-			b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(
-				labelStyle.Render("Last action:") + dimStyle.Render(lastAction+" · "+humanize.Time(meta.UpdatedAt)),
-			))
+		if lastAction := lastToolUseLine(sess); lastAction != "" {
+			b.WriteString(labelStyle.Render("Last action:") +
+				dimStyle.Render(lastAction+" · "+humanize.Time(meta.UpdatedAt)))
 			b.WriteString("\n")
 		}
 	}
@@ -180,30 +216,17 @@ func (m LandingModel) View() string {
 		if overflow > 0 {
 			fileLine += fmt.Sprintf("  (+%d)", overflow)
 		}
-		b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(
-			labelStyle.Render(label) + dimStyle.Render(fileLine),
-		))
+		b.WriteString(labelStyle.Render(label) + dimStyle.Render(fileLine))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 
 	// ── Token bar (collapsed) ─────────────────────────────────────────────────
-	tokenLine := renderCollapsedTokenBar(sess, cw, m.th)
-	b.WriteString(lipgloss.NewStyle().Width(cw).Padding(0, 2).Render(tokenLine))
-	b.WriteString("\n\n")
+	tokenLine := renderCollapsedTokenBar(sess, cw-4, m.th)
+	b.WriteString(tokenLine)
 
-	// ── Footer ───────────────────────────────────────────────────────────────
-	footerHints := []string{
-		kbdPill("t", "topics"),
-		kbdPill("r", "replay"),
-		kbdPill("c", "resume"),
-		kbdPill("esc", "back"),
-	}
-	footer := renderCenteredFooter(footerHints, cw)
-	b.WriteString(footer)
-
-	return centerBlock(b.String(), m.width)
+	return b.String()
 }
 
 // firstUserContent returns the first user turn's content, or "".

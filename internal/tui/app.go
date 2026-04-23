@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -24,10 +25,10 @@ func (a App) currentBindings() []key.Binding {
 		return []key.Binding{k.Up, k.Down, k.Open, k.Replay, k.Delete, k.Restore, k.Search, k.Quit}
 	case stateLanding:
 		k := DefaultLandingKeys()
-		return []key.Binding{k.Topics, k.Replay, k.Resume, k.Info, k.Back, k.Quit}
+		return []key.Binding{k.Topics, k.Replay, k.Resume, k.LivePicker, k.Search, k.Back, k.Quit}
 	case stateOverview:
 		k := DefaultOverviewKeys()
-		return []key.Binding{k.Up, k.Down, k.Expand, k.FoldAll, k.Select, k.ToggleAll, k.Prune, k.Replay, k.Stats, k.Search, k.Back, k.Quit}
+		return []key.Binding{k.Up, k.Down, k.Expand, k.FoldAll, k.Select, k.ToggleAll, k.Prune, k.Replay, k.Resume, k.Stats, k.Search, k.Back, k.Quit}
 	case stateReplay:
 		k := DefaultReplayKeys()
 		return []key.Binding{k.Next, k.Prev, k.AutoPlay, k.NextTopic, k.PrevTopic, k.ToggleThinking, k.SpeedUp, k.SpeedDown, k.Expand, k.SidebarFocus, k.Search, k.Back, k.Quit}
@@ -195,7 +196,12 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 func (a App) Init() tea.Cmd {
 	cmds := []tea.Cmd{a.picker.Init()}
 	if !a.LiveDisabled {
-		cmds = append(cmds, slowTickCmd())
+		// Fire an immediate first detection so live sessions appear on
+		// launch instead of after the first 10s tick. Then continue with
+		// the periodic slow ticker.
+		cmds = append(cmds,
+			func() tea.Msg { return liveSlowMsg{At: time.Now()} },
+		)
 	}
 	return tea.Batch(cmds...)
 }
@@ -214,6 +220,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.overlay == ovSettings {
 			a.settings = a.settings.SetSize(wsm.Width, wsm.Height)
 		}
+		if a.state == stateLanding {
+			lm, _ := a.landing.Update(wsm)
+			a.landing = lm.(LandingModel)
+		}
+		if a.overlay == ovResume {
+			rm, _ := a.resumeOverlay.Update(wsm)
+			a.resumeOverlay = rm.(ResumeOverlayModel)
+		}
+	}
+
+	// ── Overlay close messages: handle before the overlay-active gate so the
+	// gate doesn't swallow them. ─────────────────────────────────────────────
+	if _, ok := msg.(CloseResumeOverlayMsg); ok {
+		a.overlay = ovNone
+		return a, nil
 	}
 
 	// ── Active overlay: route all input to it ────────────────────────────────
@@ -295,9 +316,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch m := msg.(type) {
 	case OpenSessionMsg:
+		a.currentViewMeta = m.Meta
+		// Live sessions without a transcript (synthesized from process
+		// detection) can't be loaded from the store. Show the landing
+		// page directly with a minimal SessionView.
+		if live := a.liveIndex.Lookup(m.Meta.ID); live != nil {
+			view := &SessionView{
+				Meta:    m.Meta,
+				Session: &session.Session{Source: m.Meta.Kind},
+				Live:    live,
+			}
+			a.currentView = view
+			a.landing = NewLandingModel(view, a.theme)
+			if a.width > 0 {
+				lm, _ := a.landing.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				a.landing = lm.(LandingModel)
+			}
+			a.state = stateLanding
+			return a, nil
+		}
 		a.state = stateLoading
 		a.loading = m.Meta.ID
-		a.currentViewMeta = m.Meta
 		return a, tea.Batch(a.spinner.Tick, LoadSessionByIDCmd(m.Meta, a.registry, a.cfg.GapThresholdSeconds))
 	case OpenSessionAndReplayMsg:
 		a.state = stateLoading
@@ -319,9 +358,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state = stateReplay
 			return a, a.replay.Init()
 		}
-		// Build a SessionView and go to landing.
+		// Build a SessionView. Live sessions go to the landing/cockpit;
+		// ended sessions skip directly to Topic Overview (resume is also
+		// reachable from there via `c`).
 		if a.registry != nil {
-			if store, ok := a.registry.Store(m.Session.Source); ok {
+			if _, ok := a.registry.Store(m.Session.Source); ok {
 				view := &SessionView{
 					Meta:            a.currentViewMeta,
 					Session:         m.Session,
@@ -330,12 +371,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					TurnsLoadedTo:   len(m.Session.Turns),
 					TotalTurns:      len(m.Session.Turns),
 				}
-				_ = store // future: use store for LoadIncremental
 				view.Live = a.liveIndex.Lookup(view.Meta.ID)
 				a.currentView = view
-				a.landing = NewLandingModel(view, a.theme)
-				a.state = stateLanding
-				return a, nil
+				if view.Live != nil {
+					a.landing = NewLandingModel(view, a.theme)
+					if a.width > 0 {
+						lm, _ := a.landing.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+						a.landing = lm.(LandingModel)
+					}
+					a.state = stateLanding
+					return a, nil
+				}
 			}
 		}
 		a.state = stateOverview
@@ -354,6 +400,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case OpenResumeOverlayMsg:
 		if a.currentView != nil {
 			a.resumeOverlay = NewResumeOverlay(a.currentView.Meta.Kind, a.currentView.Meta.ID, a.theme)
+			if a.width > 0 {
+				rm, _ := a.resumeOverlay.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				a.resumeOverlay = rm.(ResumeOverlayModel)
+			}
 			a.overlay = ovResume
 		}
 		return a, nil
@@ -564,6 +614,11 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 
 	// Reconcile with hysteresis.
 	_ = a.liveIndex.Reconcile(detected)
+
+	// Push the reconciled snapshot into the picker so its rows render the
+	// live pulse / status / current-task. Without this the picker stays
+	// visually ended-only even when DetectLive returned matches.
+	a.picker.SetLiveIndex(a.liveIndex.SnapshotMap())
 
 	// Start or stop the fast ticker.
 	var cmds []tea.Cmd

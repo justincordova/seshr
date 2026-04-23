@@ -39,6 +39,7 @@ type OverviewKeys struct {
 	ToggleAll key.Binding
 	Prune     key.Binding
 	Replay    key.Binding
+	Resume    key.Binding
 	Stats     key.Binding
 	Search    key.Binding
 	Back      key.Binding
@@ -56,6 +57,7 @@ func DefaultOverviewKeys() OverviewKeys {
 		ToggleAll: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "toggle all")),
 		Prune:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prune")),
 		Replay:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
+		Resume:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "resume")),
 		Stats:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "stats")),
 		Search:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		Back:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),

@@ -16,7 +16,7 @@ func TestParseLsofCWD_ExtractsCWD(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	cwd, err := parseLsofCWD(raw)
+	cwd, err := parseLsofCWD(raw, 12345)
 
 	// Assert
 	require.NoError(t, err)
@@ -28,13 +28,32 @@ func TestParseLsofCWD_MissingNLine_ReturnsError(t *testing.T) {
 	input := []byte("p12345\nfcwd\n")
 
 	// Act
-	_, err := parseLsofCWD(input)
+	_, err := parseLsofCWD(input, 12345)
 
 	// Assert
 	assert.Error(t, err)
 }
 
 func TestParseLsofCWD_EmptyInput_ReturnsError(t *testing.T) {
-	_, err := parseLsofCWD([]byte{})
+	_, err := parseLsofCWD([]byte{}, 1)
+	assert.Error(t, err)
+}
+
+// Without -a, lsof returns blocks for every process. Defends against the
+// regression where parseLsofCWD returned the first n-line regardless of pid.
+func TestParseLsofCWD_MultipleBlocks_ScopesToWantPID(t *testing.T) {
+	input := []byte("p400\nfcwd\nn/\np23758\nfcwd\nn/Users/justin/cs/projects/seshr\np580\nfcwd\nn/var/empty\n")
+
+	cwd, err := parseLsofCWD(input, 23758)
+
+	require.NoError(t, err)
+	assert.Equal(t, "/Users/justin/cs/projects/seshr", cwd)
+}
+
+func TestParseLsofCWD_PIDNotPresent_ReturnsError(t *testing.T) {
+	input := []byte("p400\nfcwd\nn/\np580\nfcwd\nn/var\n")
+
+	_, err := parseLsofCWD(input, 23758)
+
 	assert.Error(t, err)
 }

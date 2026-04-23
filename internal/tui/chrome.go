@@ -120,6 +120,18 @@ func renderCenteredFooter(hints []string, width int) string {
 	return lipgloss.NewStyle().Width(width).Render(b.String())
 }
 
+// renderHeaderTitle renders the gradient ◆ Seshr logo with an optional dim
+// subtitle (e.g. "· Cockpit"). Used by screens that want a sub-screen label
+// in the top header bar.
+func renderHeaderTitle(width int, subtitle string) string {
+	logo := renderLogo()
+	row := logo
+	if subtitle != "" {
+		row += " " + dimStyle.Render(subtitle)
+	}
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(row)
+}
+
 // pill renders a small label badge with given foreground and background colors.
 func pill(label string, fg, bg lipgloss.TerminalColor) string {
 	return lipgloss.NewStyle().

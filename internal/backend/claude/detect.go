@@ -102,6 +102,8 @@ func (d *Detector) detectViaSidecar(snap backend.ProcessSnapshot, claudePIDs map
 			SessionID:    sc.SessionID,
 			Kind:         session.SourceClaude,
 			PID:          sc.PID,
+			CWD:          sc.CWD,
+			Project:      encodeCWDToProjectDir(sc.CWD),
 			Status:       status,
 			CurrentTask:  currentTask,
 			LastActivity: lastMtime(transcriptPath, d.now()),
@@ -162,6 +164,8 @@ func (d *Detector) detectViaCWD(snap backend.ProcessSnapshot, unmatched map[int]
 			SessionID:    sessionID,
 			Kind:         session.SourceClaude,
 			PID:          pid,
+			CWD:          proc.CWD,
+			Project:      encoded,
 			Status:       status,
 			CurrentTask:  currentTask,
 			LastActivity: info.ModTime(),
@@ -171,8 +175,16 @@ func (d *Detector) detectViaCWD(snap backend.ProcessSnapshot, unmatched map[int]
 	return out
 }
 
-// encodeCWDToProjectDir encodes a CWD path into Claude's project dir format.
+// EncodeCWDToProjectDir encodes a CWD path into Claude's project dir format.
 // e.g. /Users/foo/bar.v2 → -Users-foo-bar-v2
+//
+// Exported so the TUI can derive a Project name when synthesizing a
+// SessionMeta for a live session that hasn't produced a transcript file yet.
+func EncodeCWDToProjectDir(cwd string) string {
+	return encodeCWDToProjectDir(cwd)
+}
+
+// encodeCWDToProjectDir is the internal implementation.
 func encodeCWDToProjectDir(cwd string) string {
 	r := strings.NewReplacer("/", "-", "_", "-", ".", "-")
 	result := r.Replace(cwd)

@@ -309,7 +309,7 @@ Seshr degrades gracefully: all sessions show as ended. Use `--no-live` to opt ou
 | Key            | Action                      | Notes                                     |
 | -------------- | --------------------------- | ----------------------------------------- |
 | `↑/↓` or `j/k` | Navigate session list       | Vim-style                                 |
-| `enter`        | Open session → Landing Page | Not direct-to-topics anymore (see §3.2)   |
+| `enter`        | Open session                | Live → Landing Page (§3.2); Ended → Topic Overview directly |
 | `r`            | Open directly in Replay Mode| Skips landing page + topics               |
 | `l`            | Toggle live-only view       | Filters picker to only live sessions      |
 | `d`            | Delete session              | Confirmation dialog; ended sessions only  |
@@ -329,9 +329,11 @@ Live sessions cannot be deleted. The delete confirmation refuses with a message 
 
 ### 3.2 Session Landing Page
 
-A per-session summary screen, shown when the user presses `enter` on a picker row. The landing page is the decision point: the user sees a digest of the session and chooses what to do (topics / replay / resume / back). This replaces the previous direct-to-topics navigation.
+A per-session summary screen, shown when the user presses `enter` on a picker row **for a live session**. Ended sessions skip this screen and go directly to Topic Overview, where the `c` resume keybinding is also available. This keeps ended-session navigation snappy (the most common flow) while preserving a place for live-only telemetry.
 
-Same layout for live and ended sessions; different data fills it.
+> **Future:** see [Session Cockpit](designs/session-cockpit.md) for the planned redesign of this screen into a richer live-telemetry dashboard inspired by [abtop](https://github.com/graykode/abtop). Ships after OpenCode parity (Phases 8–11).
+
+Same layout for live and ended sessions; different data fills it. (Note: the ended-session variant is documented for completeness — when implemented, it would only be reached programmatically, e.g. via the `i` info overlay from a live session that has since ended.)
 
 **Live session:**
 
@@ -505,6 +507,7 @@ The core screen for inspecting and editing sessions. Displays the parsed session
 | `a`            | Toggle select all           | Select all if any unselected; deselect all if all selected |
 | `p`            | Prune selected topics       | Shows confirmation with token savings    |
 | `r`            | Enter Replay Mode           | Starts from selected topic               |
+| `c`            | Resume overlay              | Opens the resume command for this session |
 | `/`            | Fuzzy search within session | Searches topic labels + turn content     |
 | `tab`          | Toggle stats panel          | Right-side aggregate stats               |
 | `esc`          | Back to Session Picker      |                                          |

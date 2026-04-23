@@ -61,6 +61,18 @@ func (l *LiveIndex) Snapshot() []*backend.LiveSession {
 	return out
 }
 
+// SnapshotMap returns a fresh map of session ID → live session for callers
+// that need O(1) lookup (e.g. the picker's row renderer).
+func (l *LiveIndex) SnapshotMap() map[string]*backend.LiveSession {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	out := make(map[string]*backend.LiveSession, len(l.items))
+	for id, e := range l.items {
+		out[id] = e.live
+	}
+	return out
+}
+
 // Update replaces the entry for id (used by fast tick to update CurrentTask).
 func (l *LiveIndex) Update(id string, next *backend.LiveSession) {
 	l.mu.Lock()

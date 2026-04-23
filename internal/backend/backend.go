@@ -55,10 +55,19 @@ type SessionMeta struct {
 }
 
 // LiveSession describes a running agent process mapped to a session.
+//
+// CWD is the agent process's working directory at detection time. Project
+// is the source-specific project name (e.g. Claude's encoded project-dir
+// name). Both are populated by the detector so the TUI can synthesize a
+// SessionMeta for live sessions that haven't produced a transcript yet
+// (newly-opened Claude session, OC session with no messages). Empty when
+// the detector couldn't determine the value.
 type LiveSession struct {
 	SessionID     string
 	Kind          session.SourceKind
 	PID           int
+	CWD           string
+	Project       string
 	Status        Status
 	CurrentTask   string
 	LastActivity  time.Time

@@ -379,6 +379,8 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return o, nil
 		case key.Matches(msg, o.keys.Replay):
 			return o, func() tea.Msg { return OpenReplayMsg{} }
+		case key.Matches(msg, o.keys.Resume):
+			return o, func() tea.Msg { return OpenResumeOverlayMsg{} }
 		}
 	}
 	return o, nil
@@ -517,7 +519,7 @@ func (o *Overview) applyTopicSearchFilter() {
 
 func (o Overview) View() string {
 	if o.confirm != nil {
-		return o.confirm.View()
+		return lipgloss.Place(o.width, o.height, lipgloss.Center, lipgloss.Center, o.confirm.View())
 	}
 
 	if o.sess == nil {
