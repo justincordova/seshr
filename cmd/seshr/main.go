@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/justincordova/seshr/internal/backend"
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
+	ocBackend "github.com/justincordova/seshr/internal/backend/opencode"
 	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/logging"
 	"github.com/justincordova/seshr/internal/tui"
@@ -19,11 +21,12 @@ import (
 
 func main() {
 	var (
-		debug         bool
-		showVersion   bool
-		noLive        bool
-		dirOverride   string
-		themeOverride string
+		debug          bool
+		showVersion    bool
+		noLive         bool
+		dirOverride    string
+		themeOverride  string
+		opencodeDBPath string
 	)
 
 	root := &cobra.Command{
@@ -75,14 +78,37 @@ func main() {
 				sidecarDir := filepath.Join(home, ".claude", "sessions")
 				reg.RegisterDetector(claudeBackend.NewDetector(scanRoot, sidecarDir))
 			}
+
+			// OpenCode is registered only when its DB exists. Absence is not
+			// an error — user simply doesn't have OC installed.
+			ocPath := opencodeDBPath
+			if ocPath == "" {
+				p, err := ocBackend.DefaultDBPath()
+				if err == nil {
+					ocPath = p
+				}
+			}
+			seshrDataDir, _ := os.UserHomeDir()
+			ocBackupDir := filepath.Join(seshrDataDir, ".seshr", "backups", "opencode")
+			ocStore, ocErr := ocBackend.NewStore(ocPath, ocBackupDir)
+			switch {
+			case ocErr == nil:
+				reg.RegisterStore(ocStore)
+				slog.Info("opencode backend registered", "db", ocPath)
+			case errors.Is(ocErr, ocBackend.ErrNoDatabase):
+				slog.Debug("opencode backend skipped — no database found", "path", ocPath)
+			default:
+				slog.Warn("opencode backend disabled due to error", "err", ocErr)
+			}
+
 			defer func() { _ = reg.Close() }()
 
-			metas, err := claudeStore.Scan(context.Background())
+			metas, err := scanAllStores(context.Background(), reg)
 			if err != nil {
-				slog.Error("scan sessions", "root", scanRoot, "err", err)
-				return fmt.Errorf("scan %s: %w", scanRoot, err)
+				slog.Error("scan sessions", "err", err)
+				return fmt.Errorf("scan sessions: %w", err)
 			}
-			slog.Info("scanned sessions", "root", scanRoot, "count", len(metas))
+			slog.Info("scanned sessions", "count", len(metas))
 
 			p := tea.NewProgram(tui.NewApp(metas, cfg, scanRoot, reg, noLive), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
@@ -97,11 +123,30 @@ func main() {
 	root.Flags().BoolVar(&debug, "debug", false, "enable debug logging")
 	root.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
 	root.Flags().BoolVar(&noLive, "no-live", false, "disable live session detection")
-	root.Flags().StringVar(&dirOverride, "dir", "", "directory to scan for sessions (default ~/.claude/projects)")
+	root.Flags().StringVar(&dirOverride, "dir", "", "directory to scan for Claude sessions (default ~/.claude/projects)")
 	root.Flags().StringVar(&themeOverride, "theme", "", "color theme: catppuccin-mocha, nord, dracula")
+	root.Flags().StringVar(&opencodeDBPath, "opencode-db", "", "path to OpenCode SQLite DB (default ~/.local/share/opencode/opencode.db)")
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+// scanAllStores calls Scan on every registered SessionStore and merges the
+// results. A failure in any one store logs a warn and continues — losing
+// Claude sessions because OC can't read its DB (or vice versa) is worse
+// than a partial picker.
+func scanAllStores(ctx context.Context, reg *backend.Registry) ([]backend.SessionMeta, error) {
+	var out []backend.SessionMeta
+	for _, s := range reg.Stores() {
+		metas, err := s.Scan(ctx)
+		if err != nil {
+			slog.Warn("store scan failed; continuing", "kind", s.Kind(), "err", err)
+			continue
+		}
+		slog.Info("store scan complete", "kind", s.Kind(), "count", len(metas))
+		out = append(out, metas...)
+	}
+	return out, nil
 }
