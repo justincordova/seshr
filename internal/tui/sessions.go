@@ -504,24 +504,19 @@ func (p Picker) renderSessionPanel(width, height int) string {
 
 func (p Picker) renderGroupedList(width int) string {
 	var b strings.Builder
-	// Line budget rather than row budget so group rows (2 lines) and
-	// session rows (1 line) can coexist without overflowing the panel.
+	// Each row is exactly one line (see rowHeight). Lines are separated by
+	// a single '\n' which costs no extra budget — the panel body is sized
+	// to fit `budget` lines verbatim. Group boundaries are visually clear
+	// from the project gutter color and uppercase project header, so we
+	// don't insert blank separator rows.
 	budget := p.bodyLines()
 
 	linesUsed := 0
-	for i := p.offset; i < len(p.flatRows); i++ {
-		row := p.flatRows[i]
-		h := rowHeight(row.Kind)
-		if linesUsed > 0 && linesUsed+1+h > budget {
-			break
-		}
-		if linesUsed == 0 && h > budget {
-			break
-		}
+	for i := p.offset; i < len(p.flatRows) && linesUsed < budget; i++ {
 		if linesUsed > 0 {
 			b.WriteByte('\n')
-			linesUsed++
 		}
+		row := p.flatRows[i]
 		switch row.Kind {
 		case RowGroup:
 			b.WriteString(p.renderGroupHeader(row, i == p.cursor, width))
@@ -529,22 +524,10 @@ func (p Picker) renderGroupedList(width int) string {
 			meta := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
 			g := p.groups[row.GroupIdx]
 			b.WriteString(p.renderSessionRow(meta, g.Color, i == p.cursor, width))
-			if i+1 < len(p.flatRows) && p.flatRows[i+1].Kind == RowGroup {
-				b.WriteByte('\n')
-				linesUsed++
-			}
 		}
-		linesUsed += h
+		linesUsed++
 	}
 	return b.String()
-}
-
-// rowHeight returns the total line count each row kind occupies. All rows are
-// 1 line tall — group headers and session rows render identically. The gutter
-// carries project color across adjacent rows so a whole project reads as one
-// connected bar on the left.
-func rowHeight(kind RowKind) int {
-	return 1
 }
 
 func panel(title, body string, width, height int) string {
@@ -761,36 +744,56 @@ func (p Picker) renderFooter(width int) string {
 }
 
 // bodyLines returns the number of text lines available inside the main
-// session panel's body (inside the border/title chrome).
+// session panel's body (inside the border chrome). Mirrors the chrome
+// arithmetic in View() so key handlers (which don't have access to the
+// computed mainH) get the same answer.
+//
+// Chrome stack (each contributes its rendered Height):
+//
+//	header                      — always 1 line
+//	welcome banner              — 1 line when showWelcome
+//	stats strip                 — always 1 line
+//	live-detection banner       — 1 line when banner != ""
+//	main panel (this)           — uses the remaining vertical
+//	delete-error line           — 1 line when deleteErr != nil
+//	search bar                  — 1 line when search is open
+//	footer                      — always 1 line
+//
+// boxStyle adds a 1-line top + 1-line bottom border around the panel body
+// (no vertical padding), so we subtract another 2 to get the body budget.
 func (p Picker) bodyLines() int {
 	if p.height <= 0 {
 		return 16
 	}
-	fixedH := 3
+	fixedH := 3 // header + stats + footer
+	if p.showWelcome {
+		fixedH++
+	}
+	if p.banner != "" {
+		fixedH++
+	}
 	if p.deleteErr != nil {
+		fixedH++
+	}
+	if p.search.Active() {
 		fixedH++
 	}
 	mainH := p.height - fixedH
 	if mainH < 6 {
 		mainH = 6
 	}
-	bodyH := mainH - 4
+	bodyH := mainH - 2 // border top + bottom
 	if bodyH < 1 {
 		return 1
 	}
 	return bodyH
 }
 
-// visibleCount returns a conservative row count used for cursor-scroll
-// clamping. Group rows are 2 lines tall so worst-case assume every visible
-// row is a group header — this guarantees the cursor stays in view.
+// visibleCount returns the row count used for cursor-scroll clamping. All
+// rows are 1 line tall (rowHeight always returns 1), so this equals the
+// body line budget.
 func (p Picker) visibleCount() int {
-	bodyH := p.bodyLines()
-	rows := bodyH / 2
-	if rows < 1 {
-		rows = 1
-	}
-	return rows
+	return p.bodyLines()
 }
 
 // clampOffset adjusts offset so that cursor is within [offset, offset+visible).
