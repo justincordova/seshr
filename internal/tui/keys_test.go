@@ -24,6 +24,39 @@ func TestReplayKeys_AllBindingsDefined(t *testing.T) {
 	assert.NotEmpty(t, k.Quit.Keys())
 }
 
+func TestDefaultScrollKeys_BindsExpectedKeys(t *testing.T) {
+	k := tui.DefaultScrollKeys()
+
+	assert.Equal(t, []string{"g"}, k.Top.Keys())
+	assert.Equal(t, []string{"G"}, k.Bottom.Keys())
+	assert.Equal(t, []string{"ctrl+d"}, k.PageDown.Keys())
+	assert.Equal(t, []string{"ctrl+u"}, k.PageUp.Keys())
+}
+
+func TestPickerKeys_EmbedsScrollKeys(t *testing.T) {
+	k := tui.DefaultPickerKeys()
+
+	assert.Equal(t, []string{"g"}, k.Top.Keys())
+	assert.Equal(t, []string{"G"}, k.Bottom.Keys())
+	assert.Equal(t, []string{"ctrl+d"}, k.PageDown.Keys())
+	assert.Equal(t, []string{"ctrl+u"}, k.PageUp.Keys())
+	assert.Equal(t, []string{"v"}, k.View.Keys())
+}
+
+func TestOverviewKeys_EmbedsScrollKeys(t *testing.T) {
+	k := tui.DefaultOverviewKeys()
+
+	assert.Equal(t, []string{"g"}, k.Top.Keys())
+	assert.Equal(t, []string{"G"}, k.Bottom.Keys())
+}
+
+func TestReplayKeys_EmbedsScrollKeys(t *testing.T) {
+	k := tui.DefaultReplayKeys()
+
+	assert.Equal(t, []string{"g"}, k.Top.Keys())
+	assert.Equal(t, []string{"G"}, k.Bottom.Keys())
+}
+
 func TestOverviewKeys_AllBindingsDefined(t *testing.T) {
 	k := tui.DefaultOverviewKeys()
 

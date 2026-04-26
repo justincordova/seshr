@@ -23,7 +23,17 @@ type Config struct {
 
 	// Phase 7: first-launch welcome.
 	WelcomeShown bool `json:"welcome_shown,omitempty"`
+
+	// Phase 12: picker view preference. One of PickerViewRecent or
+	// PickerViewProject. Empty/invalid values fall back to default on Load.
+	PickerViewMode string `json:"picker_view_mode,omitempty"`
 }
+
+// Picker view modes persisted in Config.PickerViewMode.
+const (
+	PickerViewRecent  = "recent"
+	PickerViewProject = "project"
+)
 
 func Default() Config {
 	return Config{
@@ -31,6 +41,7 @@ func Default() Config {
 		GapThresholdSeconds: 3 * 60,
 		SessionDirs:         nil,
 		SchemaVersion:       1,
+		PickerViewMode:      PickerViewRecent,
 	}
 }
 
@@ -93,6 +104,9 @@ func Load() (Config, error) {
 	}
 	if cfg.SchemaVersion == 0 {
 		cfg.SchemaVersion = d.SchemaVersion
+	}
+	if cfg.PickerViewMode != PickerViewRecent && cfg.PickerViewMode != PickerViewProject {
+		cfg.PickerViewMode = d.PickerViewMode
 	}
 	return cfg, nil
 }

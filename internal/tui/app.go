@@ -172,7 +172,7 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	ctx, cancel := context.WithCancel(context.Background())
-	picker := NewPicker(metas, th, reg)
+	picker := NewPicker(metas, th, reg, cfg.PickerViewMode)
 	if !cfg.WelcomeShown {
 		picker.showWelcome = true
 	}
@@ -293,6 +293,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.cfg = sm.Cfg
 		a.theme = ThemeByName(sm.Cfg.Theme)
 		a.styles = NewStyles(a.theme)
+		return a, nil
+	}
+
+	// ── PickerViewModeChangedMsg: persist new view-mode preference ───────────
+	if vm, ok := msg.(PickerViewModeChangedMsg); ok {
+		a.cfg.PickerViewMode = vm.Mode
+		if err := config.Save(a.cfg); err != nil {
+			slog.Warn("save picker view mode failed", "err", err)
+		}
 		return a, nil
 	}
 
@@ -440,7 +449,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case RescanDoneMsg:
 		if m.Metas != nil {
-			a.picker = NewPicker(m.Metas, a.theme, a.registry)
+			a.picker = NewPicker(m.Metas, a.theme, a.registry, a.cfg.PickerViewMode)
 		}
 		return a, nil
 	case spinner.TickMsg:

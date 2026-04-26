@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sort"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/justincordova/seshr/internal/backend"
+	"github.com/justincordova/seshr/internal/config"
 	"github.com/justincordova/seshr/internal/session"
 )
 
@@ -39,12 +40,26 @@ type Picker struct {
 	registry    *backend.Registry
 	banner      string // set by App when live detection fails
 	showWelcome bool   // show first-launch welcome
+
+	// viewMode is one of config.PickerViewRecent or config.PickerViewProject.
+	// Recent (default): flat list with live sessions pinned at top + divider.
+	// Project: groups-by-project with synthetic "LIVE" group pinned at top.
+	viewMode string
+
+	// recentMetas is the ordered list of metas used by Recent view; live
+	// rows first (sorted by status class then UpdatedAt desc), ended rows
+	// after. Indexed by PickerRow.SessionIdx when viewMode == Recent.
+	recentMetas []backend.SessionMeta
 }
 
 // NewPicker builds a Picker from pre-scanned metadata.
 // reg may be nil; it is used for deletion operations.
-// showWelcome displays the first-launch banner until any keypress.
-func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Picker {
+// viewMode is one of config.PickerViewRecent or config.PickerViewProject;
+// any other value falls back to Recent.
+func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry, viewMode string) Picker {
+	if viewMode != config.PickerViewProject {
+		viewMode = config.PickerViewRecent
+	}
 	p := Picker{
 		metas:     metas,
 		allMetas:  metas,
@@ -54,8 +69,10 @@ func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Pic
 		search:    NewSearchBar(),
 		collapsed: make(map[string]bool),
 		registry:  reg,
+		viewMode:  viewMode,
 	}
 	// Projects collapsed by default; user expands with enter or space.
+	// (Has no effect in Recent view, but cheap to compute.)
 	groups := GroupByProject(metas, th)
 	for _, g := range groups {
 		p.collapsed[g.Name] = true
@@ -67,6 +84,10 @@ func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry) Pic
 // Cursor returns the current selection index.
 func (p Picker) Cursor() int { return p.cursor }
 
+// ViewMode returns the picker's current view mode (config.PickerViewRecent
+// or config.PickerViewProject).
+func (p Picker) ViewMode() string { return p.viewMode }
+
 // SetLiveIndex replaces the picker's live-session map. Called by the app
 // after each slow-tick reconcile so the picker rows can render pulsing
 // status, current-task, and context-warning info.
@@ -74,16 +95,21 @@ func (p Picker) Cursor() int { return p.cursor }
 // SetLiveIndex also synthesizes SessionMeta entries for any live sessions
 // not present in the picker's existing metas (e.g. a Claude session that
 // was just opened and hasn't written a transcript yet, so the launch-time
-// Scan didn't see it). Synthesized rows show up at the top of their
-// project group; the group is auto-expanded so the live row is visible.
+// Scan didn't see it). The new index is then folded into the row layout —
+// in Project view this materializes the synthetic LIVE pinned group; in
+// Recent view it pins live sessions to the top of the flat list.
 func (p *Picker) SetLiveIndex(idx map[string]*backend.LiveSession) {
 	p.liveIndex = idx
 	p.syncLiveMetas()
+	// liveIndex changes affect both Recent and Project layouts (LIVE group
+	// presence, live-row pinning, divider). Always rebuild so the next
+	// View() reflects current liveness.
+	p.rebuildGroups()
 }
 
 // syncLiveMetas augments allMetas with synthesized entries for live sessions
-// not already present, then rebuilds groups and auto-expands any group that
-// contains a live session.
+// not already present in the metas list (e.g. a process detected before its
+// transcript exists on disk).
 func (p *Picker) syncLiveMetas() {
 	if len(p.liveIndex) == 0 {
 		return
@@ -105,22 +131,7 @@ func (p *Picker) syncLiveMetas() {
 
 	if added {
 		// metas mirrors allMetas when no search filter is active.
-		// (Phase 7 picker has no persistent filter that we'd clobber here.)
 		p.metas = p.allMetas
-		p.rebuildGroups()
-	}
-
-	// Auto-expand any group containing a live session so the row is visible.
-	for _, g := range p.groups {
-		for _, m := range g.Sessions {
-			if _, isLive := p.liveIndex[m.ID]; isLive {
-				if p.collapsed[g.Name] {
-					p.collapsed[g.Name] = false
-					p.rebuildGroups()
-				}
-				break
-			}
-		}
 	}
 }
 
@@ -159,28 +170,24 @@ func (p Picker) InConfirm() bool { return p.confirm != nil }
 // Metas returns the current session list (post-delete).
 func (p Picker) Metas() []backend.SessionMeta { return p.metas }
 
-// rebuildGroups recomputes the project groups and flat row index from p.metas.
+// rebuildGroups recomputes the flat row index from p.metas. In Recent mode
+// it builds a flat list with live rows pinned at top + divider; in Project
+// mode it builds project groups and a synthetic LIVE group at the top
+// (live sessions already sorted by status class inside SplitLiveGroup).
 func (p *Picker) rebuildGroups() {
-	p.groups = GroupByProject(p.metas, p.theme)
-	p.sortLiveToTop()
-	p.flatRows = BuildFlatRows(p.groups, p.collapsed)
-}
-
-func (p *Picker) sortLiveToTop() {
-	if len(p.liveIndex) == 0 {
+	if p.viewMode == config.PickerViewRecent {
+		p.flatRows, p.recentMetas = BuildRecentRows(p.metas, p.liveIndex)
+		p.groups = nil
 		return
 	}
-	for i := range p.groups {
-		g := &p.groups[i]
-		sort.SliceStable(g.Sessions, func(a, b int) bool {
-			aLive := p.liveIndex[g.Sessions[a].ID] != nil
-			bLive := p.liveIndex[g.Sessions[b].ID] != nil
-			if aLive != bLive {
-				return aLive
-			}
-			return g.Sessions[a].UpdatedAt.After(g.Sessions[b].UpdatedAt)
-		})
+	p.recentMetas = nil
+	p.groups = GroupByProject(p.metas, p.theme)
+	p.groups = SplitLiveGroup(p.groups, p.liveIndex, p.theme)
+	// LIVE group always renders expanded; clear any stale collapsed flag.
+	if len(p.groups) > 0 && p.groups[0].Name == liveGroupName {
+		delete(p.collapsed, liveGroupName)
 	}
+	p.flatRows = BuildFlatRows(p.groups, p.collapsed)
 }
 
 func (p *Picker) toggleCollapse(row PickerRow) {
@@ -201,13 +208,26 @@ func (p Picker) selectedRow() (PickerRow, bool) {
 }
 
 // selectedSession returns the session meta at the cursor, or false if the
-// cursor is on a group header or there are no rows.
+// cursor is on a group header, a divider, or there are no rows.
 func (p Picker) selectedSession() (backend.SessionMeta, bool) {
 	row, ok := p.selectedRow()
 	if !ok || row.Kind != RowSession {
 		return backend.SessionMeta{}, false
 	}
-	return p.groups[row.GroupIdx].Sessions[row.SessionIdx], true
+	if p.viewMode == config.PickerViewRecent {
+		if row.SessionIdx < 0 || row.SessionIdx >= len(p.recentMetas) {
+			return backend.SessionMeta{}, false
+		}
+		return p.recentMetas[row.SessionIdx], true
+	}
+	if row.GroupIdx < 0 || row.GroupIdx >= len(p.groups) {
+		return backend.SessionMeta{}, false
+	}
+	g := p.groups[row.GroupIdx]
+	if row.SessionIdx < 0 || row.SessionIdx >= len(g.Sessions) {
+		return backend.SessionMeta{}, false
+	}
+	return g.Sessions[row.SessionIdx], true
 }
 
 // Selected returns the currently highlighted SessionMeta, or the zero value
@@ -291,6 +311,42 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, p.keys.Search):
 			p.search.Open()
 			return p, nil
+		case key.Matches(msg, p.keys.Top):
+			p.cursor = 0
+			p.offset = 0
+			return p, nil
+		case key.Matches(msg, p.keys.Bottom):
+			if n := len(p.flatRows); n > 0 {
+				p.cursor = n - 1
+				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
+			}
+			return p, nil
+		case key.Matches(msg, p.keys.PageDown):
+			if n := len(p.flatRows); n > 0 {
+				step := p.visibleCount() / 2
+				if step < 1 {
+					step = 1
+				}
+				p.cursor += step
+				if p.cursor > n-1 {
+					p.cursor = n - 1
+				}
+				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
+			}
+			return p, nil
+		case key.Matches(msg, p.keys.PageUp):
+			if len(p.flatRows) > 0 {
+				step := p.visibleCount() / 2
+				if step < 1 {
+					step = 1
+				}
+				p.cursor -= step
+				if p.cursor < 0 {
+					p.cursor = 0
+				}
+				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+			}
+			return p, nil
 		case key.Matches(msg, p.keys.Up):
 			if p.cursor > 0 {
 				p.cursor--
@@ -321,11 +377,19 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return p, nil
 			}
-			row, _ := p.selectedRow()
-			g := p.groups[row.GroupIdx]
+			// Confirm header: in Project view we use the group's display name;
+			// in Recent view we have no group, so fall back to the session's
+			// project (already shown after the dot).
+			header := sel.Project
+			if p.viewMode == config.PickerViewProject {
+				row, _ := p.selectedRow()
+				if row.GroupIdx >= 0 && row.GroupIdx < len(p.groups) {
+					header = p.groups[row.GroupIdx].DisplayName
+				}
+			}
 			c := NewConfirm(
 				"Delete session?",
-				fmt.Sprintf("%s · %s\nThis cannot be undone.", g.DisplayName, sel.Project),
+				fmt.Sprintf("%s · %s\nThis cannot be undone.", header, sel.Project),
 				p.theme,
 			)
 			p.confirm = &c
@@ -336,6 +400,17 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return p, nil
 			}
 			return p, func() tea.Msg { return RestoreRequestedMsg{ID: sel.ID, Kind: sel.Kind} }
+		case key.Matches(msg, p.keys.View):
+			if p.viewMode == config.PickerViewRecent {
+				p.viewMode = config.PickerViewProject
+			} else {
+				p.viewMode = config.PickerViewRecent
+			}
+			p.cursor = 0
+			p.offset = 0
+			p.rebuildGroups()
+			mode := p.viewMode
+			return p, func() tea.Msg { return PickerViewModeChangedMsg{Mode: mode} }
 		}
 		if msg.String() == " " {
 			if row, ok := p.selectedRow(); ok && row.Kind == RowGroup {
@@ -504,30 +579,69 @@ func (p Picker) renderSessionPanel(width, height int) string {
 
 func (p Picker) renderGroupedList(width int) string {
 	var b strings.Builder
-	// Each row is exactly one line (see rowHeight). Lines are separated by
-	// a single '\n' which costs no extra budget — the panel body is sized
-	// to fit `budget` lines verbatim. Group boundaries are visually clear
-	// from the project gutter color and uppercase project header, so we
-	// don't insert blank separator rows.
+	// Rows have variable height (see rowHeight). We sum heights into linesUsed
+	// to avoid overflowing the panel body. A row that wouldn't fit is dropped.
 	budget := p.bodyLines()
 
 	linesUsed := 0
-	for i := p.offset; i < len(p.flatRows) && linesUsed < budget; i++ {
+	for i := p.offset; i < len(p.flatRows); i++ {
+		row := p.flatRows[i]
+		h := p.rowHeight(row)
+		if linesUsed+h > budget {
+			break
+		}
 		if linesUsed > 0 {
 			b.WriteByte('\n')
 		}
-		row := p.flatRows[i]
 		switch row.Kind {
 		case RowGroup:
 			b.WriteString(p.renderGroupHeader(row, i == p.cursor, width))
 		case RowSession:
-			meta := p.groups[row.GroupIdx].Sessions[row.SessionIdx]
-			g := p.groups[row.GroupIdx]
-			b.WriteString(p.renderSessionRow(meta, g.Color, i == p.cursor, width))
+			meta, color := p.metaForRow(row)
+			selected := i == p.cursor
+			if h == 2 {
+				b.WriteString(p.renderTwoLineSessionRow(meta, color, selected, width))
+			} else {
+				b.WriteString(p.renderSessionRow(meta, color, selected, width))
+			}
+		case RowDivider:
+			b.WriteString(p.renderDivider(width))
 		}
-		linesUsed++
+		linesUsed += h
 	}
 	return b.String()
+}
+
+// metaForRow resolves a session row to its SessionMeta and project gutter
+// color, dispatching on view mode.
+func (p Picker) metaForRow(row PickerRow) (backend.SessionMeta, lipgloss.TerminalColor) {
+	if p.viewMode == config.PickerViewRecent {
+		m := p.recentMetas[row.SessionIdx]
+		return m, projectColor(m.Project, p.theme)
+	}
+	g := p.groups[row.GroupIdx]
+	return g.Sessions[row.SessionIdx], g.Color
+}
+
+// rowHeight returns the line count for a row. RowGroup and RowDivider are
+// always 1 line; RowSession is 2 lines in Recent view and inside the
+// synthetic LIVE group (Project view), 1 line otherwise.
+func (p Picker) rowHeight(row PickerRow) int {
+	switch row.Kind {
+	case RowGroup, RowDivider:
+		return 1
+	case RowSession:
+		if p.viewMode == config.PickerViewRecent {
+			return 2
+		}
+		// Project view: LIVE group rows are 2-line, others 1-line.
+		if row.GroupIdx >= 0 && row.GroupIdx < len(p.groups) &&
+			p.groups[row.GroupIdx].Name == liveGroupName {
+			return 2
+		}
+		return 1
+	}
+	return 1
 }
 
 func panel(title, body string, width, height int) string {
@@ -555,13 +669,22 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	}
 	gutter := gutterStyle.Render("▌")
 
-	// Project name in its own color + bold + uppercase so each project reads
-	// as a distinct visual anchor. Selection just brightens via no-faint.
-	nameStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
-	if !selected {
-		nameStyle = lipgloss.NewStyle().Foreground(g.Color).Bold(true).Faint(true)
+	// LIVE pinned group renders with the bullet glyph + green title; no
+	// uppercase remap because the name is already shaped for display.
+	var name string
+	if g.Name == liveGroupName {
+		nameStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
+		if !selected {
+			nameStyle = nameStyle.Faint(true)
+		}
+		name = nameStyle.Render("◉ LIVE")
+	} else {
+		nameStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
+		if !selected {
+			nameStyle = nameStyle.Faint(true)
+		}
+		name = nameStyle.Render(strings.ToUpper(truncate(g.DisplayName, 30)))
 	}
-	name := nameStyle.Render(strings.ToUpper(truncate(g.DisplayName, 30)))
 
 	count := dimStyle.Render(fmt.Sprintf("%s %s", glyph, countLabel(len(g.Sessions), "session")))
 	tokStr := dimStyle.Render(humanizeTokens(int64(g.TotalTokens)) + " tok")
@@ -572,8 +695,7 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 	if gap < 4 {
 		gap = 4
 	}
-	line1 := left + strings.Repeat(" ", gap) + right
-	return line1
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
@@ -613,7 +735,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 	if selected {
 		idStyle = lipgloss.NewStyle().Foreground(p.theme.Foreground)
 	}
-	id := idStyle.Render(truncate(m.ID, 20))
+	id := idStyle.Render(shortDisplayID(m.Kind, m.ID))
 
 	// Source badge (fixed-width dim)
 	badgeStyle := lipgloss.NewStyle().Foreground(colSubtext0)
@@ -708,6 +830,97 @@ func sourceBadge(kind session.SourceKind) string {
 	}
 }
 
+// renderTwoLineSessionRow renders a session row as id+meta on line 1 and a
+// dim, indented project path on line 2. Used in Recent view and inside the
+// pinned LIVE group in Project view.
+func (p Picker) renderTwoLineSessionRow(m backend.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
+	line1 := p.renderSessionRow(m, projectColor, selected, width)
+	// Indent under the id column. Layout: gutter(1) + 3 spaces + glyph(1)
+	// + space(1) = 6 cols.
+	const indent = "      "
+	avail := width - lipgloss.Width(indent)
+	if avail < 10 {
+		// Too narrow for a useful path line — fall back to single line.
+		return line1
+	}
+	path := homePathDisplay(m.Directory)
+	if path == "" {
+		path = m.Project
+	}
+	path = leftTruncate(path, avail)
+	pathStyle := lipgloss.NewStyle().Foreground(colSubtext0)
+	if !selected {
+		pathStyle = pathStyle.Faint(true)
+	}
+	return line1 + "\n" + indent + pathStyle.Render(path)
+}
+
+// renderDivider renders a dim horizontal rule used between the live block
+// and the ended block in Recent view.
+func (p Picker) renderDivider(width int) string {
+	if width < 1 {
+		return ""
+	}
+	line := strings.Repeat("─", width)
+	return lipgloss.NewStyle().Foreground(colOverlay1).Faint(true).Render(line)
+}
+
+// homePathDisplay replaces the user's home dir prefix with "~". Returns the
+// input unchanged if home cannot be resolved or the path has no home prefix.
+func homePathDisplay(p string) string {
+	if p == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == home {
+		return "~"
+	}
+	if strings.HasPrefix(p, home+"/") {
+		return "~" + strings.TrimPrefix(p, home)
+	}
+	return p
+}
+
+// leftTruncate returns s shortened to width by removing leftmost characters
+// and prepending "…". Preserves the rightmost characters (most informative
+// part of a path — the basename). If s is already short enough, returns
+// it unchanged.
+func leftTruncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	rs := []rune(s)
+	if len(rs) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	keep := width - 1
+	return "…" + string(rs[len(rs)-keep:])
+}
+
+// shortDisplayID returns a short, prefixed display id for a session. Claude
+// sessions use a "sesh_" prefix, OpenCode uses "ses_". The body is the first
+// 6 lowercase characters of the source id with dashes stripped (typically
+// the leading hex of a UUID). Display only — full SessionMeta.ID is still
+// used for all internal lookups, deletes, and search matching.
+func shortDisplayID(kind session.SourceKind, id string) string {
+	body := strings.ToLower(strings.ReplaceAll(id, "-", ""))
+	if len(body) > 6 {
+		body = body[:6]
+	}
+	switch kind {
+	case session.SourceOpenCode:
+		return "ses_" + body
+	default:
+		return "sesh_" + body
+	}
+}
+
 func (p *Picker) applySearchFilter() {
 	if p.search.Query() == "" {
 		p.metas = p.allMetas
@@ -734,9 +947,10 @@ func (p *Picker) applySearchFilter() {
 
 func (p Picker) renderFooter(width int) string {
 	hints := []string{
-		kbdPill("↑↓/jk", "nav"),
+		kbdPill("jk/gG", "nav"),
+		kbdPill("^d^u", "page"),
 		kbdPill("enter", "open"),
-		kbdPill("d", "delete"),
+		kbdPill("v", "view"),
 		kbdPill("/", "search"),
 		kbdPill("q", "quit"),
 	}
@@ -789,11 +1003,30 @@ func (p Picker) bodyLines() int {
 	return bodyH
 }
 
-// visibleCount returns the row count used for cursor-scroll clamping. All
-// rows are 1 line tall (rowHeight always returns 1), so this equals the
-// body line budget.
+// visibleCount returns the row count used for cursor-scroll clamping. Rows
+// can be 1 or 2 lines (see rowHeight). We compute the actual capacity by
+// walking from the current offset summing heights until the body budget is
+// exhausted. This stays accurate as the user scrolls through regions of
+// mixed 1-line and 2-line rows (Project view with LIVE group expanded).
 func (p Picker) visibleCount() int {
-	return p.bodyLines()
+	body := p.bodyLines()
+	if len(p.flatRows) == 0 {
+		return body
+	}
+	used := 0
+	count := 0
+	for i := p.offset; i < len(p.flatRows); i++ {
+		h := p.rowHeight(p.flatRows[i])
+		if used+h > body {
+			break
+		}
+		used += h
+		count++
+	}
+	if count < 1 {
+		count = 1
+	}
+	return count
 }
 
 // clampOffset adjusts offset so that cursor is within [offset, offset+visible).
@@ -815,6 +1048,12 @@ func clampOffset(cursor, offset, total, visible int) int {
 		offset = 0
 	}
 	return offset
+}
+
+// PickerViewModeChangedMsg signals that the picker's view mode toggled
+// and the new value should be persisted to config.
+type PickerViewModeChangedMsg struct {
+	Mode string
 }
 
 // OpenSessionMsg is emitted by the picker when enter is pressed on a session.

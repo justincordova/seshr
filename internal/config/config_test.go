@@ -64,6 +64,55 @@ func TestLoadSave_RoundTrip_PreservesValues(t *testing.T) {
 	assert.Equal(t, 120, got.GapThresholdSeconds)
 }
 
+func TestLoad_DefaultsPickerViewToRecent(t *testing.T) {
+	// Arrange
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	// Act
+	cfg, err := config.Load()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, config.PickerViewRecent, cfg.PickerViewMode)
+}
+
+func TestLoad_RoundTripsPickerView(t *testing.T) {
+	// Arrange
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	cfg := config.Default()
+	cfg.PickerViewMode = config.PickerViewProject
+
+	// Act
+	require.NoError(t, config.Save(cfg))
+	got, err := config.Load()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, config.PickerViewProject, got.PickerViewMode)
+}
+
+func TestLoad_InvalidViewModeFallsBackToDefault(t *testing.T) {
+	// Arrange
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	dir := filepath.Join(tmp, ".seshr")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "config.json"),
+		[]byte(`{"picker_view_mode":"garbage"}`),
+		0o644,
+	))
+
+	// Act
+	cfg, err := config.Load()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, config.PickerViewRecent, cfg.PickerViewMode)
+}
+
 func TestLoad_UnknownField_IgnoredWithoutError(t *testing.T) {
 	// Arrange
 	tmp := t.TempDir()
