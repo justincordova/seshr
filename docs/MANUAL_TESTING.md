@@ -129,6 +129,34 @@ tail -f ~/.seshr/debug.log
 
 ---
 
+## Picker View Mode & Vim Scroll
+
+- [ ] First launch with no config → defaults to Recent view (flat list, no group headers)
+- [ ] Recent view: live sessions appear at top with `●` glyph (green=working, yellow=waiting, dim `◌`=ambiguous)
+- [ ] Recent view: dim `─────` divider line appears between live block and ended block
+- [ ] Recent view: divider omitted when there are no live sessions OR no ended sessions
+- [ ] Recent view rows are 2 lines: short id+meta on top, dim left-truncated path below (e.g. `…/projects/seshr`)
+- [ ] Press `v` → switches to Project view; `◉ LIVE` group pinned at top in green; live sessions inside it as 2-line rows
+- [ ] Project view: live sessions appear *only* in the LIVE group, not duplicated in their project group below
+- [ ] Project view: regular project groups render as 1-line rows (collapsed by default)
+- [ ] Press `v` again → cycles back to Recent
+- [ ] Quit and relaunch → view mode persisted in `~/.seshr/config.json` as `"picker_view_mode"`
+- [ ] Edit `~/.seshr/config.json` to set `"picker_view_mode": "garbage"`, relaunch → falls back to Recent silently
+- [ ] Search (`/`): typing `g`/`G` filters, doesn't trigger goto-top/goto-bottom
+- [ ] `g` jumps cursor to top in: picker, topic overview, replay, log viewer, settings
+- [ ] `G` jumps to bottom in same
+- [ ] `ctrl+d` / `ctrl+u` page through long lists in picker, overview, replay, log viewer
+- [ ] In settings (small fixed list) `ctrl+d` jumps to last field, `ctrl+u` to first — acceptable
+- [ ] Two-line rows render correctly at 120, 100, 80 cols; at <40 cols path line drops cleanly
+- [ ] Short ids render as `sesh_xxxxxx` for Claude, `ses_xxxxxx` for OpenCode
+- [ ] Searching `bb859dee-` (full id) still matches sessions whose displayed id is shortened
+- [ ] When all sessions are live → no divider in Recent view (entire list is live block)
+- [ ] When no live sessions → no LIVE pinned group in Project view; project groups render as before
+- [ ] Live session ends → on next slow tick (~10s), falls out of LIVE group / live block, reappears in normal position
+- [ ] Footer shows `↑↓/jk nav · gG top/bot · ^d/^u page · enter open · v view · / search · q quit`
+
+---
+
 ## Regression Pass (before any tag)
 
 Run the full Phase 1–6 checklist end-to-end before cutting a release. Manual testing is cheap; a broken release is expensive.
