@@ -124,6 +124,36 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		case !m.sidebarFocus && key.Matches(msg, m.keys.Top):
+			m.cursor = 0
+			if m.slim {
+				m.skipInvisibleForward()
+			}
+			m.mainVP.GotoTop()
+			return m, nil
+		case !m.sidebarFocus && key.Matches(msg, m.keys.Bottom):
+			if n := len(m.sess.Turns); n > 0 {
+				m.cursor = n - 1
+				if m.slim {
+					m.skipInvisibleBackward()
+				}
+				m.mainVP.GotoBottom()
+			}
+			return m, nil
+		case !m.sidebarFocus && key.Matches(msg, m.keys.PageDown):
+			if m.expandedTool >= 0 {
+				m.vp.HalfPageDown()
+			} else {
+				m.mainVP.HalfPageDown()
+			}
+			return m, nil
+		case !m.sidebarFocus && key.Matches(msg, m.keys.PageUp):
+			if m.expandedTool >= 0 {
+				m.vp.HalfPageUp()
+			} else {
+				m.mainVP.HalfPageUp()
+			}
+			return m, nil
 		case key.Matches(msg, m.keys.SidebarFocus):
 			if m.width >= narrowBreakpoint && len(m.topicsList) > 0 {
 				if !m.sidebarFocus {

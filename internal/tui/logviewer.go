@@ -49,6 +49,12 @@ func (lv LogViewer) Update(msg tea.Msg) (LogViewer, bool) {
 		case "G":
 			lv.vp.GotoBottom()
 			return lv, false
+		case "ctrl+d":
+			lv.vp.HalfPageDown()
+			return lv, false
+		case "ctrl+u":
+			lv.vp.HalfPageUp()
+			return lv, false
 		}
 	}
 	var cmd tea.Cmd
@@ -61,7 +67,7 @@ func (lv LogViewer) Update(msg tea.Msg) (LogViewer, bool) {
 func (lv LogViewer) View() string {
 	title := textStyle.Bold(true).Render("Debug Log") +
 		"  " + dimStyle.Render("~/.seshr/debug.log")
-	hint := dimStyle.Render("j/k scroll · g/G top/bottom · esc close")
+	hint := dimStyle.Render("j/k scroll · g/G top/bot · ^d/^u page · esc close")
 
 	header := lipgloss.NewStyle().
 		Width(lv.width).

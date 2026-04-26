@@ -67,6 +67,59 @@ func TestOverview_DownKey_AtBottomStays(t *testing.T) {
 	assert.Equal(t, len(tops)-1, o.Cursor())
 }
 
+func TestOverview_VimGotoTop(t *testing.T) {
+	// Arrange — move cursor down first.
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	o = next.(tui.Overview)
+	require.Equal(t, 1, o.Cursor())
+
+	// Act
+	next2, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+
+	// Assert
+	assert.Equal(t, 0, next2.(tui.Overview).Cursor())
+}
+
+func TestOverview_VimGotoBottom(t *testing.T) {
+	// Arrange
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
+
+	// Act
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+
+	// Assert
+	assert.Equal(t, len(tops)-1, next.(tui.Overview).Cursor())
+}
+
+func TestOverview_VimPageDown_NoCrash(t *testing.T) {
+	// Arrange
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
+
+	// Act — ctrl+d should not crash even on a small list.
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	// Assert
+	cur := next.(tui.Overview).Cursor()
+	assert.GreaterOrEqual(t, cur, 0)
+	assert.LessOrEqual(t, cur, len(tops)-1)
+}
+
+func TestOverview_VimPageUp_NoCrash(t *testing.T) {
+	// Arrange
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)
+
+	// Act
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+
+	// Assert
+	assert.Equal(t, 0, next.(tui.Overview).Cursor())
+}
+
 func TestOverview_EnterKey_TogglesExpand(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0)

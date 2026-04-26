@@ -38,6 +38,40 @@ func TestReplay_NewDefaults(t *testing.T) {
 	assert.False(t, m.AutoPlaying())
 }
 
+func TestReplay_VimGotoFirstTurn(t *testing.T) {
+	// Arrange — advance cursor.
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = next.(tui.Replay)
+	require.Equal(t, 1, m.Cursor())
+
+	// Act
+	next2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+
+	// Assert
+	assert.Equal(t, 0, next2.(tui.Replay).Cursor())
+}
+
+func TestReplay_VimGotoLastTurn(t *testing.T) {
+	// Arrange
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
+
+	// Act
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+
+	// Assert
+	assert.Equal(t, 2, next.(tui.Replay).Cursor())
+}
+
+func TestReplay_VimPageKeysNoCrash(t *testing.T) {
+	// Arrange
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
+
+	// Act — both should be safe on a small fixture.
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+}
+
 func TestReplay_NextAdvancesCursor(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 

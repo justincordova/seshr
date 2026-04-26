@@ -289,6 +289,42 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, o.keys.Quit):
 			return o, tea.Quit
+		case key.Matches(msg, o.keys.Top):
+			o.cursor = 0
+			o.offset = 0
+			return o, nil
+		case key.Matches(msg, o.keys.Bottom):
+			if n := len(o.topics); n > 0 {
+				o.cursor = n - 1
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
+			}
+			return o, nil
+		case key.Matches(msg, o.keys.PageDown):
+			if n := len(o.topics); n > 0 {
+				step := o.topicBodyHeight() / 2
+				if step < 1 {
+					step = 1
+				}
+				o.cursor += step
+				if o.cursor > n-1 {
+					o.cursor = n - 1
+				}
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
+			}
+			return o, nil
+		case key.Matches(msg, o.keys.PageUp):
+			if len(o.topics) > 0 {
+				step := o.topicBodyHeight() / 2
+				if step < 1 {
+					step = 1
+				}
+				o.cursor -= step
+				if o.cursor < 0 {
+					o.cursor = 0
+				}
+				o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
+			}
+			return o, nil
 		case key.Matches(msg, o.keys.Up):
 			if o.cursor > 0 {
 				o.cursor--

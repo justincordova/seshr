@@ -102,6 +102,15 @@ func (s Settings) Update(msg tea.Msg) (Settings, bool, tea.Cmd) {
 		if s.cursor < fieldCount-1 {
 			s.cursor++
 		}
+	case "g":
+		s.cursor = 0
+	case "G":
+		s.cursor = fieldCount - 1
+	case "ctrl+d":
+		// Half-page on tiny field list = jump to bottom.
+		s.cursor = fieldCount - 1
+	case "ctrl+u":
+		s.cursor = 0
 	case "enter", " ":
 		if s.cursor == fieldTheme {
 			// Cycle through themes without a text input.
