@@ -16,7 +16,7 @@ func TestShortDisplayID_ClaudeUUID(t *testing.T) {
 func TestShortDisplayID_OpenCodeID(t *testing.T) {
 	got := shortDisplayID(session.SourceOpenCode, "23afb0xy")
 
-	assert.Equal(t, "ses_23afb0", got)
+	assert.Equal(t, "sesh_23afb0", got)
 }
 
 func TestShortDisplayID_ShortInput(t *testing.T) {

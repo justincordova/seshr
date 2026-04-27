@@ -903,22 +903,16 @@ func leftTruncate(s string, width int) string {
 	return "…" + string(rs[len(rs)-keep:])
 }
 
-// shortDisplayID returns a short, prefixed display id for a session. Claude
-// sessions use a "sesh_" prefix, OpenCode uses "ses_". The body is the first
-// 6 lowercase characters of the source id with dashes stripped (typically
-// the leading hex of a UUID). Display only — full SessionMeta.ID is still
-// used for all internal lookups, deletes, and search matching.
-func shortDisplayID(kind session.SourceKind, id string) string {
+// shortDisplayID returns a short "sesh_" prefixed display id. The body is
+// the first 6 lowercase hex characters of the source id with dashes stripped.
+// Display only — full SessionMeta.ID is still used for all internal lookups,
+// deletes, and search matching.
+func shortDisplayID(_ session.SourceKind, id string) string {
 	body := strings.ToLower(strings.ReplaceAll(id, "-", ""))
 	if len(body) > 6 {
 		body = body[:6]
 	}
-	switch kind {
-	case session.SourceOpenCode:
-		return "ses_" + body
-	default:
-		return "sesh_" + body
-	}
+	return "sesh_" + body
 }
 
 func (p *Picker) applySearchFilter() {
