@@ -326,24 +326,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case OpenSessionMsg:
 		a.currentViewMeta = m.Meta
-		// Live sessions without a transcript (synthesized from process
-		// detection) can't be loaded from the store. Show the landing
-		// page directly with a minimal SessionView.
-		if live := a.liveIndex.Lookup(m.Meta.ID); live != nil {
-			view := &SessionView{
-				Meta:    m.Meta,
-				Session: &session.Session{Source: m.Meta.Kind},
-				Live:    live,
-			}
-			a.currentView = view
-			a.landing = NewLandingModel(view, a.theme)
-			if a.width > 0 {
-				lm, _ := a.landing.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-				a.landing = lm.(LandingModel)
-			}
-			a.state = stateLanding
-			return a, nil
-		}
 		a.state = stateLoading
 		a.loading = m.Meta.ID
 		return a, tea.Batch(a.spinner.Tick, LoadSessionByIDCmd(m.Meta, a.registry, a.cfg.GapThresholdSeconds))
@@ -372,8 +354,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// reachable from there via `c`).
 		if a.registry != nil {
 			if _, ok := a.registry.Store(m.Session.Source); ok {
+				meta := a.currentViewMeta
+				meta.TurnCount = len(m.Session.Turns)
+				meta.TokenCount = m.Session.TokenCount
 				view := &SessionView{
-					Meta:            a.currentViewMeta,
+					Meta:            meta,
 					Session:         m.Session,
 					Topics:          m.Topics,
 					TurnsLoadedFrom: 0,
@@ -396,6 +381,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateOverview
 		return a, nil
 	case SessionLoadErrMsg:
+		if live := a.liveIndex.Lookup(a.loading); live != nil {
+			view := &SessionView{
+				Meta:    a.currentViewMeta,
+				Session: &session.Session{Source: a.currentViewMeta.Kind},
+				Live:    live,
+			}
+			a.currentView = view
+			a.landing = NewLandingModel(view, a.theme)
+			if a.width > 0 {
+				lm, _ := a.landing.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				a.landing = lm.(LandingModel)
+			}
+			a.state = stateLanding
+			return a, nil
+		}
 		a.prevState = a.state
 		a.state = stateError
 		a.lastErr = fmt.Sprintf("load %s: %v", m.Path, m.Err)

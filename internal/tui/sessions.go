@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -141,13 +142,15 @@ func (p *Picker) syncLiveMetas() {
 func synthMetaFromLive(live *backend.LiveSession) backend.SessionMeta {
 	project := projectFromLive(live)
 	return backend.SessionMeta{
-		ID:        live.SessionID,
-		Kind:      live.Kind,
-		Project:   project,
-		Directory: live.CWD,
-		Title:     "",
-		UpdatedAt: live.LastActivity,
-		CreatedAt: live.LastActivity,
+		ID:         live.SessionID,
+		Kind:       live.Kind,
+		Project:    project,
+		Directory:  live.CWD,
+		Title:      "",
+		TokenCount: live.TokenCount,
+		TurnCount:  live.TurnCount,
+		UpdatedAt:  live.LastActivity,
+		CreatedAt:  live.LastActivity,
 	}
 }
 
@@ -778,20 +781,21 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 	if live != nil {
 		switch {
 		case live.Ambiguous:
-			statusStr = sessMetaStyle.Render("? live")
+			statusStr = lipgloss.NewStyle().Foreground(colOverlay1).Bold(true).Render("? live")
 		case live.Status == backend.StatusWorking && live.CurrentTask != "":
-			statusStr = lipgloss.NewStyle().Foreground(p.theme.Success).Render("working · " + truncate(live.CurrentTask, 30))
+			boldWord := lipgloss.NewStyle().Foreground(p.theme.Success).Bold(true).Render("working")
+			dimTask := sessMetaStyle.Render(truncate(live.CurrentTask, 30))
+			statusStr = boldWord + " " + dimTask
 		case live.Status == backend.StatusWorking:
-			statusStr = lipgloss.NewStyle().Foreground(p.theme.Success).Render("working")
+			statusStr = lipgloss.NewStyle().Foreground(p.theme.Success).Bold(true).Render("working")
 		default:
-			statusStr = lipgloss.NewStyle().Foreground(p.theme.Warning).Render("waiting")
+			statusStr = lipgloss.NewStyle().Foreground(p.theme.Warning).Bold(true).Render("waiting")
 		}
-		// Append context warning if ≥ 80%.
 		if live.ContextTokens > 0 && live.ContextWindow > 0 {
 			pct := live.ContextTokens * 100 / live.ContextWindow
 			if pct >= 80 {
 				ctxWarn := lipgloss.NewStyle().Foreground(p.theme.Warning).Render(fmt.Sprintf("ctx %d%% ⚠", pct))
-				statusStr += " · " + ctxWarn
+				statusStr += " " + ctxWarn
 			}
 		}
 	}
@@ -803,7 +807,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		if live != nil {
 			right = badge + "  " + tokStr + "  " + statusStr + backup
 		} else {
-			age := sessMetaStyle.Render(humanize.Time(m.UpdatedAt))
+			age := sessMetaStyle.Render(formatAge(m.UpdatedAt))
 			right = badge + "  " + tokStr + "  " + age + backup
 		}
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -818,7 +822,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		if live != nil {
 			right = tokStr + "  " + statusStr + backup
 		} else {
-			age := sessMetaStyle.Render(humanize.Time(m.UpdatedAt))
+			age := sessMetaStyle.Render(formatAge(m.UpdatedAt))
 			right = tokStr + "  " + age + backup
 		}
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -859,12 +863,23 @@ func sourceBadge(kind session.SourceKind) string {
 // pinned LIVE group in Project view.
 func (p Picker) renderTwoLineSessionRow(m backend.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
 	line1 := p.renderSessionRow(m, projectColor, selected, width)
-	// Indent under the id column. Layout: gutter(1) + 3 spaces + glyph(1)
-	// + space(1) = 6 cols.
 	const indent = "      "
-	avail := width - lipgloss.Width(indent)
+
+	suffixStyle := lipgloss.NewStyle().Foreground(colSubtext0)
+	if !selected {
+		suffixStyle = suffixStyle.Faint(true)
+	}
+
+	var suffixParts []string
+	suffixParts = append(suffixParts, fmt.Sprintf("%d turns", m.TurnCount))
+	if m.CostUSD > 0 {
+		suffixParts = append(suffixParts, fmt.Sprintf("$%.2f", m.CostUSD))
+	}
+	suffix := suffixStyle.Render("  ·  " + strings.Join(suffixParts, "  ·  "))
+	suffixW := lipgloss.Width(suffix)
+
+	avail := width - lipgloss.Width(indent) - suffixW
 	if avail < 10 {
-		// Too narrow for a useful path line — fall back to single line.
 		return line1
 	}
 	path := homePathDisplay(m.Directory)
@@ -876,7 +891,7 @@ func (p Picker) renderTwoLineSessionRow(m backend.SessionMeta, projectColor lipg
 	if !selected {
 		pathStyle = pathStyle.Faint(true)
 	}
-	return line1 + "\n" + indent + pathStyle.Render(path)
+	return line1 + "\n" + indent + pathStyle.Render(path) + suffix
 }
 
 // renderDivider renders a dim horizontal rule used between the live block
@@ -1165,14 +1180,23 @@ func humanizeSize(n int64) string {
 }
 
 func humanizeTokens(n int64) string {
+	var num string
 	switch {
 	case n >= 1_000_000_000:
-		return fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
+		num = fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
 	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+		num = fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	case n >= 1_000:
-		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+		num = fmt.Sprintf("%.1fK", float64(n)/1_000)
 	default:
-		return fmt.Sprintf("%d", n)
+		num = fmt.Sprintf("%d", n)
 	}
+	return num + " tok"
+}
+
+func formatAge(t time.Time) string {
+	if time.Since(t) < 24*time.Hour {
+		return humanize.Time(t)
+	}
+	return t.Format("Jan 02")
 }

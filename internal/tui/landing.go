@@ -153,7 +153,7 @@ func (m LandingModel) renderBody(cw int) string {
 		stateStr = lipgloss.NewStyle().Foreground(m.th.Muted).Render("ended " + humanize.Time(meta.UpdatedAt))
 	}
 	idStyle := lipgloss.NewStyle().Foreground(m.th.Foreground).Bold(true)
-	headerLine := idStyle.Render(truncate(meta.ID, 36)) + " · " +
+	headerLine := idStyle.Render(shortDisplayID(meta.Kind, meta.ID)) + " · " +
 		dimStyle.Render(meta.Project) + " · " +
 		dimStyle.Render(sourceBadge(meta.Kind)) + " · " +
 		stateStr
@@ -163,7 +163,7 @@ func (m LandingModel) renderBody(cw int) string {
 	// ── Stats line ───────────────────────────────────────────────────────────
 	statsItems := []string{
 		fmt.Sprintf("%d turns", len(sess.Turns)),
-		humanizeTokens(int64(sess.TokenCount)) + " tok",
+		humanizeTokens(int64(sess.TokenCount)),
 	}
 	if meta.CostUSD > 0 {
 		statsItems = append(statsItems, fmt.Sprintf("$%.2f", meta.CostUSD))
@@ -220,12 +220,6 @@ func (m LandingModel) renderBody(cw int) string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n")
-
-	// ── Token bar (collapsed) ─────────────────────────────────────────────────
-	tokenLine := renderCollapsedTokenBar(sess, cw-4, m.th)
-	b.WriteString(tokenLine)
-
 	return b.String()
 }
 
@@ -280,24 +274,6 @@ func topFiles(ts []topics.Topic) []string {
 		out[i] = p.f
 	}
 	return out
-}
-
-// renderCollapsedTokenBar renders the collapsed token bar for the landing page.
-func renderCollapsedTokenBar(sess *session.Session, width int, th Theme) string {
-	if sess.TokenCount == 0 {
-		return ""
-	}
-	total := int64(sess.TokenCount)
-	barWidth := width - 4
-	if barWidth < 10 {
-		barWidth = 10
-	}
-
-	bar := strings.Repeat("█", barWidth)
-	barLine := lipgloss.NewStyle().Foreground(th.Accent).Render(bar)
-	totalStr := "~" + humanizeTokens(total) + " total"
-
-	return "Tokens\n" + barLine + " " + dimStyle.Render(totalStr)
 }
 
 // OpenOverviewMsg navigates to the Topic Overview.

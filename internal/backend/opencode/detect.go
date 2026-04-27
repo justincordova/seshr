@@ -106,6 +106,7 @@ func (d *Detector) DetectLive(ctx context.Context, snap backend.ProcessSnapshot)
 			if !ambiguous {
 				live.CurrentTask = d.currentTask(ctx, cand.id, cand.timeUpdated, now)
 			}
+			d.querySessionStats(ctx, cand.id, &live)
 			out = append(out, live)
 		}
 	}
@@ -352,4 +353,25 @@ func childProcs(snap backend.ProcessSnapshot, pid int) []backend.ProcInfo {
 		}
 	}
 	return out
+}
+
+func (d *Detector) querySessionStats(ctx context.Context, sessionID string, live *backend.LiveSession) {
+	const q = `
+		SELECT COALESCE(SUM(
+		           COALESCE(CAST(json_extract(data, '$.tokens.input') AS INTEGER), 0) +
+		           COALESCE(CAST(json_extract(data, '$.tokens.output') AS INTEGER), 0) +
+		           COALESCE(CAST(json_extract(data, '$.tokens.reasoning') AS INTEGER), 0) +
+		           COALESCE(CAST(json_extract(data, '$.tokens.cache.read') AS INTEGER), 0) +
+		           COALESCE(CAST(json_extract(data, '$.tokens.cache.write') AS INTEGER), 0)
+		       ), 0),
+		       COUNT(*)
+		FROM message
+		WHERE session_id = ?
+		  AND json_extract(data, '$.role') = 'assistant'
+	`
+	err := d.store.conns.read.QueryRowContext(ctx, q, sessionID).Scan(&live.TokenCount, &live.TurnCount)
+	if err != nil {
+		slog.Debug("opencode detector: session stats query failed",
+			"session", sessionID, "err", err)
+	}
 }

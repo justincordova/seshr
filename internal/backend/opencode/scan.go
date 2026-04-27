@@ -47,10 +47,11 @@ func (s *Store) Scan(ctx context.Context) ([]backend.SessionMeta, error) {
 			Directory:  r.directory,
 			Title:      r.title,
 			TokenCount: a.tokens,
+			TurnCount:  a.turns,
 			CostUSD:    a.cost,
 			CreatedAt:  time.UnixMilli(r.timeCreated),
 			UpdatedAt:  time.UnixMilli(r.timeUpdated),
-			SizeBytes:  0, // OC size is not meaningful (no file per session).
+			SizeBytes:  0,
 			HasBackup:  s.hasBackup(r.id),
 		})
 	}
@@ -120,6 +121,7 @@ func (s *Store) querySessions(ctx context.Context) ([]sessionScanRow, error) {
 // aggRow is the per-session sum of assistant-message tokens + costs.
 type aggRow struct {
 	tokens int
+	turns  int
 	cost   float64
 }
 
@@ -139,6 +141,7 @@ func (s *Store) queryAggregates(ctx context.Context) (map[string]aggRow, error) 
 		           COALESCE(CAST(json_extract(data, '$.tokens.cache.read') AS INTEGER), 0) +
 		           COALESCE(CAST(json_extract(data, '$.tokens.cache.write') AS INTEGER), 0)
 		       ), 0) AS tokens,
+		       COUNT(*) AS turns,
 		       COALESCE(SUM(CAST(json_extract(data, '$.cost') AS REAL)), 0) AS cost
 		FROM message
 		WHERE json_extract(data, '$.role') = 'assistant'
@@ -154,7 +157,7 @@ func (s *Store) queryAggregates(ctx context.Context) (map[string]aggRow, error) 
 	for rows.Next() {
 		var id string
 		var a aggRow
-		if err := rows.Scan(&id, &a.tokens, &a.cost); err != nil {
+		if err := rows.Scan(&id, &a.tokens, &a.turns, &a.cost); err != nil {
 			return nil, fmt.Errorf("scan agg row: %w", err)
 		}
 		out[id] = a

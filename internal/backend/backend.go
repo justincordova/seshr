@@ -47,6 +47,7 @@ type SessionMeta struct {
 	Directory  string
 	Title      string
 	TokenCount int
+	TurnCount  int
 	CostUSD    float64
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
@@ -73,6 +74,8 @@ type LiveSession struct {
 	LastActivity  time.Time
 	ContextTokens int
 	ContextWindow int
+	TokenCount    int
+	TurnCount     int
 	Ambiguous     bool
 }
 

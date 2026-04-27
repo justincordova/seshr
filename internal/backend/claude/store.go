@@ -139,8 +139,9 @@ func translateMeta(m claudeMeta) backend.SessionMeta {
 		Directory:  filepath.Dir(m.Path),
 		Title:      "",
 		TokenCount: m.TokenCount,
+		TurnCount:  m.TurnCount,
 		CostUSD:    0,
-		CreatedAt:  m.ModifiedAt, // placeholder; real value in Phase 5
+		CreatedAt:  m.ModifiedAt,
 		UpdatedAt:  m.ModifiedAt,
 		SizeBytes:  m.Size,
 		HasBackup:  m.HasBackup,

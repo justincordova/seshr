@@ -82,6 +82,12 @@ func scanDir(root string) ([]claudeMeta, error) {
 
 	for i := range out {
 		out[i].TokenCount = estimateTokensFromSize(out[i].Size)
+		if out[i].TokenCount > 0 {
+			out[i].TurnCount = out[i].TokenCount / 3000
+			if out[i].TurnCount < 1 {
+				out[i].TurnCount = 1
+			}
+		}
 	}
 
 	return out, nil
