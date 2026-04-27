@@ -197,6 +197,19 @@ func (p *Picker) toggleCollapse(row PickerRow) {
 	if p.cursor >= len(p.flatRows) {
 		p.cursor = len(p.flatRows) - 1
 	}
+	p.skipDividerBackward()
+}
+
+func (p *Picker) skipDividerBackward() {
+	for p.cursor > 0 && p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
+		p.cursor--
+	}
+}
+
+func (p *Picker) skipDividerForward() {
+	for p.cursor < len(p.flatRows)-1 && p.flatRows[p.cursor].Kind == RowDivider {
+		p.cursor++
+	}
 }
 
 // selectedRow returns the flat row at the cursor, or false if no rows.
@@ -283,6 +296,9 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if p.cursor < 0 {
 					p.cursor = 0
 				}
+				if p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
+					p.skipDividerForward()
+				}
 				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 				return p, nil
 			case "enter":
@@ -292,11 +308,13 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "ctrl+p":
 				if len(p.flatRows) > 0 && p.cursor > 0 {
 					p.cursor--
+					p.skipDividerBackward()
 				}
 				return p, nil
 			case "down", "ctrl+n":
 				if p.cursor < len(p.flatRows)-1 {
 					p.cursor++
+					p.skipDividerForward()
 				}
 				return p, nil
 			default:
@@ -313,11 +331,13 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, nil
 		case key.Matches(msg, p.keys.Top):
 			p.cursor = 0
+			p.skipDividerForward()
 			p.offset = 0
 			return p, nil
 		case key.Matches(msg, p.keys.Bottom):
 			if n := len(p.flatRows); n > 0 {
 				p.cursor = n - 1
+				p.skipDividerBackward()
 				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
 			}
 			return p, nil
@@ -331,6 +351,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if p.cursor > n-1 {
 					p.cursor = n - 1
 				}
+				p.skipDividerBackward()
 				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
 			}
 			return p, nil
@@ -344,18 +365,21 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if p.cursor < 0 {
 					p.cursor = 0
 				}
+				p.skipDividerForward()
 				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Up):
 			if p.cursor > 0 {
 				p.cursor--
+				p.skipDividerBackward()
 				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Down):
 			if p.cursor < len(p.flatRows)-1 {
 				p.cursor++
+				p.skipDividerForward()
 				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 			}
 			return p, nil
@@ -935,6 +959,9 @@ func (p *Picker) applySearchFilter() {
 	}
 	if p.cursor < 0 {
 		p.cursor = 0
+	}
+	if p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
+		p.skipDividerForward()
 	}
 	p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
 }
