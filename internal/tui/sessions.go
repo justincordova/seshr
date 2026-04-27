@@ -928,13 +928,13 @@ func leftTruncate(s string, width int) string {
 }
 
 // shortDisplayID returns a short "sesh_" prefixed display id. The body is
-// the first 6 lowercase hex characters of the source id with dashes stripped.
+// the first 8 lowercase hex characters of the source id with dashes stripped.
 // Display only — full SessionMeta.ID is still used for all internal lookups,
 // deletes, and search matching.
 func shortDisplayID(_ session.SourceKind, id string) string {
 	body := strings.ToLower(strings.ReplaceAll(id, "-", ""))
-	if len(body) > 6 {
-		body = body[:6]
+	if len(body) > 8 {
+		body = body[:8]
 	}
 	return "sesh_" + body
 }
@@ -1060,11 +1060,9 @@ func (p Picker) clampOffset(cursor, offset int) int {
 		return 0
 	}
 
-	heights := make([]int, total)
 	totalHeight := 0
-	for i, r := range p.flatRows {
-		heights[i] = p.rowHeight(r)
-		totalHeight += heights[i]
+	for _, r := range p.flatRows {
+		totalHeight += p.rowHeight(r)
 	}
 	if totalHeight <= body {
 		return 0
@@ -1077,29 +1075,26 @@ func (p Picker) clampOffset(cursor, offset int) int {
 	used := 0
 	lastVisible := offset
 	for i := offset; i < total; i++ {
-		if used+heights[i] > body {
+		h := p.rowHeight(p.flatRows[i])
+		if used+h > body {
 			break
 		}
-		used += heights[i]
+		used += h
 		lastVisible = i
 	}
 
 	if cursor > lastVisible {
-		for cursor > lastVisible && offset < total-1 {
-			offset++
-			used += heights[offset]
-			for used > body && offset < lastVisible {
-				used -= heights[offset-1]
-				offset++
+		used = 0
+		offset = cursor
+		for i := cursor; i >= 0; i-- {
+			h := p.rowHeight(p.flatRows[i])
+			if used+h > body {
+				offset = i + 1
+				break
 			}
-			used = 0
-			lastVisible = offset
-			for i := offset; i < total; i++ {
-				if used+heights[i] > body {
-					break
-				}
-				used += heights[i]
-				lastVisible = i
+			used += h
+			if i == 0 {
+				offset = 0
 			}
 		}
 	}
