@@ -299,7 +299,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
 					p.skipDividerForward()
 				}
-				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 				return p, nil
 			case "enter":
 				p.search.Commit()
@@ -338,7 +338,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if n := len(p.flatRows); n > 0 {
 				p.cursor = n - 1
 				p.skipDividerBackward()
-				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.PageDown):
@@ -352,7 +352,7 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p.cursor = n - 1
 				}
 				p.skipDividerBackward()
-				p.offset = clampOffset(p.cursor, p.offset, n, p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.PageUp):
@@ -366,21 +366,21 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p.cursor = 0
 				}
 				p.skipDividerForward()
-				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Up):
 			if p.cursor > 0 {
 				p.cursor--
 				p.skipDividerBackward()
-				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Down):
 			if p.cursor < len(p.flatRows)-1 {
 				p.cursor++
 				p.skipDividerForward()
-				p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+				p.offset = p.clampOffset(p.cursor, p.offset)
 			}
 			return p, nil
 		case key.Matches(msg, p.keys.Open):
@@ -963,7 +963,7 @@ func (p *Picker) applySearchFilter() {
 	if p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
 		p.skipDividerForward()
 	}
-	p.offset = clampOffset(p.cursor, p.offset, len(p.flatRows), p.visibleCount())
+	p.offset = p.clampOffset(p.cursor, p.offset)
 }
 
 func (p Picker) renderFooter(width int) string {
@@ -1050,21 +1050,60 @@ func (p Picker) visibleCount() int {
 	return count
 }
 
-// clampOffset adjusts offset so that cursor is within [offset, offset+visible).
-// Scrolls only when the cursor moves past the top or bottom edge.
-func clampOffset(cursor, offset, total, visible int) int {
-	if total <= visible {
+// clampOffset adjusts offset so that cursor is within the visible viewport.
+// Unlike the row-count version, this walks actual row heights so mixed 1-line
+// and 2-line rows scroll correctly.
+func (p Picker) clampOffset(cursor, offset int) int {
+	body := p.bodyLines()
+	total := len(p.flatRows)
+	if total == 0 {
 		return 0
 	}
+
+	heights := make([]int, total)
+	totalHeight := 0
+	for i, r := range p.flatRows {
+		heights[i] = p.rowHeight(r)
+		totalHeight += heights[i]
+	}
+	if totalHeight <= body {
+		return 0
+	}
+
 	if cursor < offset {
 		offset = cursor
 	}
-	if cursor >= offset+visible {
-		offset = cursor - visible + 1
+
+	used := 0
+	lastVisible := offset
+	for i := offset; i < total; i++ {
+		if used+heights[i] > body {
+			break
+		}
+		used += heights[i]
+		lastVisible = i
 	}
-	if offset+visible > total {
-		offset = total - visible
+
+	if cursor > lastVisible {
+		for cursor > lastVisible && offset < total-1 {
+			offset++
+			used += heights[offset]
+			for used > body && offset < lastVisible {
+				used -= heights[offset-1]
+				offset++
+			}
+			used = 0
+			lastVisible = offset
+			for i := offset; i < total; i++ {
+				if used+heights[i] > body {
+					break
+				}
+				used += heights[i]
+				lastVisible = i
+			}
+		}
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
