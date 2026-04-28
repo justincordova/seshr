@@ -208,13 +208,17 @@ func (o Overview) selectionContext() (preCount, preTok, activeCount, activeTok i
 }
 
 func (o Overview) currentSelection() editor.Selection {
-	sel := editor.Selection{Topics: map[int]bool{}}
+	turns := map[int]bool{}
 	for i, v := range o.selected {
-		if v {
-			sel.Topics[i] = true
+		if !v || i < 0 || i >= len(o.topics) {
+			continue
+		}
+		for _, idx := range o.topics[i].TurnIndices {
+			turns[idx] = true
 		}
 	}
-	return editor.ExpandSelection(o.sess, o.topics, sel)
+	editor.PullToolPartners(o.sess, turns)
+	return editor.Selection{Turns: turns}
 }
 
 func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

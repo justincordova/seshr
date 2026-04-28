@@ -42,7 +42,7 @@ func ExpandSelection(sess *session.Session, ts []topics.Topic, in Selection) Sel
 		pullUserAssistantPartner(sess, idx, out.Turns)
 	}
 
-	pullToolPartners(sess, out.Turns)
+	PullToolPartners(sess, out.Turns)
 
 	return out
 }
@@ -88,7 +88,7 @@ func pullUserAssistantPartner(sess *session.Session, idx int, sel map[int]bool) 
 	}
 }
 
-func pullToolPartners(sess *session.Session, sel map[int]bool) {
+func PullToolPartners(sess *session.Session, sel map[int]bool) {
 	useIdx := map[string]int{}
 	resultIdx := map[string]int{}
 	for i, turn := range sess.Turns {
