@@ -156,7 +156,7 @@ func AppInOverview(sess *session.Session, ts []topics.Topic) App {
 		state:       stateOverview,
 		session:     sess,
 		topicsCache: ts,
-		overview:    NewOverview(sess, ts, th, cfg.GapThresholdSeconds),
+		overview:    NewOverview(sess, ts, th, cfg.GapThresholdSeconds, nil),
 		styles:      NewStyles(th),
 		theme:       th,
 		cfg:         cfg,
@@ -173,9 +173,6 @@ func NewApp(metas []backend.SessionMeta, cfg config.Config, scanRoot string, reg
 	sp.Spinner = spinner.Dot
 	ctx, cancel := context.WithCancel(context.Background())
 	picker := NewPicker(metas, th, reg, cfg.PickerViewMode)
-	if !cfg.WelcomeShown {
-		picker.showWelcome = true
-	}
 	return App{
 		state:        stateList,
 		picker:       picker,
@@ -337,7 +334,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionLoadedMsg:
 		a.session = m.Session
 		a.topicsCache = m.Topics
-		a.overview = NewOverview(m.Session, m.Topics, a.theme, a.cfg.GapThresholdSeconds)
+		a.overview = NewOverview(m.Session, m.Topics, a.theme, a.cfg.GapThresholdSeconds, a.registry)
 		if a.width > 0 {
 			om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
 			a.overview = om.(Overview)
@@ -435,7 +432,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = stateConfirmRestore
 		return a, nil
 	case RestoreDoneMsg:
-		a.overview = NewOverview(a.session, a.topicsCache, a.theme, a.cfg.GapThresholdSeconds)
+		a.overview = NewOverview(a.session, a.topicsCache, a.theme, a.cfg.GapThresholdSeconds, a.registry)
 		a.state = stateList
 		var store backend.SessionStore
 		if a.registry != nil {
@@ -449,9 +446,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case RescanDoneMsg:
 		if m.Metas != nil {
-			a.picker = NewPicker(m.Metas, a.theme, a.registry, a.cfg.PickerViewMode)
+			a.picker = a.picker.ReplaceMetas(m.Metas)
 		}
 		return a, nil
+	case PruneReloadMsg:
+		if m.Session != nil {
+			a.session = m.Session
+			a.topicsCache = m.Topics
+			a.overview = NewOverview(m.Session, m.Topics, a.theme, a.cfg.GapThresholdSeconds, a.registry)
+			if a.width > 0 {
+				om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+				a.overview = om.(Overview)
+			}
+		}
+		return a, rescanAllStoresCmd(a.registry)
 	case spinner.TickMsg:
 		if a.state == stateLoading {
 			var cmd tea.Cmd
@@ -692,6 +700,20 @@ func rescanCmd(store backend.SessionStore) tea.Cmd {
 	}
 	return func() tea.Msg {
 		metas, _ := store.Scan(context.Background())
+		return RescanDoneMsg{Metas: metas}
+	}
+}
+
+func rescanAllStoresCmd(reg *backend.Registry) tea.Cmd {
+	if reg == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		var metas []backend.SessionMeta
+		for _, s := range reg.Stores() {
+			ms, _ := s.Scan(context.Background())
+			metas = append(metas, ms...)
+		}
 		return RescanDoneMsg{Metas: metas}
 	}
 }

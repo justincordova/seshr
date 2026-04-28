@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
+	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/editor"
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/topics"
@@ -89,29 +92,32 @@ func renderCompactDivider(cb session.CompactBoundary, width int) string {
 // Overview is the Topic Overview Bubbletea model per SPEC §3.2.
 // It also hosts selection and pruning (previously the separate Editor screen).
 type Overview struct {
-	sess      *session.Session
-	topics    []topics.Topic
-	allTopics []topics.Topic
-	cursor    int
-	offset    int
-	expanded  map[int]bool
-	selected  map[int]bool
-	stats     bool
-	pruning   bool
-	status    string
-	confirm   *Confirm
-	width     int
-	height    int
-	keys      OverviewKeys
-	styles    Styles
-	theme     Theme
-	search    SearchBar
-	gapSec    int
+	sess        *session.Session
+	topics      []topics.Topic
+	allTopics   []topics.Topic
+	cursor      int
+	offset      int
+	expanded    map[int]bool
+	selected    map[int]bool
+	stats       bool
+	pruning     bool
+	status      string
+	confirm     *Confirm
+	width       int
+	height      int
+	keys        OverviewKeys
+	styles      Styles
+	theme       Theme
+	search      SearchBar
+	gapSec      int
+	registry    *backend.Registry
+	sessionID   string
+	sessionKind session.SourceKind
 }
 
 // NewOverview constructs the screen from a parsed session and its topics.
 // Topics are displayed in chronological order (oldest first).
-func NewOverview(sess *session.Session, tops []topics.Topic, th Theme, gapSec int) Overview {
+func NewOverview(sess *session.Session, tops []topics.Topic, th Theme, gapSec int, reg *backend.Registry) Overview {
 	sorted := make([]topics.Topic, len(tops))
 	copy(sorted, tops)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -128,6 +134,19 @@ func NewOverview(sess *session.Session, tops []topics.Topic, th Theme, gapSec in
 		theme:     th,
 		search:    NewSearchBar(),
 		gapSec:    gapSec,
+		registry:  reg,
+		sessionID: func() string {
+			if sess != nil {
+				return sess.ID
+			}
+			return ""
+		}(),
+		sessionKind: func() session.SourceKind {
+			if sess != nil {
+				return sess.Source
+			}
+			return ""
+		}(),
 	}
 }
 
@@ -211,7 +230,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sel := o.currentSelection()
 					o.pruning = true
 					o.status = "pruning…"
-					return o, pruneCmd(o.sess, sel)
+					return o, pruneCmd(o.sess, sel, o.registry, o.sessionID)
 				}
 			}
 			return o, nil
@@ -229,8 +248,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o.pruning = false
 		o.status = fmt.Sprintf("pruned %d turns", msg.RemovedTurns)
 		o.selected = map[int]bool{}
-		// TODO Phase 7: reload via registry after prune.
-		return o, clearStatusCmd()
+		return o, tea.Batch(reloadAfterPruneCmd(o.registry, o.sessionID, o.sessionKind, o.gapSec), clearStatusCmd())
 	case PruneErrMsg:
 		o.pruning = false
 		o.status = msg.Err.Error()
@@ -385,29 +403,31 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if o.pruning || o.selectedCount() == 0 {
 				return o, nil
 			}
-			// OpenCode prune goes through the registry-backed editor
-			// (backend/opencode.Editor) rather than the Claude-only JSONL
-			// pruner. Full TUI wiring for that path is a post-Phase-11 item
-			// (see docs/plans/phase-12-polish-and-docs-plan.md). Until
-			// then, show a non-destructive toast so the feature fails
-			// visibly rather than silently doing nothing.
-			if o.sess != nil && o.sess.Source == session.SourceOpenCode {
-				o.status = "opencode prune is not yet wired in the UI (Phase 12)"
+			if o.sess != nil && o.sess.Source == session.SourceOpenCode && o.registry == nil {
+				o.status = "no backend registry — cannot prune"
 				return o, clearStatusCmd()
 			}
 			sel := o.currentSelection()
 			preCount, preTok, activeCount, activeTok := o.selectionContext()
 			var confirmTitle, confirmBody string
+			backupLine := "A .bak backup will be created automatically."
+			clearLine := "Type /clear in Claude Code before resuming this session."
+			if o.sess != nil && o.sess.Source == session.SourceOpenCode {
+				backupLine = "A JSON backup will be created automatically."
+				clearLine = "Start a new session in OpenCode to pick up the changes."
+			}
 			if activeCount == 0 {
 				confirmTitle = fmt.Sprintf("Prune %d pre-compact topics?", preCount)
-				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n✓ These are not in the active context and can be safely removed.\nA .bak backup will be created automatically.",
-					len(sel.Turns), humanize.Comma(int64(preTok)))
+				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n✓ These are not in the active context and can be safely removed.\n%s",
+					len(sel.Turns), humanize.Comma(int64(preTok)), backupLine)
 			} else {
 				confirmTitle = fmt.Sprintf("Prune %d topics?", o.selectedCount())
-				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\nType /clear in Claude Code before resuming this session.\nA .bak backup will be created automatically.",
+				confirmBody = fmt.Sprintf("Turns removed: %d (~%s tokens)\n⚠ ~%s of these tokens are in the active context window.\n%s\n%s",
 					len(sel.Turns),
 					humanize.Comma(int64(o.tokensFreed())),
-					humanize.Comma(int64(activeTok)))
+					humanize.Comma(int64(activeTok)),
+					clearLine,
+					backupLine)
 			}
 			o.confirm = &Confirm{
 				title:  confirmTitle,
@@ -1113,13 +1133,24 @@ func renderStats(st Styles, sess *session.Session, tops []topics.Topic) string {
 	return st.Hint.Render(strings.Join(lines, "\n"))
 }
 
-// pruneCmd runs the prune operation asynchronously.
-func pruneCmd(sess *session.Session, sel editor.Selection) tea.Cmd {
+// pruneCmd runs the prune operation asynchronously via the registry editor.
+func pruneCmd(sess *session.Session, sel editor.Selection, reg *backend.Registry, sessionID string) tea.Cmd {
+	indices := make([]int, 0, len(sel.Turns))
+	for idx := range sel.Turns {
+		indices = append(indices, idx)
+	}
 	return func() tea.Msg {
-		if err := editor.PruneSession(sess, sel); err != nil {
+		if reg == nil {
+			return PruneErrMsg{Err: fmt.Errorf("no backend registry")}
+		}
+		ed, ok := reg.Editor(sess.Source)
+		if !ok {
+			return PruneErrMsg{Err: fmt.Errorf("no editor for source %s", sess.Source)}
+		}
+		if _, err := ed.Prune(context.Background(), sessionID, backend.Selection{TurnIndices: indices}); err != nil {
 			return PruneErrMsg{Err: err}
 		}
-		return PruneDoneMsg{RemovedTurns: len(sel.Turns)}
+		return PruneDoneMsg{RemovedTurns: len(indices)}
 	}
 }
 
@@ -1129,4 +1160,32 @@ type clearStatusMsg struct{}
 
 func clearStatusCmd() tea.Cmd {
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return clearStatusMsg{} })
+}
+
+func reloadAfterPruneCmd(reg *backend.Registry, id string, kind session.SourceKind, gapSec int) tea.Cmd {
+	return func() tea.Msg {
+		if reg == nil || id == "" {
+			return PruneReloadMsg{Session: nil, Topics: nil}
+		}
+		store, ok := reg.Store(kind)
+		if !ok {
+			return PruneReloadMsg{Session: nil, Topics: nil}
+		}
+		sess, _, err := store.Load(context.Background(), id)
+		if err != nil {
+			slog.Error("reload after prune failed", "id", id, "err", err)
+			return PruneReloadMsg{Session: nil, Topics: nil}
+		}
+		opts := topics.DefaultOptions()
+		if gapSec > 0 {
+			opts.GapThreshold = time.Duration(gapSec) * time.Second
+		}
+		tops := topics.Cluster(sess, opts)
+		return PruneReloadMsg{Session: sess, Topics: tops}
+	}
+}
+
+type PruneReloadMsg struct {
+	Session *session.Session
+	Topics  []topics.Topic
 }

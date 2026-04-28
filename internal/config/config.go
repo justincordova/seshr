@@ -21,9 +21,6 @@ type Config struct {
 	// Phase 6: live detection health.
 	LiveDetectionLastOK time.Time `json:"live_detection_last_ok,omitempty"`
 
-	// Phase 7: first-launch welcome.
-	WelcomeShown bool `json:"welcome_shown,omitempty"`
-
 	// Phase 12: picker view preference. One of PickerViewRecent or
 	// PickerViewProject. Empty/invalid values fall back to default on Load.
 	PickerViewMode string `json:"picker_view_mode,omitempty"`
