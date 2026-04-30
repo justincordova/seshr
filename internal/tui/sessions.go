@@ -792,24 +792,8 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 	}
 
-	left := gutter + "   " + glyph + " " + id
-	if width >= 100 {
-		// Full layout: badge + tok + status/age.
-		var right string
-		if live != nil {
-			right = badge + "  " + tokStr + "  " + statusStr + backup
-		} else {
-			age := sessMetaStyle.Render(formatAge(m.UpdatedAt))
-			right = badge + "  " + tokStr + "  " + age + backup
-		}
-		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-		if gap < 2 {
-			gap = 2
-		}
-		return left + strings.Repeat(" ", gap) + right
-	}
+	left := gutter + "   " + glyph + " " + id + " " + badge
 	if width >= 80 {
-		// Compact: drop badge column, keep tok + status/age.
 		var right string
 		if live != nil {
 			right = tokStr + "  " + statusStr + backup
@@ -823,7 +807,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 		return left + strings.Repeat(" ", gap) + right
 	}
-	// Narrow: just id + tok, task truncated to 20.
+	// Narrow: just id + badge + tok
 	var right string
 	if live != nil {
 		shortTask := truncate(live.CurrentTask, 20)
@@ -835,7 +819,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 	} else {
 		right = tokStr + backup
 	}
-	return gutter + "   " + glyph + " " + id + "  " + right
+	return left + "  " + right
 }
 
 // sourceBadge returns the fixed-width source name for a session's source kind.
