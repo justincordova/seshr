@@ -246,6 +246,7 @@ func SplitLiveGroup(
 func BuildRecentRows(
 	metas []backend.SessionMeta,
 	liveIndex map[string]*backend.LiveSession,
+	sortMode string,
 ) ([]PickerRow, []backend.SessionMeta) {
 	if len(metas) == 0 {
 		return nil, nil
@@ -270,7 +271,7 @@ func BuildRecentRows(
 		return live[i].UpdatedAt.After(live[j].UpdatedAt)
 	})
 	sort.SliceStable(ended, func(i, j int) bool {
-		return ended[i].UpdatedAt.After(ended[j].UpdatedAt)
+		return sortEnded(ended[i], ended[j], sortMode)
 	})
 
 	ordered := make([]backend.SessionMeta, 0, len(live)+len(ended))
@@ -288,4 +289,28 @@ func BuildRecentRows(
 		rows = append(rows, PickerRow{Kind: RowSession, GroupIdx: -1, SessionIdx: len(live) + i})
 	}
 	return rows, ordered
+}
+
+func sortEnded(a, b backend.SessionMeta, mode string) bool {
+	switch mode {
+	case SortOldest:
+		return a.UpdatedAt.Before(b.UpdatedAt)
+	case SortTokens:
+		if a.TokenCount != b.TokenCount {
+			return a.TokenCount > b.TokenCount
+		}
+		return a.UpdatedAt.After(b.UpdatedAt)
+	case SortTurns:
+		if a.TurnCount != b.TurnCount {
+			return a.TurnCount > b.TurnCount
+		}
+		return a.UpdatedAt.After(b.UpdatedAt)
+	case SortSource:
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.UpdatedAt.After(b.UpdatedAt)
+	default:
+		return a.UpdatedAt.After(b.UpdatedAt)
+	}
 }

@@ -17,6 +17,42 @@ import (
 	"github.com/justincordova/seshr/internal/session"
 )
 
+const (
+	SortLatest = "latest"
+	SortOldest = "oldest"
+	SortTokens = "tokens"
+	SortTurns  = "turns"
+	SortSource = "source"
+)
+
+var sortModes = []string{SortLatest, SortOldest, SortTokens, SortTurns, SortSource}
+
+func sortModeLabel(mode string) string {
+	switch mode {
+	case SortLatest:
+		return "latest"
+	case SortOldest:
+		return "oldest"
+	case SortTokens:
+		return "tokens"
+	case SortTurns:
+		return "turns"
+	case SortSource:
+		return "source"
+	default:
+		return mode
+	}
+}
+
+func nextSortMode(current string) string {
+	for i, m := range sortModes {
+		if m == current && i < len(sortModes)-1 {
+			return sortModes[i+1]
+		}
+	}
+	return sortModes[0]
+}
+
 // Picker is the Session Picker Bubbletea model. See SPEC §3.1.
 type Picker struct {
 	metas     []backend.SessionMeta
@@ -46,6 +82,8 @@ type Picker struct {
 	// Project: groups-by-project with synthetic "LIVE" group pinned at top.
 	viewMode string
 
+	sortMode string
+
 	// recentMetas is the ordered list of metas used by Recent view; live
 	// rows first (sorted by status class then UpdatedAt desc), ended rows
 	// after. Indexed by PickerRow.SessionIdx when viewMode == Recent.
@@ -70,6 +108,7 @@ func NewPicker(metas []backend.SessionMeta, th Theme, reg *backend.Registry, vie
 		collapsed: make(map[string]bool),
 		registry:  reg,
 		viewMode:  viewMode,
+		sortMode:  SortLatest,
 	}
 	// Projects collapsed by default; user expands with enter or space.
 	// (Has no effect in Recent view, but cheap to compute.)
@@ -194,7 +233,7 @@ func (p Picker) Metas() []backend.SessionMeta { return p.metas }
 // (live sessions already sorted by status class inside SplitLiveGroup).
 func (p *Picker) rebuildGroups() {
 	if p.viewMode == config.PickerViewRecent {
-		p.flatRows, p.recentMetas = BuildRecentRows(p.metas, p.liveIndex)
+		p.flatRows, p.recentMetas = BuildRecentRows(p.metas, p.liveIndex, p.sortMode)
 		p.groups = nil
 		return
 	}
@@ -405,6 +444,12 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sel, ok := p.selectedSession(); ok {
 				return p, func() tea.Msg { return OpenSessionAndReplayMsg{Meta: sel} }
 			}
+			return p, nil
+		case key.Matches(msg, p.keys.Sort):
+			p.sortMode = nextSortMode(p.sortMode)
+			p.cursor = 0
+			p.offset = 0
+			p.rebuildGroups()
 			return p, nil
 		case key.Matches(msg, p.keys.Delete):
 			sel, ok := p.selectedSession()
@@ -756,9 +801,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 	}
 	id := idStyle.Render(shortDisplayID(m.Kind, m.ID))
 
-	// Source badge (fixed-width dim)
-	badgeStyle := lipgloss.NewStyle().Foreground(colSubtext0)
-	badge := badgeStyle.Render(sourceBadge(m.Kind))
+	pill := sourcePill(m.Kind)
 
 	sessMetaStyle := lipgloss.NewStyle().Foreground(colSubtext0)
 	tokStr := sessMetaStyle.Render(humanizeTokens(int64(m.TokenCount)))
@@ -792,7 +835,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 	}
 
-	left := gutter + "   " + glyph + " " + id + " " + badge
+	left := gutter + "   " + glyph + " " + id + " " + pill
 	if width >= 80 {
 		var right string
 		if live != nil {
@@ -807,7 +850,7 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 		}
 		return left + strings.Repeat(" ", gap) + right
 	}
-	// Narrow: just id + badge + tok
+	// Narrow: just id + pill + tok
 	var right string
 	if live != nil {
 		shortTask := truncate(live.CurrentTask, 20)
@@ -822,15 +865,26 @@ func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.Te
 	return left + "  " + right
 }
 
-// sourceBadge returns the fixed-width source name for a session's source kind.
-func sourceBadge(kind session.SourceKind) string {
+func sourcePill(kind session.SourceKind) string {
 	switch kind {
 	case session.SourceClaude:
-		return "claude  "
+		return lipgloss.NewStyle().
+			Background(colSurface0).
+			Foreground(colMauve).
+			Padding(0, 1).
+			Render("claudecode")
 	case session.SourceOpenCode:
-		return "opencode"
+		return lipgloss.NewStyle().
+			Background(colSurface0).
+			Foreground(colBlue).
+			Padding(0, 1).
+			Render("opencode")
 	default:
-		return string(kind)
+		return lipgloss.NewStyle().
+			Background(colSurface0).
+			Foreground(colSubtext0).
+			Padding(0, 1).
+			Render(string(kind))
 	}
 }
 
@@ -851,23 +905,33 @@ func (p Picker) renderTwoLineSessionRow(m backend.SessionMeta, projectColor lipg
 	if m.CostUSD > 0 {
 		suffixParts = append(suffixParts, fmt.Sprintf("$%.2f", m.CostUSD))
 	}
-	suffix := suffixStyle.Render("  ·  " + strings.Join(suffixParts, "  ·  "))
+	suffix := suffixStyle.Render(strings.Join(suffixParts, "  ·  "))
 	suffixW := lipgloss.Width(suffix)
 
-	avail := width - lipgloss.Width(indent) - suffixW
-	if avail < 10 {
+	innerW := width - lipgloss.Width(indent)
+	pathW := innerW - suffixW - 4
+	if pathW < 10 {
 		return line1
+	}
+	if pathW > 40 {
+		pathW = 40
 	}
 	path := homePathDisplay(m.Directory)
 	if path == "" {
 		path = m.Project
 	}
-	path = leftTruncate(path, avail)
+	path = leftTruncate(path, pathW)
 	pathStyle := lipgloss.NewStyle().Foreground(colSubtext0)
 	if !selected {
 		pathStyle = pathStyle.Faint(true)
 	}
-	return line1 + "\n" + indent + pathStyle.Render(path) + suffix
+
+	left := pathStyle.Render(path)
+	gap := innerW - lipgloss.Width(left) - suffixW
+	if gap < 2 {
+		gap = 2
+	}
+	return line1 + "\n" + indent + left + strings.Repeat(" ", gap) + suffix
 }
 
 // renderDivider renders a dim horizontal rule used between the live block
@@ -963,6 +1027,7 @@ func (p Picker) renderFooter(width int) string {
 		kbdPill("^d^u", "page"),
 		kbdPill("enter", "open"),
 		kbdPill("v", "view"),
+		kbdPill("s", "sort:"+sortModeLabel(p.sortMode)),
 		kbdPill("/", "search"),
 		kbdPill("q", "quit"),
 	}

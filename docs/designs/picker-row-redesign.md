@@ -2,122 +2,112 @@
 
 ## Context
 
-The session picker rows are functionally complete but visually bland — flat
-colors, no visual hierarchy, and missing useful metadata (turns, cost). This
-is a polish pass on the row rendering to make the picker easier to scan at a
-glance.
-
-Also fixes a bug where OpenCode live sessions show 0 turns / 0 tokens when
-detected before their session appears in the Scan results (synthMetaFromLive
-creates entries with no token/turn counts).
+The session picker rows have poor visual hierarchy — session ID, source badge,
+tokens, age, path, turns, and cost all blend together as an undifferentiated
+string. Users can't quickly scan for claude vs opencode sessions or compare
+token counts across rows.
 
 ## Goals
 
-- Stronger visual hierarchy: bold status text, dimmer metadata, better use of
-  the Catppuccin palette
-- Richer metadata: turns count on 2nd line, cost when non-zero, token unit
-  label
-- Status rendered as colored dot + bold text (brighter than current)
-- Ended sessions: relative age for recent (< 24h), absolute date for older
-- Fix 0 tokens / 0 turns for live OpenCode sessions
-
-## Non-Goals
-
-- Changing row height or layout structure (still 1-line and 2-line rows)
-- Adding new columns or fields to SessionMeta
-- Changing the divider, group header, or footer rendering
+- Instant visual differentiation between claude and opencode sessions
+- Clear information hierarchy: ID → source → tokens → age on line 1, path + metadata on line 2
+- Right-aligned token count and age columns so values line up vertically
+- Subtle source pill badge — readable without being loud
 
 ## Design
 
-### Status area (right side of row)
-
-**Live sessions:**
-```
-● working · fixing failing tests…
-```
-- Dot stays colored (green/yellow as now)
-- Status word ("working" / "waiting") becomes **bold** + colored (brighter)
-- CurrentTask remains dim text after the dot+status
-- Context warning unchanged
-
-**Ended sessions:**
-```
-2h ago          (updated < 24h ago)
-Apr 24          (updated >= 24h ago)
-```
-- Relative age for recent sessions using existing `humanize.Time`
-- Absolute `Mon DD` for older sessions
-- Slightly brighter than current (use `colSubtext0` instead of `colOverlay1`)
-
-### Token format
-
-Add unit label:
-```
-15.7M tok    (was: 15.7M)
-2.5K tok     (was: 2.5K)
-47 tok       (was: 47)
-```
-
-### Second line (2-line rows)
+### Line 1 — Identity row
 
 ```
-      ~/cs/projects/seshr  ·  47 turns
-      ~/cs/projects/other  ·  12 turns  ·  $0.42
+ ▌  ▸ sesh_639845b9  [claude]  ..............  1.4M tok  6 minutes ago  ↶
 ```
-- Path as now (dim, left-truncated)
-- Turns count always shown (needs `TurnCount` on SessionMeta or deriving from
-  the scan)
-- Cost shown only when > 0, formatted as `$X.XX`
 
-### OpenCode 0-tokens bug
+Elements (left to right):
+1. **Gutter** — `▌` in project color (existing, unchanged)
+2. **Glyph** — `▸` ended / `●` live (existing, unchanged)
+3. **Session ID** — `sesh_` prefix + 8-char body in foreground (bold when selected)
+4. **Source pill** — `[claude]` or `[opencode]` with surface0 background, source-colored foreground text. Rounded brackets via `[`/`]` chars. Width-padded to 10 chars so columns align. Claude = mauve foreground, OpenCode = blue foreground.
+5. **Gap** — spaces filling to the right-aligned columns
+6. **Token count** — right-aligned to a fixed column (e.g., col 60), dim style
+7. **Age** — right-aligned after tokens, dim style
+8. **Backup indicator** — `↶` in green when backup exists (existing, unchanged)
 
-`synthMetaFromLive` creates SessionMeta entries with TokenCount: 0 and no turn
-count. When a live session IS already in the scan results, the scan metadata
-should have tokens. The bug happens when:
-1. The session was synthesized (not in scan)
-2. OR the scan results don't have the session yet
+### Line 2 — Context row (indented)
 
-Fix: after `syncLiveMetas` merges synthesized entries, the picker should
-refresh metadata from the backend on slow ticks so tokens/turns populate once
-the session is written to the DB.
+```
+       ~/cs/projects/riverineranch  ·  453 turns
+       ~/cs/dotcor  ·  692 turns  ·  $0.11
+```
 
-Alternative simpler fix: have the live detector return token/turn counts
-alongside the LiveSession so `synthMetaFromLive` can populate them directly.
-For OpenCode this is a cheap SQL query (the detector already queries the DB).
+- 6-space indent
+- Path in subtext0, left-truncated (existing behavior)
+- Turns count after `·` separator
+- Cost after turns when present (opencode sessions)
 
-Going with the simpler fix: add `TokenCount int` and `TurnCount int` to
-`LiveSession`, populate them in the OpenCode detector, and use them in
-`synthMetaFromLive`.
+### Source pill implementation
 
-### Turn count on SessionMeta
+```go
+func sourcePill(kind session.SourceKind) string {
+    switch kind {
+    case session.SourceClaude:
+        // surface0 background, mauve foreground, 10-char padded
+        return lipgloss.NewStyle().
+            Background(colSurface0).
+            Foreground(colMauve).
+            Padding(0, 1).
+            Render("claude")
+    case session.SourceOpenCode:
+        return lipgloss.NewStyle().
+            Background(colSurface0).
+            Foreground(colBlue).
+            Padding(0, 1).
+            Render("opencode")
+    default:
+        return lipgloss.NewStyle().
+            Background(colSurface0).
+            Foreground(colSubtext0).
+            Padding(0, 1).
+            Render(string(kind))
+    }
+}
+```
 
-Currently `SessionMeta` has no `TurnCount` field. We need one so the second
-line can show it. Options:
-1. Add `TurnCount int` to `SessionMeta`, populate in Scan
-2. Derive from existing data somehow
+### Right-alignment approach
 
-Going with option 1 — add the field and populate it:
-- Claude: count JSONL "type:assistant" messages (or estimate from token count)
-- OpenCode: `SELECT COUNT(*) FROM message WHERE session_id = ? AND json_extract(data, '$.role') = 'assistant'`
+Replace the current gap-fill logic with explicit right-alignment of the token
+and age columns. Compute the right section width at render time and use
+`lipgloss.Place` or manual padding to align tokens to a consistent column
+position within the content width.
+
+The right section is: `tokStr + "  " + ageStr + backup`. Compute its rendered
+width, then the gap is `contentWidth - leftWidth - rightWidth`.
+
+### Width tiers
+
+- **≥ 80 cols:** Full 2-line layout with pill badge, tokens, age, path, turns
+- **< 80 cols:** Drop to 1-line compact: gutter + glyph + id + pill + tokens
+
+No longer need the 100-col tier since the badge is always inline after the ID.
 
 ## Key Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Status word style | Dot + bold colored text | User preference; brighter than current plain text |
-| Ended time format | Relative < 24h, absolute otherwise | Best of both worlds per user preference |
-| Token display | With unit (`15.7M tok`) | User preference |
-| 2nd line info | Path + turns + cost (if > 0) | Max info density without clutter |
-| 0-token fix | Populate from detector | Simpler than refresh-from-backend approach |
-| Turn count source | New SessionMeta field | Clean; both backends can populate |
+| Badge style | Subtle pill (surface0 bg, colored fg) | Readable without being loud; matches k9s conventions |
+| Column alignment | Right-aligned tokens + age | Easier to scan vertically across rows |
+| Pill color per source | Mauve=claude, Blue=opencode | Uses existing theme colors; distinguishable |
+| Badge always visible | Yes | Source is primary info, not optional metadata |
 
-## Edge Cases
+## Rejected Alternatives
 
-- Sessions with 0 turns (just started): show "0 turns" — honest, not confusing
-- Cost is 0 (subscription): don't show cost — clean
-- Very long paths + turns + cost on 2nd line: left-truncate path to fit
-- Token count of 0: show "0 tok" — consistent
+- **Icon glyphs instead of text badge** — less clear, emoji rendering varies across terminals
+- **Color-coded session ID** — harder to read, conflicts with selection highlighting
+- **Bold inverse pill** — too loud, draws attention away from tokens/age which matter more
 
-## Open Questions
+## Scope
 
-None — all resolved in discussion.
+Changes are limited to `internal/tui/sessions.go`:
+- `renderSessionRow` — restructure line 1 layout
+- `renderTwoLineSessionRow` — restructure line 2 layout
+- New `sourcePill` helper replaces `sourceBadge`
+- Remove 3-tier width branching (simplify to 2-tier: ≥80 and <80)

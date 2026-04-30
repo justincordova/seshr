@@ -158,7 +158,7 @@ func TestBuildRecentRows_LivePinnedToTop(t *testing.T) {
 	}
 
 	// Act
-	rows, ordered := tui.BuildRecentRows(metas, live)
+	rows, ordered := tui.BuildRecentRows(metas, live, tui.SortLatest)
 
 	// Assert — 2 live rows, divider, 2 ended rows = 5 total.
 	require.Len(t, rows, 5)
@@ -191,7 +191,7 @@ func TestBuildRecentRows_StatusClassOrder(t *testing.T) {
 	}
 
 	// Act
-	rows, ordered := tui.BuildRecentRows(metas, live)
+	rows, ordered := tui.BuildRecentRows(metas, live, tui.SortLatest)
 
 	// Assert
 	require.Len(t, rows, 3) // no divider, no ended
@@ -209,7 +209,7 @@ func TestBuildRecentRows_NoLiveOmitsDivider(t *testing.T) {
 	}
 
 	// Act
-	rows, _ := tui.BuildRecentRows(metas, nil)
+	rows, _ := tui.BuildRecentRows(metas, nil, tui.SortLatest)
 
 	// Assert — only sessions, no divider.
 	require.Len(t, rows, 2)
@@ -225,7 +225,7 @@ func TestBuildRecentRows_NoEndedOmitsDivider(t *testing.T) {
 	}
 
 	// Act
-	rows, _ := tui.BuildRecentRows(metas, live)
+	rows, _ := tui.BuildRecentRows(metas, live, tui.SortLatest)
 
 	// Assert
 	require.Len(t, rows, 1)
@@ -234,7 +234,7 @@ func TestBuildRecentRows_NoEndedOmitsDivider(t *testing.T) {
 
 func TestBuildRecentRows_EmptyMetas(t *testing.T) {
 	// Arrange / Act
-	rows, ordered := tui.BuildRecentRows(nil, nil)
+	rows, ordered := tui.BuildRecentRows(nil, nil, tui.SortLatest)
 
 	// Assert
 	assert.Empty(t, rows)

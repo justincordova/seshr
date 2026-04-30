@@ -34,6 +34,7 @@ type PickerKeys struct {
 	Delete  key.Binding
 	Restore key.Binding
 	Search  key.Binding
+	Sort    key.Binding
 	Quit    key.Binding
 }
 
@@ -49,6 +50,7 @@ func DefaultPickerKeys() PickerKeys {
 		Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		Restore:    key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restore")),
 		Search:     key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+		Sort:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
 		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}
 }

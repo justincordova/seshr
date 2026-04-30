@@ -155,7 +155,7 @@ func (m LandingModel) renderBody(cw int) string {
 	idStyle := lipgloss.NewStyle().Foreground(m.th.Foreground).Bold(true)
 	headerLine := idStyle.Render(shortDisplayID(meta.Kind, meta.ID)) + " · " +
 		dimStyle.Render(meta.Project) + " · " +
-		dimStyle.Render(sourceBadge(meta.Kind)) + " · " +
+		sourcePill(meta.Kind) + " · " +
 		stateStr
 	b.WriteString(headerLine)
 	b.WriteString("\n")
