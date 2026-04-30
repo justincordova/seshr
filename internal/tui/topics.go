@@ -884,6 +884,7 @@ func (o Overview) renderFooter(width int) string {
 		kbdPill("a", "toggle all"),
 		kbdPill("p", "prune"),
 		kbdPill("r", "replay"),
+		kbdPill("c", "resume"),
 		kbdPill("tab", "stats"),
 		kbdPill("/", "search"),
 		kbdPill("esc", "back"),
