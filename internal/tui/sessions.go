@@ -955,7 +955,7 @@ func homePathDisplay(p string) string {
 		return p
 	}
 	if p == home {
-		return "~"
+		return "~/"
 	}
 	if strings.HasPrefix(p, home+"/") {
 		return "~" + strings.TrimPrefix(p, home)
