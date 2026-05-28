@@ -59,6 +59,10 @@ func TestDecodeChain_CompletedTool_EmitsCallAndResult(t *testing.T) {
 	assert.Equal(t, "bash", dc.Turns[0].ToolCalls[0].Name)
 	require.Len(t, dc.Turns[0].ToolResults, 1)
 	assert.False(t, dc.Turns[0].ToolResults[0].IsError)
+	// State.output is stored as a JSON-encoded string; the raw bytes include
+	// surrounding quotes. The decoder must strip them so the rendered turn
+	// reads as `file1`, not `"file1"`.
+	assert.Equal(t, "file1", dc.Turns[0].ToolResults[0].Content)
 }
 
 func TestDecodeChain_RunningTool_CallOnly(t *testing.T) {
@@ -95,6 +99,29 @@ func TestDecodeChain_ErrorTool_EmitsErrorResult(t *testing.T) {
 
 	require.Len(t, dc.Turns[0].ToolResults, 1)
 	assert.True(t, dc.Turns[0].ToolResults[0].IsError)
+	assert.Equal(t, "command not found", dc.Turns[0].ToolResults[0].Content)
+}
+
+func TestDecodeChain_NonStringToolOutput_PreservesRaw(t *testing.T) {
+	msgs := []messageRow{msg("a1", "assistant", "u1", 2000)}
+	parts := []partRow{partWith("p1", "a1", map[string]any{
+		"type":   "tool",
+		"callID": "call_o",
+		"tool":   "json_tool",
+		"state": map[string]any{
+			"status": "completed",
+			"input":  map[string]any{},
+			"output": map[string]any{"answer": 42},
+		},
+	})}
+
+	dc, err := decodeChain(msgs, parts)
+	require.NoError(t, err)
+
+	require.Len(t, dc.Turns[0].ToolResults, 1)
+	// Object outputs are not unwrappable as a string; preserve the raw JSON
+	// so the user still sees the data instead of an empty turn.
+	assert.Contains(t, dc.Turns[0].ToolResults[0].Content, "\"answer\":42")
 }
 
 func TestDecodeChain_CompactionPart_EmitsBoundary(t *testing.T) {

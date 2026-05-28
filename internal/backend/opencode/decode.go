@@ -217,13 +217,13 @@ func applyPart(turn *session.Turn, p partRow, out *decodedChain) error {
 		case "completed":
 			turn.ToolResults = append(turn.ToolResults, session.ToolResult{
 				ID:      tp.CallID,
-				Content: string(tp.State.Output),
+				Content: decodeToolOutput(tp.State.Output),
 			})
 			out.ToolResultTokens += estimateTokens(tp.State.Output)
 		case "error":
 			turn.ToolResults = append(turn.ToolResults, session.ToolResult{
 				ID:      tp.CallID,
-				Content: string(tp.State.Output),
+				Content: decodeToolOutput(tp.State.Output),
 				IsError: true,
 			})
 			out.ToolResultTokens += estimateTokens(tp.State.Output)
@@ -311,4 +311,21 @@ func appendText(existing, add string) string {
 func estimateTokens(b json.RawMessage) int {
 	// Same coarse heuristic the Claude scanner uses.
 	return len(b) / 4
+}
+
+// decodeToolOutput converts an OC tool part's state.output JSON value into a
+// human-readable string. When output is a JSON string the raw bytes include
+// surrounding quotes ("foo" -> []byte{'"','f','o','o','"'}); using string()
+// directly bleeds those quotes into the rendered turn. We try to decode as a
+// string first and fall back to the raw bytes for objects/arrays/numbers so
+// non-string outputs are still surfaced.
+func decodeToolOutput(b json.RawMessage) string {
+	if len(b) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		return s
+	}
+	return string(b)
 }
