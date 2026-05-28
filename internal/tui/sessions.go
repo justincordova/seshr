@@ -1195,8 +1195,11 @@ func deleteSelected(p *Picker, reg *backend.Registry) error {
 		}
 	}
 	p.allMetas = removeMeta(p.allMetas, sel.ID)
-	p.metas = removeMeta(p.metas, sel.ID)
-	p.rebuildGroups()
+	// Re-derive the filtered view from the authoritative allMetas. Calling
+	// removeMeta directly on p.metas would shift indices in a slice that
+	// can share the same backing array as p.allMetas (when no search is
+	// active) — the second call would then read stale entries.
+	p.applySearchFilter()
 	if p.cursor >= len(p.flatRows) && p.cursor > 0 {
 		p.cursor--
 	}
@@ -1206,7 +1209,10 @@ func deleteSelected(p *Picker, reg *backend.Registry) error {
 func removeMeta(metas []backend.SessionMeta, id string) []backend.SessionMeta {
 	for i, m := range metas {
 		if m.ID == id {
-			return append(metas[:i], metas[i+1:]...)
+			out := make([]backend.SessionMeta, 0, len(metas)-1)
+			out = append(out, metas[:i]...)
+			out = append(out, metas[i+1:]...)
+			return out
 		}
 	}
 	return metas
