@@ -25,11 +25,21 @@ func NewEditor(store *Store) *Editor {
 func (e *Editor) Kind() session.SourceKind { return session.SourceClaude }
 
 // Prune expands the selection using tool-pairing logic, then rewrites the JSONL.
+//
+// The per-session flock is acquired BEFORE the file is parsed so a live
+// agent appending bytes between read and rewrite cannot have its appends
+// silently truncated by the eventual atomic-replace.
 func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (backend.PruneResult, error) {
 	path, err := e.store.transcriptPath(id)
 	if err != nil {
 		return backend.PruneResult{}, err
 	}
+
+	lock, err := editor.TryLock(path)
+	if err != nil {
+		return backend.PruneResult{}, err
+	}
+	defer func() { _ = lock.Release() }()
 
 	p := NewClaude()
 	sess, err := p.Parse(ctx, path)
@@ -47,11 +57,39 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 	ts := topics.Cluster(sess, topics.DefaultOptions())
 	expanded := editor.ExpandSelection(sess, ts, edSel)
 
-	if err := editor.PruneSession(sess, expanded); err != nil {
+	// pruneWithoutLock does the same work as PruneSession but without
+	// re-acquiring the flock we already hold.
+	if err := pruneWithoutLock(sess, expanded); err != nil {
 		return backend.PruneResult{}, err
 	}
 
 	return backend.PruneResult{}, nil
+}
+
+// pruneWithoutLock backs Prune above. Callers MUST already hold the
+// per-session flock; this is unexported to keep the lock invariant local.
+func pruneWithoutLock(sess *session.Session, expanded editor.Selection) error {
+	path := sess.Path
+
+	if err := editor.CreateBackup(path); err != nil {
+		return err
+	}
+
+	tmp := path + ".tmp"
+	if err := editor.Prune(sess, expanded, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+
+	if err := editor.AtomicReplace(tmp, path); err != nil {
+		return err
+	}
+
+	slog.Info("pruned session",
+		"path", path,
+		"removed_turns", len(expanded.Turns),
+	)
+	return nil
 }
 
 // Delete removes the JSONL file (and its .lock sibling) but PRESERVES the
@@ -64,11 +102,15 @@ func (e *Editor) Delete(_ context.Context, id string) error {
 		return err
 	}
 
-	// Take a defensive backup before removing the transcript. CreateBackup
-	// silently overwrites an existing .bak — that's the intended behavior
-	// here (the freshest snapshot wins).
-	if err := editor.CreateBackup(path); err != nil {
-		slog.Warn("delete: pre-removal backup failed", "id", id, "err", err)
+	// Take a snapshot only when no .bak exists yet. A pre-existing .bak is
+	// almost certainly from a recent prune — overwriting it here would
+	// silently turn a Prune→Delete→Restore round-trip into "restore
+	// recovers the just-pre-delete state" instead of "restore recovers
+	// what existed before the user's last destructive edit".
+	if _, statErr := os.Stat(path + ".bak"); os.IsNotExist(statErr) {
+		if err := editor.CreateBackup(path); err != nil {
+			slog.Warn("delete: pre-removal backup failed", "id", id, "err", err)
+		}
 	}
 
 	if err := os.Remove(path); err != nil {
