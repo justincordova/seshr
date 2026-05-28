@@ -563,9 +563,6 @@ func (a App) View() string {
 		return a.resumeOverlay.View()
 	}
 
-	// On non-picker screens, show a live-count badge in the view.
-	// TODO: append the badge to the actual footer line; for now just return base.
-	_ = a.liveIndex
 	return base
 }
 
