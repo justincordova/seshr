@@ -9,7 +9,7 @@ import (
 	"github.com/justincordova/seshr/internal/session"
 )
 
-func Prune(sess *session.Session, selection Selection, dstPath string) error {
+func Prune(sess *session.Session, selection Selection, dstPath string) (retErr error) {
 	if dstPath == sess.Path {
 		return fmt.Errorf("destination must differ from source (%s)", dstPath)
 	}
@@ -28,7 +28,25 @@ func Prune(sess *session.Session, selection Selection, dstPath string) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dstPath, err)
 	}
-	defer func() { _ = f.Close() }()
+	w := bufio.NewWriter(f)
+	// Order matters: flush buffered writes → fsync → close. On any error
+	// path the deferred chain captures the first failure into retErr so a
+	// silent truncation cannot masquerade as success.
+	defer func() {
+		if err := f.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("close %s: %w", dstPath, err)
+		}
+	}()
+	defer func() {
+		if err := f.Sync(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("sync %s: %w", dstPath, err)
+		}
+	}()
+	defer func() {
+		if err := w.Flush(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("flush %s: %w", dstPath, err)
+		}
+	}()
 
 	src, err := os.Open(sess.Path)
 	if err != nil {
@@ -39,7 +57,6 @@ func Prune(sess *session.Session, selection Selection, dstPath string) error {
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	lineIdx := 0
-	w := bufio.NewWriter(f)
 
 	for scanner.Scan() {
 		if !pruned[lineIdx] {
@@ -54,9 +71,6 @@ func Prune(sess *session.Session, selection Selection, dstPath string) error {
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("scan source: %w", err)
-	}
-	if err := w.Flush(); err != nil {
-		return fmt.Errorf("flush: %w", err)
 	}
 	return nil
 }
