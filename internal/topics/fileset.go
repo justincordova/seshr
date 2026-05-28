@@ -46,6 +46,8 @@ func ExtractFiles(calls []session.ToolCall) []string {
 
 // Jaccard returns the Jaccard similarity coefficient between two string sets.
 // Both nil/empty → returns 1.0 (identical empty sets). One empty → 0.0.
+// Input slices may contain duplicates; both inputs are deduplicated before
+// computing the intersection so the result is always in [0, 1].
 func Jaccard(a, b []string) float64 {
 	if len(a) == 0 && len(b) == 0 {
 		return 1.0
@@ -54,14 +56,19 @@ func Jaccard(a, b []string) float64 {
 	for _, s := range a {
 		setA[s] = struct{}{}
 	}
-	var intersection int
 	setB := make(map[string]struct{}, len(b))
 	for _, s := range b {
+		setB[s] = struct{}{}
+	}
+	var intersection int
+	for s := range setB {
 		if _, ok := setA[s]; ok {
 			intersection++
 		}
-		setB[s] = struct{}{}
 	}
 	union := len(setA) + len(setB) - intersection
+	if union == 0 {
+		return 1.0
+	}
 	return float64(intersection) / float64(union)
 }
