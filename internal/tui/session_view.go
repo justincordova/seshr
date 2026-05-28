@@ -48,14 +48,38 @@ func NewSessionView(ctx context.Context, store backend.SessionStore, meta backen
 
 // Append adds new turns to the view, evicting oldest if the window is full.
 // Topics are updated via ClusterAppend.
+//
+// Clustering happens BEFORE eviction so ClusterAppend's `len(sess.Turns) -
+// len(newTurns)` base equals the absolute index of the first new turn in
+// the current window. Eviction would shrink sess.Turns out from under the
+// existing topics' absolute indices and the next ClusterAppend would index
+// past the slice end.
+//
+// NOTE: existing topic indices already carry absolute (pre-eviction) values.
+// Once eviction has happened in a previous Append, ClusterAppend's index
+// math against sess.Turns[prevAbsIdx] would be wrong, so we defensively
+// skip incremental clustering and rebuild from scratch in that case. The
+// cost is O(turns-in-window) re-cluster instead of O(newTurns); acceptable
+// given eviction only happens on >500-turn sessions and not on every tick.
 func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) {
 	if len(newTurns) == 0 {
 		v.Cursor = newCursor
 		return
 	}
+	hadEvictionBefore := v.TurnsLoadedFrom > 0
+
 	v.Session.Turns = append(v.Session.Turns, newTurns...)
 	v.TotalTurns += len(newTurns)
 	v.TurnsLoadedTo = v.TotalTurns
+
+	if hadEvictionBefore {
+		// Re-cluster the in-memory window; topics will reference indices
+		// relative to TurnsLoadedFrom. Callers that care about absolute
+		// indices must add TurnsLoadedFrom themselves.
+		v.Topics = topics.Cluster(v.Session, topics.DefaultOptions())
+	} else {
+		v.Topics = topics.ClusterAppend(v.Session, topics.DefaultOptions(), v.Topics, newTurns)
+	}
 
 	// Evict oldest turns if over the window.
 	if len(v.Session.Turns) > maxTurnsInMemory {
@@ -64,8 +88,6 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 		v.TurnsLoadedFrom += excess
 	}
 
-	// Update clustering incrementally.
-	v.Topics = topics.ClusterAppend(v.Session, topics.DefaultOptions(), v.Topics, newTurns)
 	v.Cursor = newCursor
 }
 
