@@ -240,8 +240,13 @@ func applyPart(turn *session.Turn, p partRow, out *decodedChain) error {
 		}
 		// Surface as a synthetic tool_result on the owning turn. Content is
 		// the URL/filename — inline contents live at pf.URL (not fetched).
+		// Prefix the synthetic ID so editor.PullToolPartners (which matches
+		// ToolCall.ID against ToolResult.ID) can't false-positive against a
+		// real tool-use ID. p.ID is a part-row id (prt_*), but a downstream
+		// agent producing call IDs by the same scheme would otherwise risk
+		// pairing the file with an unrelated call.
 		turn.ToolResults = append(turn.ToolResults, session.ToolResult{
-			ID:      p.ID,
+			ID:      "oc_file_" + p.ID,
 			Content: fmt.Sprintf("[file] %s (%s)", pf.Filename, pf.Mime),
 		})
 	case "compaction":

@@ -335,14 +335,17 @@ func firstStringArg(raw []byte) string {
 }
 
 // truncate returns s truncated to max runes, with an ellipsis when clipped.
+// Operates on runes, not bytes — otherwise filenames or prompts containing
+// multibyte characters get sliced mid-rune and produce invalid UTF-8.
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	rs := []rune(s)
+	if len(rs) <= max {
 		return s
 	}
 	if max <= 1 {
-		return s[:max]
+		return string(rs[:max])
 	}
-	return s[:max-1] + "…"
+	return string(rs[:max-1]) + "…"
 }
 
 // childProcs returns the direct child ProcInfos of pid from snap.

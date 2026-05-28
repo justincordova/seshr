@@ -125,7 +125,7 @@ func TestEditor_Delete_RemovesSessionAndCascades(t *testing.T) {
 	require.NoError(t, err)
 	var deleteBackups []string
 	for _, e := range entries {
-		if filepath.Ext(e.Name()) == ".json" && contains(e.Name(), "-delete") {
+		if filepath.Ext(e.Name()) == ".json" && contains(e.Name(), "_delete") {
 			deleteBackups = append(deleteBackups, e.Name())
 		}
 	}

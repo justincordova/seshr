@@ -219,7 +219,11 @@ func filterMessagesWithAllPartsLive(msgIDs []string, parts []partRow) []string {
 			wanted[p.MessageID] = true
 		}
 	}
-	out := msgIDs[:0:len(msgIDs)]
+	// Allocate a fresh slice rather than reuse msgIDs's backing array.
+	// In-place compaction would silently mutate the caller's slice; today
+	// the only caller discards msgIDs immediately after, but a future
+	// caller would have no way to know.
+	out := make([]string, 0, len(msgIDs))
 	for _, id := range msgIDs {
 		if wanted[id] {
 			out = append(out, id)
@@ -476,9 +480,12 @@ func (e *Editor) writeAndRetainBackup(id, mode string, msgs []messageRowBak, par
 	// stably by filename and a recent backup can't be silently destroyed).
 	ts := e.now().Format("20060102-150405.000")
 	ts = strings.Replace(ts, ".", "-", 1)
+	// Suffix prefix '_' sorts AFTER '.' so a same-millisecond prune-then-
+	// delete still surfaces the delete as "latest" via lex sort. Using
+	// '-' would put -delete.json BEFORE .json (since '-' < '.').
 	name := ts + ".json"
 	if mode == "delete" {
-		name = ts + "-delete.json"
+		name = ts + "_delete.json"
 	}
 	path := filepath.Join(dir, name)
 
