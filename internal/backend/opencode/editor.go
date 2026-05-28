@@ -84,28 +84,33 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 		return backend.PruneResult{}, nil
 	}
 
-	resolved, err := e.resolveSelection(ctx, id, sel.TurnIndices)
-	if err != nil {
-		return backend.PruneResult{}, fmt.Errorf("resolve selection: %w", err)
-	}
-	if len(resolved.MsgIDs) == 0 {
-		return backend.PruneResult{SkippedRunningTools: resolved.SkippedRunningTools}, nil
-	}
-
-	msgs, parts, err := e.readRowsForBackup(ctx, id, resolved.MsgIDs, resolved.PartIDs)
-	if err != nil {
-		return backend.PruneResult{}, fmt.Errorf("read backup rows: %w", err)
-	}
-
-	// Hold the per-session lock across BOTH the backup write and the DB
-	// transaction. Releasing the lock between them would let a second seshr
-	// process race against an in-flight prune after we'd already committed
-	// to the backup snapshot.
+	// Take the per-session lock BEFORE reading any chain state. A second
+	// seshr process could otherwise snapshot the same target rows, write
+	// overlapping backups, and produce incomplete restore data — the
+	// concurrent winner deletes rows the loser thought it had captured.
+	var resolved resolvedSelection
 	if err := e.withSessionLock(id, func() error {
+		r, err := e.resolveSelection(ctx, id, sel.TurnIndices)
+		if err != nil {
+			return fmt.Errorf("resolve selection: %w", err)
+		}
+		if len(r.MsgIDs) == 0 {
+			// Nothing left to delete after running-tool filtering.
+			resolved = r
+			return nil
+		}
+		msgs, parts, err := e.readRowsForBackup(ctx, id, r.MsgIDs, r.PartIDs)
+		if err != nil {
+			return fmt.Errorf("read backup rows: %w", err)
+		}
 		if err := e.writeAndRetainBackup(id, "prune", msgs, parts); err != nil {
 			return err
 		}
-		return e.execPruneTx(ctx, resolved)
+		if err := e.execPruneTx(ctx, r); err != nil {
+			return err
+		}
+		resolved = r
+		return nil
 	}); err != nil {
 		return backend.PruneResult{}, err
 	}
@@ -274,16 +279,16 @@ func (e *Editor) execPruneTx(ctx context.Context, r resolvedSelection) error {
 // Delete removes the entire session from the DB. A backup is written first
 // so Restore is available. The FK cascade on session → message → part
 // handles the child rows in a single statement.
+//
+// All three steps — snapshot, backup write, DELETE — run inside the
+// per-session lock so a concurrent prune cannot grab rows we've already
+// captured into our backup and produce a half-deleted state.
 func (e *Editor) Delete(ctx context.Context, id string) error {
-	msgs, parts, err := e.readWholeSessionForBackup(ctx, id)
-	if err != nil {
-		return fmt.Errorf("read session for delete backup: %w", err)
-	}
-
-	// Hold the per-session lock across BOTH the backup write and the DB
-	// delete transaction so a concurrent prune/restore cannot interleave
-	// between the snapshot and the destructive DELETE.
 	return e.withSessionLock(id, func() error {
+		msgs, parts, err := e.readWholeSessionForBackup(ctx, id)
+		if err != nil {
+			return fmt.Errorf("read session for delete backup: %w", err)
+		}
 		if err := e.writeAndRetainBackup(id, "delete", msgs, parts); err != nil {
 			return err
 		}
