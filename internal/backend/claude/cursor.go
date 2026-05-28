@@ -40,11 +40,16 @@ func identitiesMatch(prev, current cursorData) bool {
 	if prev.MtimeNs == 0 {
 		return false // zero cursor → always reload
 	}
-	// If inode is set on both, use it.
+	// If inode is set on both, use it. mtime is allowed to regress: an
+	// inode match is a strong signal the file is the same and we'd rather
+	// tolerate touch/mtime-rewind than burn a full reload.
 	if prev.Inode != 0 && current.Inode != 0 {
-		return prev.Inode == current.Inode && prev.MtimeNs <= current.MtimeNs
+		return prev.Inode == current.Inode
 	}
-	// Darwin fallback: size identity (file rotation typically produces a
-	// different size; mtime alone can revert on rename).
-	return prev.SizeBytes == current.SizeBytes && prev.MtimeNs <= current.MtimeNs
+	// Darwin fallback: size is monotonically non-decreasing for an append-only
+	// JSONL. A shrink means truncation/rotation; a grow is a normal append.
+	// Strict equality would force a full reload on every fast tick whenever
+	// the agent has written anything since Load — which then duplicates all
+	// turns through SessionView.Append.
+	return current.SizeBytes >= prev.SizeBytes && prev.MtimeNs <= current.MtimeNs
 }
