@@ -313,28 +313,37 @@ func toolResultTurn(rec rawRecord, lineNum int) session.Turn {
 
 // attachToolResult walks backwards through sess.Turns looking for assistant
 // turns that issued matching tool_use_ids. Returns true if ALL tool results
-// were attached.
+// were attached. Tracks per-result attachment so a duplicate tool_use ID in
+// the same turn can't make us report success while leaving some results
+// orphaned — the caller drops the synthetic tool_result turn only when
+// every result has a home.
 func attachToolResult(sess *session.Session, turn session.Turn) bool {
 	if len(turn.ToolResults) == 0 {
 		return false
 	}
-	attached := 0
+	attached := make([]bool, len(turn.ToolResults))
 	for i := len(sess.Turns) - 1; i >= 0; i-- {
 		for _, tc := range sess.Turns[i].ToolCalls {
-			for _, tr := range turn.ToolResults {
-				if tc.ID == tr.ID {
-					est := tokenizer.Estimate(tr.Content)
-					sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, tr)
-					sess.Turns[i].Tokens += est
-					sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
-					sess.TokenCount += est
-					sess.ToolResultTokens += est
-					attached++
+			for ri, tr := range turn.ToolResults {
+				if attached[ri] || tc.ID != tr.ID {
+					continue
 				}
+				est := tokenizer.Estimate(tr.Content)
+				sess.Turns[i].ToolResults = append(sess.Turns[i].ToolResults, tr)
+				sess.Turns[i].Tokens += est
+				sess.Turns[i].ExtraLineIndices = append(sess.Turns[i].ExtraLineIndices, turn.RawIndex)
+				sess.TokenCount += est
+				sess.ToolResultTokens += est
+				attached[ri] = true
 			}
 		}
 	}
-	return attached == len(turn.ToolResults)
+	for _, ok := range attached {
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeMessage(raw []byte) (rawMessage, error) {
