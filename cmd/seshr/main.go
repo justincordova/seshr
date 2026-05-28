@@ -56,11 +56,21 @@ func main() {
 			}
 			slog.Info("config loaded", "theme", cfg.Theme)
 
+			// Resolve the user's home once. Container/chroot/no-HOME
+			// environments can make this fail; if it does, anything that
+			// depends on a home-rooted path (live sidecar detection,
+			// opencode backups) is disabled rather than silently writing
+			// to malformed paths like "/.seshr/...".
+			home, homeErr := os.UserHomeDir()
+			if homeErr != nil {
+				slog.Warn("user home unavailable; sidecar live-detect and opencode backups will be disabled",
+					"err", homeErr)
+			}
+
 			scanRoot := dirOverride
 			if scanRoot == "" {
-				home, err := os.UserHomeDir()
-				if err != nil {
-					return fmt.Errorf("user home: %w", err)
+				if homeErr != nil {
+					return fmt.Errorf("user home: %w", homeErr)
 				}
 				scanRoot = filepath.Join(home, ".claude", "projects")
 			}
@@ -73,8 +83,7 @@ func main() {
 			claudeStore := claudeBackend.NewStore(scanRoot)
 			reg.RegisterStore(claudeStore)
 			reg.RegisterEditor(claudeBackend.NewEditor(claudeStore))
-			if !noLive {
-				home, _ := os.UserHomeDir()
+			if !noLive && homeErr == nil {
 				sidecarDir := filepath.Join(home, ".claude", "sessions")
 				reg.RegisterDetector(claudeBackend.NewDetector(scanRoot, sidecarDir))
 			}
@@ -88,21 +97,24 @@ func main() {
 					ocPath = p
 				}
 			}
-			seshrDataDir, _ := os.UserHomeDir()
-			ocBackupDir := filepath.Join(seshrDataDir, ".seshr", "backups", "opencode")
-			ocStore, ocErr := ocBackend.NewStore(ocPath, ocBackupDir)
-			switch {
-			case ocErr == nil:
-				reg.RegisterStore(ocStore)
-				reg.RegisterEditor(ocBackend.NewEditor(ocStore, ocBackupDir))
-				if !noLive {
-					reg.RegisterDetector(ocBackend.NewDetector(ocStore))
+			if homeErr != nil {
+				slog.Warn("opencode backend disabled: no home dir for backups", "err", homeErr)
+			} else {
+				ocBackupDir := filepath.Join(home, ".seshr", "backups", "opencode")
+				ocStore, ocErr := ocBackend.NewStore(ocPath, ocBackupDir)
+				switch {
+				case ocErr == nil:
+					reg.RegisterStore(ocStore)
+					reg.RegisterEditor(ocBackend.NewEditor(ocStore, ocBackupDir))
+					if !noLive {
+						reg.RegisterDetector(ocBackend.NewDetector(ocStore))
+					}
+					slog.Info("opencode backend registered", "db", ocPath)
+				case errors.Is(ocErr, ocBackend.ErrNoDatabase):
+					slog.Debug("opencode backend skipped — no database found", "path", ocPath)
+				default:
+					slog.Warn("opencode backend disabled due to error", "err", ocErr)
 				}
-				slog.Info("opencode backend registered", "db", ocPath)
-			case errors.Is(ocErr, ocBackend.ErrNoDatabase):
-				slog.Debug("opencode backend skipped — no database found", "path", ocPath)
-			default:
-				slog.Warn("opencode backend disabled due to error", "err", ocErr)
 			}
 
 			defer func() { _ = reg.Close() }()
