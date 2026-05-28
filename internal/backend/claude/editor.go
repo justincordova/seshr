@@ -54,20 +54,33 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 	return backend.PruneResult{}, nil
 }
 
-// Delete removes the JSONL file plus .bak and .lock siblings.
+// Delete removes the JSONL file (and its .lock sibling) but PRESERVES the
+// .bak so a user who reflexively deletes a session can still restore it.
+// The .bak is cleaned up only when the parent project dir is also removed
+// (i.e. there is nothing left to clean up beyond it).
 func (e *Editor) Delete(_ context.Context, id string) error {
 	path, err := e.store.transcriptPath(id)
 	if err != nil {
 		return err
 	}
 
+	// Take a defensive backup before removing the transcript. CreateBackup
+	// silently overwrites an existing .bak — that's the intended behavior
+	// here (the freshest snapshot wins).
+	if err := editor.CreateBackup(path); err != nil {
+		slog.Warn("delete: pre-removal backup failed", "id", id, "err", err)
+	}
+
 	if err := os.Remove(path); err != nil {
 		return err
 	}
-	_ = os.Remove(path + ".bak")
 	_ = os.Remove(path + ".lock")
 
-	// Clean up the parent directory if empty.
+	// Clean up the parent directory if empty. We do NOT remove the .bak —
+	// RestoreBackup uses Store.backupPath to locate it even when the .jsonl
+	// is gone. The directory removal is best-effort: if a .bak (or anything
+	// else) still lives there, Go's os.Remove on a non-empty dir errors and
+	// we leave it in place.
 	dir := filepath.Dir(path)
 	if err := os.Remove(dir); err == nil {
 		slog.Info("removed empty project dir", "dir", dir)
@@ -76,23 +89,22 @@ func (e *Editor) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// RestoreBackup restores from the .bak sibling.
+// RestoreBackup restores from the .bak sibling. Works even after Delete,
+// since backupPath does not require the .jsonl to be present.
 func (e *Editor) RestoreBackup(_ context.Context, id string) error {
-	path, err := e.store.transcriptPath(id)
+	bak, err := e.store.backupPath(id)
 	if err != nil {
-		// The .jsonl may have been deleted; try the .bak directly.
-		// Fall through using the ID under any project dir.
 		return err
 	}
-	return editor.Restore(path)
+	// editor.Restore copies <path>.bak -> <path>; derive the target path
+	// by stripping the .bak suffix.
+	jsonlPath := bak[:len(bak)-len(".bak")]
+	return editor.Restore(jsonlPath)
 }
 
-// HasBackup reports whether a .bak file exists next to the session's JSONL.
+// HasBackup reports whether a .bak file exists for this session, even when
+// the original .jsonl has been deleted.
 func (e *Editor) HasBackup(id string) bool {
-	path, err := e.store.transcriptPath(id)
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(path + ".bak")
+	_, err := e.store.backupPath(id)
 	return err == nil
 }

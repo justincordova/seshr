@@ -130,6 +130,22 @@ func (s *Store) transcriptPath(id string) (string, error) {
 	return matches[0], nil
 }
 
+// backupPath locates the .bak file for the given session ID under rootDir,
+// returning its path even if the original .jsonl no longer exists (e.g.,
+// after a Delete). The corresponding .jsonl path can be derived by trimming
+// the ".bak" suffix.
+func (s *Store) backupPath(id string) (string, error) {
+	pattern := filepath.Join(s.rootDir, "*", id+".jsonl.bak")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return "", errors.New("backup not found: " + id)
+	}
+	return matches[0], nil
+}
+
 // translateMeta converts a claudeMeta to backend.SessionMeta.
 func translateMeta(m claudeMeta) backend.SessionMeta {
 	return backend.SessionMeta{
