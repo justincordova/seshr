@@ -92,15 +92,28 @@ func pruneWithoutLock(sess *session.Session, expanded editor.Selection) error {
 	return nil
 }
 
-// Delete removes the JSONL file (and its .lock sibling) but PRESERVES the
-// .bak so a user who reflexively deletes a session can still restore it.
-// The .bak is cleaned up only when the parent project dir is also removed
-// (i.e. there is nothing left to clean up beyond it).
+// Delete removes the JSONL file but PRESERVES the .bak so a user who
+// reflexively deletes a session can still restore it. The .bak is cleaned
+// up only when the parent project dir is also removed (i.e. there is
+// nothing left to clean up beyond it).
+//
+// Holds the per-session flock for the duration so a concurrent Prune
+// cannot have its read race against this delete. Crucially, we do NOT
+// remove the .lock file itself — a flock is bound to the file inode, and
+// unlinking the directory entry mid-prune leaves the prune holding a
+// flock on an orphaned inode while a fresh TryLock would create a new
+// file with a different inode and "succeed" against it.
 func (e *Editor) Delete(_ context.Context, id string) error {
 	path, err := e.store.transcriptPath(id)
 	if err != nil {
 		return err
 	}
+
+	lock, err := editor.TryLock(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 
 	// Take a snapshot only when no .bak exists yet. A pre-existing .bak is
 	// almost certainly from a recent prune — overwriting it here would
@@ -116,13 +129,11 @@ func (e *Editor) Delete(_ context.Context, id string) error {
 	if err := os.Remove(path); err != nil {
 		return err
 	}
-	_ = os.Remove(path + ".lock")
 
-	// Clean up the parent directory if empty. We do NOT remove the .bak —
-	// RestoreBackup uses Store.backupPath to locate it even when the .jsonl
-	// is gone. The directory removal is best-effort: if a .bak (or anything
-	// else) still lives there, Go's os.Remove on a non-empty dir errors and
-	// we leave it in place.
+	// Clean up the parent directory if empty. We deliberately leave behind
+	// the .lock and .bak siblings; RestoreBackup needs the .bak, and the
+	// .lock costs nothing on disk while preventing the inode-orphan race
+	// described above. os.Remove on a non-empty dir errors silently.
 	dir := filepath.Dir(path)
 	if err := os.Remove(dir); err == nil {
 		slog.Info("removed empty project dir", "dir", dir)
