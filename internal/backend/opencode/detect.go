@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -283,7 +284,7 @@ func (d *Detector) queryCurrentTask(ctx context.Context, sessionID string, now t
 	var raw []byte
 	err := d.store.conns.read.QueryRowContext(ctx, q, sessionID, cutoffMs).Scan(&raw)
 	if err != nil {
-		if err != sql.ErrNoRows {
+		if !errors.Is(err, sql.ErrNoRows) {
 			slog.Debug("opencode detector: currentTask query failed",
 				"session", sessionID, "err", err)
 		}

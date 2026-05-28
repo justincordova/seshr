@@ -97,13 +97,16 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 		return backend.PruneResult{}, fmt.Errorf("read backup rows: %w", err)
 	}
 
+	// Hold the per-session lock across BOTH the backup write and the DB
+	// transaction. Releasing the lock between them would let a second seshr
+	// process race against an in-flight prune after we'd already committed
+	// to the backup snapshot.
 	if err := e.withSessionLock(id, func() error {
-		return e.writeAndRetainBackup(id, "prune", msgs, parts)
+		if err := e.writeAndRetainBackup(id, "prune", msgs, parts); err != nil {
+			return err
+		}
+		return e.execPruneTx(ctx, resolved)
 	}); err != nil {
-		return backend.PruneResult{}, err
-	}
-
-	if err := e.execPruneTx(ctx, resolved); err != nil {
 		return backend.PruneResult{}, err
 	}
 
@@ -242,7 +245,9 @@ func (e *Editor) execPruneTx(ctx context.Context, r resolvedSelection) error {
 	committed := false
 	defer func() {
 		if !committed {
-			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+			if _, rerr := conn.ExecContext(context.Background(), "ROLLBACK"); rerr != nil {
+				slog.Warn("opencode prune rollback failed", "err", rerr)
+			}
 		}
 	}()
 
@@ -271,12 +276,21 @@ func (e *Editor) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("read session for delete backup: %w", err)
 	}
 
-	if err := e.withSessionLock(id, func() error {
-		return e.writeAndRetainBackup(id, "delete", msgs, parts)
-	}); err != nil {
-		return err
-	}
+	// Hold the per-session lock across BOTH the backup write and the DB
+	// delete transaction so a concurrent prune/restore cannot interleave
+	// between the snapshot and the destructive DELETE.
+	return e.withSessionLock(id, func() error {
+		if err := e.writeAndRetainBackup(id, "delete", msgs, parts); err != nil {
+			return err
+		}
+		return e.execDeleteTx(ctx, id)
+	})
+}
 
+// execDeleteTx runs the DELETE FROM session ... within a BEGIN IMMEDIATE
+// transaction. Extracted from Delete so the per-session lock can wrap it
+// alongside the backup write.
+func (e *Editor) execDeleteTx(ctx context.Context, id string) error {
 	conn, err := e.writeConn(ctx)
 	if err != nil {
 		return err
@@ -289,7 +303,9 @@ func (e *Editor) Delete(ctx context.Context, id string) error {
 	committed := false
 	defer func() {
 		if !committed {
-			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+			if _, rerr := conn.ExecContext(context.Background(), "ROLLBACK"); rerr != nil {
+				slog.Warn("opencode delete rollback failed", "session", id, "err", rerr)
+			}
 		}
 	}()
 
@@ -343,7 +359,9 @@ func (e *Editor) execRestoreTx(ctx context.Context, payload backupPayload) error
 	committed := false
 	defer func() {
 		if !committed {
-			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+			if _, rerr := conn.ExecContext(context.Background(), "ROLLBACK"); rerr != nil {
+				slog.Warn("opencode restore rollback failed", "err", rerr)
+			}
 		}
 	}()
 
@@ -453,7 +471,11 @@ func (e *Editor) writeAndRetainBackup(id, mode string, msgs []messageRowBak, par
 		return fmt.Errorf("mkdir backup dir: %w", err)
 	}
 
-	ts := e.now().Format("20060102-150405")
+	// Millisecond resolution prevents two prunes within the same second from
+	// clobbering each other's backup file (the retention list is then ordered
+	// stably by filename and a recent backup can't be silently destroyed).
+	ts := e.now().Format("20060102-150405.000")
+	ts = strings.Replace(ts, ".", "-", 1)
 	name := ts + ".json"
 	if mode == "delete" {
 		name = ts + "-delete.json"
