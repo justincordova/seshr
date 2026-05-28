@@ -222,6 +222,11 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.skipInvisibleForward()
 				}
 				m.mainVP.GotoTop()
+				// Moving to a new turn collapses any expanded tool-result
+				// view; otherwise the user would silently move into a new
+				// turn while the screen kept rendering the previous turn's
+				// expanded result.
+				m.expandedTool = -1
 			}
 		case key.Matches(msg, m.keys.Prev):
 			if m.cursor > 0 {
@@ -230,11 +235,14 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.skipInvisibleBackward()
 				}
 				m.mainVP.GotoTop()
+				m.expandedTool = -1
 			}
 		case key.Matches(msg, m.keys.NextTopic):
 			m.cursor = m.nextTopicStart()
+			m.expandedTool = -1
 		case key.Matches(msg, m.keys.PrevTopic):
 			m.cursor = m.prevTopicStart()
+			m.expandedTool = -1
 		case key.Matches(msg, m.keys.ToggleThinking):
 			m.showThinking = !m.showThinking
 		case key.Matches(msg, m.keys.ToggleSlim):
