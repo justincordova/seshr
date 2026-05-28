@@ -83,8 +83,13 @@ func formatToolTask(name string, input json.RawMessage) string {
 	} else {
 		label = name
 	}
-	if len(label) > 30 {
-		label = label[:30]
+	// Rune-aware truncation. label is built from user-controlled fields
+	// (filenames, commands, URLs) that may contain multibyte characters.
+	// Byte slicing would split a rune mid-encoding and emit invalid UTF-8
+	// into the picker's live-task column.
+	runes := []rune(label)
+	if len(runes) > 30 {
+		label = string(runes[:30])
 	}
 	return label
 }
