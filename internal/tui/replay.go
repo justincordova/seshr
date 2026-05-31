@@ -28,6 +28,7 @@ type Replay struct {
 	slim               bool
 	showThinking       bool
 	autoPlay           bool
+	playGen            int
 	speed              int
 	width              int
 	height             int
@@ -66,6 +67,7 @@ func (m Replay) Init() tea.Cmd         { return nil }
 func (m Replay) Cursor() int           { return m.cursor }
 func (m Replay) ThinkingVisible() bool { return m.showThinking }
 func (m Replay) AutoPlaying() bool     { return m.autoPlay }
+func (m Replay) PlayGen() int          { return m.playGen }
 func (m Replay) Speed() int            { return m.speed }
 func (m Replay) ToolExpanded() bool    { return m.expandedTool >= 0 }
 
@@ -253,7 +255,8 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.speed > 9 {
 					m.speed = 9
 				}
-				return m, AutoPlayCmd(SpeedToDelay(m.speed))
+				m.playGen++
+				return m, AutoPlayCmd(SpeedToDelay(m.speed), m.playGen)
 			}
 		case key.Matches(msg, m.keys.SpeedDown):
 			if m.autoPlay {
@@ -261,12 +264,14 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.speed < 1 {
 					m.speed = 1
 				}
-				return m, AutoPlayCmd(SpeedToDelay(m.speed))
+				m.playGen++
+				return m, AutoPlayCmd(SpeedToDelay(m.speed), m.playGen)
 			}
 		case key.Matches(msg, m.keys.AutoPlay):
 			m.autoPlay = !m.autoPlay
 			if m.autoPlay {
-				return m, AutoPlayCmd(SpeedToDelay(m.speed))
+				m.playGen++
+				return m, AutoPlayCmd(SpeedToDelay(m.speed), m.playGen)
 			}
 		case key.Matches(msg, m.keys.Expand):
 			if m.cursor >= 0 && m.cursor < len(m.sess.Turns) {
@@ -294,6 +299,11 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case TickMsg:
+		// Reject ticks from a superseded chain (pause/resume or speed change
+		// re-arm a new generation; tea.Tick can't cancel the old one).
+		if msg.Gen != m.playGen {
+			return m, nil
+		}
 		if !m.autoPlay {
 			return m, nil
 		}
@@ -305,7 +315,7 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.slim {
 			m.skipInvisibleForward()
 		}
-		return m, AutoPlayCmd(SpeedToDelay(m.speed))
+		return m, AutoPlayCmd(SpeedToDelay(m.speed), m.playGen)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

@@ -151,7 +151,8 @@ func TestReplay_TickAdvancesCursorWhenPlaying(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 	on, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 
-	after, cmd := on.(tui.Replay).Update(tui.TickMsg{})
+	r := on.(tui.Replay)
+	after, cmd := r.Update(tui.TickMsg{Gen: r.PlayGen()})
 
 	assert.Equal(t, 1, after.(tui.Replay).Cursor())
 	assert.NotNil(t, cmd)
@@ -172,9 +173,35 @@ func TestReplay_TickAtEndStopsPlaying(t *testing.T) {
 	u2, _ := u1.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	on, _ := u2.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeySpace})
 
-	after, cmd := on.(tui.Replay).Update(tui.TickMsg{})
+	r := on.(tui.Replay)
+	after, cmd := r.Update(tui.TickMsg{Gen: r.PlayGen()})
 
 	assert.False(t, after.(tui.Replay).AutoPlaying())
+	assert.Nil(t, cmd)
+}
+
+func TestReplay_StaleTickAfterPauseResumeIgnored(t *testing.T) {
+	// Reproduces the autoplay ticker-fork bug: tea.Tick cannot be cancelled,
+	// so a tick scheduled before a pause must be ignored after resume,
+	// otherwise it forks a second self-perpetuating tick chain.
+	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
+
+	// Start playing (generation N) and remember its tick generation.
+	play, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	r := play.(tui.Replay)
+	staleGen := r.PlayGen()
+
+	// Pause, then resume — resume re-arms a new generation.
+	paused, _ := r.Update(tea.KeyMsg{Type: tea.KeySpace})
+	resumed, _ := paused.(tui.Replay).Update(tea.KeyMsg{Type: tea.KeySpace})
+	rr := resumed.(tui.Replay)
+	require.True(t, rr.AutoPlaying())
+	require.NotEqual(t, staleGen, rr.PlayGen())
+
+	// Deliver the stale tick from the pre-pause chain. It must be a no-op:
+	// no cursor advance and no new ticker spawned.
+	after, cmd := rr.Update(tui.TickMsg{Gen: staleGen})
+	assert.Equal(t, 0, after.(tui.Replay).Cursor())
 	assert.Nil(t, cmd)
 }
 

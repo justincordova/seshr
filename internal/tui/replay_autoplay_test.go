@@ -23,6 +23,6 @@ func TestSpeedToDelay_OutOfRangeClamped(t *testing.T) {
 }
 
 func TestAutoPlayCmd_ReturnsNonNil(t *testing.T) {
-	cmd := tui.AutoPlayCmd(100 * time.Millisecond)
+	cmd := tui.AutoPlayCmd(100*time.Millisecond, 1)
 	assert.NotNil(t, cmd, "AutoPlayCmd must return a non-nil tea.Cmd")
 }
