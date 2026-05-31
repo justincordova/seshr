@@ -330,11 +330,11 @@ func appendText(existing, add string) string {
 	return existing + "\n\n" + add
 }
 
-// estimateTokens returns a rough token count for a JSON blob. We use the
-// rune/3.5 heuristic from the tokenizer package; this is only used for the
-// aggregate ToolResultTokens display and doesn't need to be exact.
+// estimateTokens returns a rough token count for a JSON blob using a
+// bytes/4 heuristic — the same coarse approximation the Claude scanner uses.
+// Only used for the aggregate ToolResultTokens display; it doesn't need to
+// be exact.
 func estimateTokens(b json.RawMessage) int {
-	// Same coarse heuristic the Claude scanner uses.
 	return len(b) / 4
 }
 
