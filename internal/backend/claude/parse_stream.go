@@ -31,8 +31,12 @@ func parseJSONLStream(r io.Reader) ([]session.Turn, int64, error) {
 	for {
 		line, err := br.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
-			// Spillover read for an oversized line. We still need the
-			// full record to parse; switch to ReadBytes for the rest.
+			// Spillover read for an oversized line. We still need the full
+			// record to parse; switch to ReadBytes for the rest. ReadSlice
+			// returns a slice into the internal buffer that is invalidated by
+			// the next read, so copy the prefix out BEFORE calling ReadBytes.
+			prefix := make([]byte, len(line))
+			copy(prefix, line)
 			rest, err2 := br.ReadBytes('\n')
 			if err2 != nil {
 				if errors.Is(err2, io.EOF) {
@@ -41,8 +45,8 @@ func parseJSONLStream(r io.Reader) ([]session.Turn, int64, error) {
 				}
 				return turns, bytesRead, fmt.Errorf("read stream: %w", err2)
 			}
-			full := make([]byte, 0, len(line)+len(rest))
-			full = append(full, line...)
+			full := make([]byte, 0, len(prefix)+len(rest))
+			full = append(full, prefix...)
 			full = append(full, rest...)
 			if len(full) > maxLineSize {
 				return turns, bytesRead, fmt.Errorf("line %d exceeds max size (%d > %d)",
