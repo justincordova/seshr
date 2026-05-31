@@ -139,17 +139,27 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, turnIdx []int)
 		return resolvedSelection{}, fmt.Errorf("session %s has no messages", id)
 	}
 
+	// Map turn indices to messages using the SAME emit/skip logic as
+	// decodeChain. The UI's turn list comes from decodeChain, which drops
+	// messages with an undecodable envelope or unknown role. Indexing the
+	// raw chain directly would map turn N to a different message whenever an
+	// earlier message was skipped — deleting the wrong turn.
+	turnMsgs := emittedMessages(chain)
+	if len(turnMsgs) == 0 {
+		return resolvedSelection{}, fmt.Errorf("session %s has no decodable turns", id)
+	}
+
 	// Deduplicate + validate indices.
 	wanted := make(map[int]struct{}, len(turnIdx))
 	for _, i := range turnIdx {
-		if i < 0 || i >= len(chain) {
-			return resolvedSelection{}, fmt.Errorf("turn index out of range: %d (have %d turns)", i, len(chain))
+		if i < 0 || i >= len(turnMsgs) {
+			return resolvedSelection{}, fmt.Errorf("turn index out of range: %d (have %d turns)", i, len(turnMsgs))
 		}
 		wanted[i] = struct{}{}
 	}
 
 	msgIDs := make([]string, 0, len(wanted))
-	for i, m := range chain {
+	for i, m := range turnMsgs {
 		if _, ok := wanted[i]; ok {
 			msgIDs = append(msgIDs, m.ID)
 		}

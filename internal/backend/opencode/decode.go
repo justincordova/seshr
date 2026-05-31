@@ -172,6 +172,26 @@ func decodeChain(messages []messageRow, parts []partRow) (decodedChain, error) {
 	return out, nil
 }
 
+// emittedMessages returns the subset of chain messages that decodeChain
+// would emit a turn for, in turn-index order. It MUST mirror decodeChain's
+// per-message skip predicate (undecodable envelope or unknown role) so that
+// turn index N maps to the same message the UI renders as turn N. The editor
+// relies on this to prune the correct message.
+func emittedMessages(chain []messageRow) []messageRow {
+	out := make([]messageRow, 0, len(chain))
+	for _, msg := range chain {
+		env, err := decodeEnvelope(msg.Data)
+		if err != nil {
+			continue
+		}
+		if _, ok := mapRole(env.Role); !ok {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
 // applyPart mutates turn and out according to the part's type. A completed
 // tool part produces both a ToolCall and a paired ToolResult; a running or
 // pending tool produces only the call. Compaction parts produce a boundary
