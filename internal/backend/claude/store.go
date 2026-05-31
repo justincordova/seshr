@@ -52,10 +52,16 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 	if err != nil {
 		return sess, encodeCursor(cursorData{}), nil
 	}
-	info, _ := os.Stat(path)
-	if info != nil {
-		ident.ByteOffset = info.Size()
+	info, err := os.Stat(path)
+	if err != nil || info == nil {
+		// Without a trustworthy size we cannot set ByteOffset. Emitting the
+		// identity fields with ByteOffset==0 would make the next
+		// LoadIncremental match identity and seek to offset 0, re-reading the
+		// whole file and duplicating every turn. Return a cold cursor so the
+		// next incremental load takes the clean full-reload path instead.
+		return sess, encodeCursor(cursorData{}), nil
 	}
+	ident.ByteOffset = info.Size()
 	return sess, encodeCursor(ident), nil
 }
 
