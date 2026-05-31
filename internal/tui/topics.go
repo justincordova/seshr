@@ -280,6 +280,9 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				o.search.Close()
 				o.topics = o.allTopics
 				o.expanded = map[int]bool{}
+				// Restoring the full list also remaps selection indices, so
+				// drop any selection made against the filtered view.
+				o.selected = map[int]bool{}
 				if o.cursor >= len(o.topics) {
 					o.cursor = len(o.topics) - 1
 				}
@@ -578,6 +581,10 @@ func (o *Overview) applyTopicSearchFilter() {
 		}
 	}
 	o.expanded = map[int]bool{}
+	// Selection is keyed by index into o.topics. Re-filtering remaps those
+	// indices to different topics, so a stale selection would prune the wrong
+	// turns. Clear it whenever the visible topic set changes.
+	o.selected = map[int]bool{}
 	if o.cursor >= len(o.topics) {
 		o.cursor = len(o.topics) - 1
 	}

@@ -302,6 +302,27 @@ func TestOverview_ToggleAll_SelectsAndDeselects(t *testing.T) {
 	assert.False(t, o2.IsSelected(1))
 }
 
+func TestOverview_SearchFilterClearsSelection(t *testing.T) {
+	// Selecting a topic then filtering must clear the selection: selection is
+	// keyed by index into the visible topic list, and filtering remaps those
+	// indices to different topics — a stale selection would prune the wrong
+	// turns.
+	s, tops := demoSessionAndTopics()
+	require.Len(t, tops, 2)
+	m := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0, nil)
+
+	sel, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	o := sel.(tui.Overview)
+	require.True(t, o.IsSelected(0))
+
+	// Open search and type a query that narrows the topic list.
+	opened, _ := o.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	typed, _ := opened.(tui.Overview).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	filtered := typed.(tui.Overview)
+
+	assert.False(t, filtered.IsSelected(0), "selection must be cleared after filtering")
+}
+
 func TestOverview_FoldAll_ExpandsAndCollapses(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	m := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0, nil)
