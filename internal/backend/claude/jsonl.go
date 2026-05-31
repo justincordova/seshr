@@ -390,10 +390,12 @@ func flattenContent(raw []byte) string {
 			}
 			out += bl.Text
 		case "tool_result":
-			if out != "" {
-				out += "\n\n"
+			if c := extractBlockContent(bl.Content); c != "" {
+				if out != "" {
+					out += "\n\n"
+				}
+				out += c
 			}
-			out += bl.Text
 		}
 	}
 	return out
