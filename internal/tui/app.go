@@ -696,7 +696,10 @@ func rescanCmd(store backend.SessionStore) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		metas, _ := store.Scan(context.Background())
+		metas, err := store.Scan(context.Background())
+		if err != nil {
+			slog.Warn("rescan failed", "kind", store.Kind(), "err", err)
+		}
 		return RescanDoneMsg{Metas: metas}
 	}
 }
@@ -708,7 +711,11 @@ func rescanAllStoresCmd(reg *backend.Registry) tea.Cmd {
 	return func() tea.Msg {
 		var metas []backend.SessionMeta
 		for _, s := range reg.Stores() {
-			ms, _ := s.Scan(context.Background())
+			ms, err := s.Scan(context.Background())
+			if err != nil {
+				slog.Warn("rescan store failed", "kind", s.Kind(), "err", err)
+				continue
+			}
 			metas = append(metas, ms...)
 		}
 		return RescanDoneMsg{Metas: metas}
