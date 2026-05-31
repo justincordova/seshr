@@ -94,6 +94,19 @@ func markRegeneratedBranches(sorted []messageRow) map[string]struct{} {
 		byParent[env.ParentID] = append(byParent[env.ParentID], m)
 	}
 
+	// Session-wide newest timestamp. sorted is ascending, so the last row
+	// carries the max time_created. Used to apply the documented
+	// "no later continuation" guard: if the conversation continued past a
+	// sibling-group's newest member, we cannot safely tell which branch the
+	// continuation belongs to (parentID only links assistant→user, not
+	// assistant→assistant), so we keep everything rather than risk dropping
+	// a live turn. Dropping is only safe when the newest sibling is the
+	// session leaf.
+	var sessionNewest int64
+	if len(sorted) > 0 {
+		sessionNewest = sorted[len(sorted)-1].TimeCreated
+	}
+
 	drop := make(map[string]struct{})
 	for _, siblings := range byParent {
 		if len(siblings) < 2 {
@@ -102,10 +115,14 @@ func markRegeneratedBranches(sorted []messageRow) map[string]struct{} {
 		// siblings were appended in the sorted order, so last element is newest.
 		newest := siblings[len(siblings)-1]
 
-		// Find max time_created across ALL messages (session-wide) so we can
-		// check whether each older sibling has any "after-newest" activity.
-		// Because we work from the sorted slice, anything at or after the
-		// newest sibling's index qualifies as potential continuation.
+		// Guard: only treat this group as a resolved regen when nothing in the
+		// session is newer than the newest sibling. If there IS later activity,
+		// it may be a descendant of an older sibling (a legitimate continued
+		// branch), and dropping that sibling would be data loss.
+		if sessionNewest > newest.TimeCreated {
+			continue
+		}
+
 		for _, s := range siblings[:len(siblings)-1] {
 			if newest.TimeCreated-s.TimeCreated < regenGapMs {
 				// Likely an agent-loop sibling, not a regen.

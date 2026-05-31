@@ -50,6 +50,24 @@ func TestTakeCurrentBranch_RegenSiblings_OldestDropped(t *testing.T) {
 	assert.Equal(t, "a2", chain[1].ID, "expected newer assistant to survive")
 }
 
+func TestTakeCurrentBranch_RegenGapButLaterContinuation_AllKept(t *testing.T) {
+	// a1 and a2 share parent u1 and are >60s apart (would look like a regen),
+	// but the conversation CONTINUES past a2 (u2/a3). Because parentID only
+	// links assistant→user, we cannot prove a1 was superseded, so dropping it
+	// would risk losing a legitimate turn. The safe-leaning rule keeps all.
+	msgs := []messageRow{
+		msg("u1", "user", "", 0),
+		msg("a1", "assistant", "u1", 1000),
+		msg("a2", "assistant", "u1", 91_000),
+		msg("u2", "user", "", 95_000),
+		msg("a3", "assistant", "u2", 96_000),
+	}
+
+	chain := takeCurrentBranch(msgs)
+
+	assert.Len(t, chain, 5, "must not drop a sibling when the session continued past it")
+}
+
 func TestTakeCurrentBranch_SortsByTimeThenID(t *testing.T) {
 	// Same time_created: sort by ID ascending.
 	msgs := []messageRow{
