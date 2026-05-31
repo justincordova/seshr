@@ -127,6 +127,8 @@ func Save(cfg Config) error {
 		return fmt.Errorf("write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, p); err != nil {
+		// Don't leave the partial temp file behind on a failed rename.
+		_ = os.Remove(tmp)
 		return fmt.Errorf("rename tmp: %w", err)
 	}
 	return nil
