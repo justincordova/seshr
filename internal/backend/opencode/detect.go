@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -316,8 +317,12 @@ func formatToolPartForTask(raw []byte) string {
 	return truncate(full, 30)
 }
 
-// firstStringArg peeks at a flat JSON object and returns the first string
-// value encountered. Non-object or error → "".
+// firstStringArg peeks at a flat JSON object and returns a string value in a
+// deterministic way: the value of the lexicographically-first key that holds
+// a string. Map iteration order in Go is randomized, so picking "the first"
+// key without sorting would make the live task label flicker between a tool's
+// arguments (e.g. a Bash part's command vs. description) across ticks.
+// Non-object or error → "".
 func firstStringArg(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
@@ -326,8 +331,13 @@ func firstStringArg(raw []byte) string {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return ""
 	}
-	for _, v := range m {
-		if s, ok := v.(string); ok {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok {
 			return s
 		}
 	}

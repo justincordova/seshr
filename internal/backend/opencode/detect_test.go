@@ -311,3 +311,15 @@ func TestFormatToolPartForTask_NoTool_Empty(t *testing.T) {
 	assert.Empty(t, formatToolPartForTask([]byte(`{"type":"text"}`)))
 	assert.Empty(t, formatToolPartForTask([]byte(`not json`)))
 }
+
+func TestFirstStringArg_DeterministicAcrossCalls(t *testing.T) {
+	// Multiple string fields: selection must be stable (lexicographically
+	// first key) rather than depending on randomized map iteration order.
+	in := []byte(`{"description":"do a thing","command":"ls -la","timeout":5}`)
+
+	first := firstStringArg(in)
+	assert.Equal(t, "ls -la", first, "should pick the lexicographically-first string key (command < description)")
+	for i := 0; i < 50; i++ {
+		assert.Equal(t, first, firstStringArg(in), "selection must be stable across calls")
+	}
+}
