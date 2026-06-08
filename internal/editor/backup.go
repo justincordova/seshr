@@ -19,8 +19,18 @@ func AtomicReplace(src, dst string) error {
 	} else if !isCrossDevice(err) {
 		return fmt.Errorf("rename: %w", err)
 	}
-	if err := copyFile(src, dst); err != nil {
+	// Cross-device fallback. copyFile truncates its destination in place, so
+	// copying straight onto dst would leave the real file half-written if the
+	// copy failed midway. Stage onto a sibling of dst (same filesystem) and
+	// rename into place so dst is only ever swapped atomically.
+	tmpDst := dst + ".repl"
+	if err := copyFile(src, tmpDst); err != nil {
+		_ = os.Remove(tmpDst)
 		return err
+	}
+	if err := os.Rename(tmpDst, dst); err != nil {
+		_ = os.Remove(tmpDst)
+		return fmt.Errorf("rename staged copy: %w", err)
 	}
 	return os.Remove(src)
 }
