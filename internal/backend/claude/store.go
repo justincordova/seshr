@@ -52,17 +52,66 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 	if err != nil {
 		return sess, encodeCursor(cursorData{}), nil
 	}
-	info, err := os.Stat(path)
-	if err != nil || info == nil {
-		// Without a trustworthy size we cannot set ByteOffset. Emitting the
-		// identity fields with ByteOffset==0 would make the next
+	offset, err := lastRecordBoundary(path)
+	if err != nil {
+		// Without a trustworthy boundary offset we cannot set ByteOffset.
+		// Emitting the identity fields with ByteOffset==0 would make the next
 		// LoadIncremental match identity and seek to offset 0, re-reading the
 		// whole file and duplicating every turn. Return a cold cursor so the
 		// next incremental load takes the clean full-reload path instead.
 		return sess, encodeCursor(cursorData{}), nil
 	}
-	ident.ByteOffset = info.Size()
+	// Anchor ByteOffset to the last newline-terminated record boundary rather
+	// than info.Size(). If the live agent is mid-write when Load runs, the
+	// file ends with a partial line whose bytes are NOT yet a complete record;
+	// pointing ByteOffset past them would make the next LoadIncremental seek
+	// into the middle of that record once the writer completes it, losing the
+	// turn. parseJSONLStream uses the same boundary accounting.
+	ident.ByteOffset = offset
 	return sess, encodeCursor(ident), nil
+}
+
+// lastRecordBoundary returns the byte offset immediately after the final
+// newline in the file — i.e. the start of any partial trailing record a live
+// writer may still be appending. For a file whose last record is properly
+// newline-terminated this equals the file size. An empty file returns 0.
+func lastRecordBoundary(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+	size := info.Size()
+	if size == 0 {
+		return 0, nil
+	}
+
+	const chunk = 64 * 1024
+	buf := make([]byte, chunk)
+	pos := size
+	for pos > 0 {
+		readLen := int64(chunk)
+		if pos < readLen {
+			readLen = pos
+		}
+		start := pos - readLen
+		if _, err := f.ReadAt(buf[:readLen], start); err != nil && !errors.Is(err, io.EOF) {
+			return 0, fmt.Errorf("read %s: %w", path, err)
+		}
+		for i := int(readLen) - 1; i >= 0; i-- {
+			if buf[i] == '\n' {
+				return start + int64(i) + 1, nil
+			}
+		}
+		pos = start
+	}
+	// No newline anywhere: the whole file is one partial record.
+	return 0, nil
 }
 
 // LoadIncremental reads turns appended since the cursor was captured.

@@ -33,6 +33,52 @@ func TestStore_LoadIncremental_FullReloadOnZeroCursor(t *testing.T) {
 	assert.LessOrEqual(t, len(turns), nFull)
 }
 
+// TestStore_LoadIncremental_PartialTrailingRecordAtLoad guards against a
+// data-loss race: if the live agent is mid-write when Load runs, the file ends
+// with a partial (newline-less) record. Load must anchor ByteOffset to the last
+// complete record boundary, not the raw file size, so that when the writer
+// finishes the record the next LoadIncremental re-reads it whole rather than
+// seeking into its middle.
+func TestStore_LoadIncremental_PartialTrailingRecordAtLoad(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	path := filepath.Join(proj, "sess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), path))
+
+	// Simulate the agent having written a partial trailing record (no newline).
+	partial := `{"type":"user","message":{"role":"user","content":"MID_WRITE_`
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(partial)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	store := claudeBackend.NewStore(root)
+	_, cur, err := store.Load(context.Background(), "sess")
+	require.NoError(t, err)
+
+	// The writer now completes the in-flight record and adds one more.
+	rest := `MARKER","content2":"x"},"uuid":"umid","parentUuid":null,"timestamp":"2026-03-20T12:00:00.000Z","sessionId":"sess-simple"}` + "\n"
+	next := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"uuid":"anext","parentUuid":"umid","timestamp":"2026-03-20T12:00:05.000Z","sessionId":"sess-simple"}` + "\n"
+	f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(rest + next)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Act
+	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+
+	// Assert: both the completed mid-write record and the following one are
+	// read, and the mid-write record is intact (prefix preserved).
+	require.NoError(t, err)
+	require.Len(t, turns, 2, "completed mid-write record must not be lost")
+	assert.True(t, strings.HasPrefix(turns[0].Content, "MID_WRITE_MARKER"),
+		"the record being written at Load time must be re-read whole")
+}
+
 func TestStore_LoadRange_ReturnsSlice(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
