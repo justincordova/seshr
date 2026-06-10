@@ -91,6 +91,18 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 	v.Cursor = newCursor
 }
 
+// Reset replaces the view's contents with a freshly loaded session. Used
+// when the store reports backend.ErrCursorInvalid (file rotated, truncated,
+// or replaced by a prune) — appending in that state would duplicate turns.
+func (v *SessionView) Reset(sess *session.Session, cur backend.Cursor) {
+	v.Session = sess
+	v.Topics = topics.Cluster(sess, topics.DefaultOptions())
+	v.Cursor = cur
+	v.TurnsLoadedFrom = 0
+	v.TurnsLoadedTo = len(sess.Turns)
+	v.TotalTurns = len(sess.Turns)
+}
+
 // LoadRange replaces the in-memory window with an arbitrary slice.
 // Topics are NOT recomputed — they hold logical indices into the full session.
 func (v *SessionView) LoadRange(ctx context.Context, from, to int) error {

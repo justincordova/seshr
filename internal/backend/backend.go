@@ -2,16 +2,27 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/justincordova/seshr/internal/session"
 )
+
+// ErrCursorInvalid is returned by SessionStore.LoadIncremental when the
+// cursor no longer identifies the on-disk session state (file rotated,
+// truncated, replaced by a prune, or the cursor is cold/corrupt). Callers
+// must respond with a fresh Load and REPLACE their in-memory turn list —
+// the incremental contract (returned turns are appended) does not hold.
+var ErrCursorInvalid = errors.New("incremental cursor no longer matches session state; full reload required")
 
 // SessionStore reads session metadata and turns from a source.
 type SessionStore interface {
 	Kind() session.SourceKind
 	Scan(ctx context.Context) ([]SessionMeta, error)
 	Load(ctx context.Context, id string) (*session.Session, Cursor, error)
+	// LoadIncremental returns ONLY turns appended since cur; callers append
+	// them to their existing view. When the cursor can no longer be trusted
+	// it returns ErrCursorInvalid and the caller must rebuild via Load.
 	LoadIncremental(ctx context.Context, id string, cur Cursor) ([]session.Turn, Cursor, error)
 	LoadRange(ctx context.Context, id string, fromIdx, toIdx int) ([]session.Turn, error)
 	Close() error

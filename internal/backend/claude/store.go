@@ -127,12 +127,11 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 	}
 	prev, err := decodeCursor(cur)
 	if err != nil || !identitiesMatch(prev, current) {
-		// Fall back to full reload.
-		sess, newCur, err := s.Load(ctx, id)
-		if err != nil {
-			return nil, cur, err
-		}
-		return sess.Turns, newCur, nil
+		// Rotation/truncation/cold cursor: the byte offset means nothing
+		// against the current file. Returning the full turn list here would
+		// make append-semantics callers duplicate every turn, so surface the
+		// sentinel and let the caller rebuild from a clean Load.
+		return nil, cur, backend.ErrCursorInvalid
 	}
 	fh, err := os.Open(path)
 	if err != nil {

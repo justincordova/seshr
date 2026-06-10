@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justincordova/seshr/internal/backend"
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,6 +78,33 @@ func TestStore_LoadIncremental_PartialTrailingRecordAtLoad(t *testing.T) {
 	require.Len(t, turns, 2, "completed mid-write record must not be lost")
 	assert.True(t, strings.HasPrefix(turns[0].Content, "MID_WRITE_MARKER"),
 		"the record being written at Load time must be re-read whole")
+}
+
+// TestStore_LoadIncremental_RotationReturnsErrCursorInvalid guards the
+// incremental contract: when the file shrinks (prune replace, truncation),
+// LoadIncremental must NOT return the full turn list — its callers append,
+// which would duplicate every turn — but signal a required full reload.
+func TestStore_LoadIncremental_RotationReturnsErrCursorInvalid(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	path := filepath.Join(proj, "sess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), path))
+
+	store := claudeBackend.NewStore(root)
+	_, cur, err := store.Load(context.Background(), "sess")
+	require.NoError(t, err)
+
+	// Simulate a prune-style replace: rewrite the file smaller.
+	require.NoError(t, os.WriteFile(path, []byte(`{"type":"user","message":{"role":"user","content":"only"},"uuid":"u1","timestamp":"2026-03-20T10:00:00.000Z","sessionId":"sess-simple"}`+"\n"), 0o644))
+
+	// Act
+	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+
+	// Assert
+	assert.ErrorIs(t, err, backend.ErrCursorInvalid)
+	assert.Empty(t, turns)
 }
 
 func TestStore_LoadRange_ReturnsSlice(t *testing.T) {

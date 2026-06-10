@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -690,6 +691,18 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 		if ok {
 			turns, newCur, err := store.LoadIncremental(a.ctx, a.currentView.Meta.ID, a.currentView.Cursor)
 			switch {
+			case errors.Is(err, backend.ErrCursorInvalid):
+				// File rotated/truncated/pruned under us: appending would
+				// duplicate every turn. Rebuild the view from a clean load.
+				sess, freshCur, lerr := store.Load(a.ctx, a.currentView.Meta.ID)
+				if lerr != nil {
+					slog.Warn("fast-tick rebuild after cursor invalidation failed",
+						"session", a.currentView.Meta.ID, "err", lerr)
+					break
+				}
+				a.currentView.Reset(sess, freshCur)
+				slog.Info("fast-tick view rebuilt after cursor invalidation",
+					"session", a.currentView.Meta.ID, "turns", len(sess.Turns))
 			case err != nil:
 				slog.Warn("fast-tick incremental load failed",
 					"session", a.currentView.Meta.ID,
