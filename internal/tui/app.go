@@ -235,8 +235,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// ── Active overlay: route all input to it ────────────────────────────────
+	// Only input messages are gated. Non-input messages (tick chains, async
+	// load results, spinner frames) must still be processed — dropping a
+	// liveSlowMsg/liveFastMsg here would permanently kill its
+	// self-perpetuating tick chain, and dropping a SessionLoadedMsg would
+	// strand the app in stateLoading.
 	if a.overlayActive() {
-		if km, ok := msg.(tea.KeyMsg); ok {
+		switch km := msg.(type) {
+		case tea.KeyMsg:
 			switch a.overlay {
 			case ovHelp:
 				// Any key closes help.
@@ -263,8 +269,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.resumeOverlay = nm.(ResumeOverlayModel)
 				return a, cmd
 			}
+			return a, nil
+		case tea.MouseMsg:
+			// Don't let mouse input leak through to the base screen.
+			return a, nil
 		}
-		return a, nil
 	}
 
 	// ── Global key intercepts (active when no overlay is open) ───────────────
