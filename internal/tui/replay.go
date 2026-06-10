@@ -409,6 +409,24 @@ func (m *Replay) syncMainVPSize() {
 	m.mainVP.Height = contentH - 2
 }
 
+// RefreshSession swaps in the (possibly re-sliced or replaced) live session
+// and re-renders the main viewport. Called by the app when the fast tick
+// mutates the session this replay is open on — contentSig can't see those
+// mutations (same cursor, same dimensions), and after a view rebuild the
+// old pointer would be orphaned entirely.
+func (m Replay) RefreshSession(sess *session.Session, ts []topics.Topic) Replay {
+	m.sess = sess
+	m.topicsList = ts
+	if n := len(sess.Turns); m.cursor >= n {
+		m.cursor = n - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	m.syncMainContent()
+	return m
+}
+
 // SetSize updates layout dimensions.
 func (m Replay) SetSize(w, h int) tea.Model {
 	m.width = w

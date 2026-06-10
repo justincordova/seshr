@@ -853,6 +853,11 @@ func (a *App) syncLiveSessionState() {
 		a.topicsCache = a.currentView.Topics
 	}
 	a.overview.SyncLiveTurns(a.currentView.Session, a.currentView.Topics, a.currentView.TurnsLoadedFrom)
+	// An open replay shares the session pointer; its cached viewport content
+	// and cursor must follow appends, evictions, and rebuilds.
+	if a.state == stateReplay {
+		a.replay = a.replay.RefreshSession(a.currentView.Session, a.currentView.Topics)
+	}
 }
 
 func rescanAllStoresCmd(reg *backend.Registry) tea.Cmd {
