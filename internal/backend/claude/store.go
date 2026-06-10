@@ -152,7 +152,13 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 }
 
 // LoadRange loads a slice of turns by index (from inclusive, to exclusive).
-func (s *Store) LoadRange(_ context.Context, id string, fromIdx, toIdx int) ([]session.Turn, error) {
+//
+// The range is taken from a full Parse so it uses the SAME turn-index space
+// as Load: Parse folds attached tool_result records into their assistant
+// turn, so a line-level scan that skips that attachment would count attached
+// results as standalone turns and drift right of Load's indices by one per
+// attachment — returning earlier turns than the caller asked for.
+func (s *Store) LoadRange(ctx context.Context, id string, fromIdx, toIdx int) ([]session.Turn, error) {
 	if fromIdx < 0 || toIdx <= fromIdx {
 		return nil, fmt.Errorf("invalid range [%d,%d)", fromIdx, toIdx)
 	}
@@ -160,12 +166,17 @@ func (s *Store) LoadRange(_ context.Context, id string, fromIdx, toIdx int) ([]s
 	if err != nil {
 		return nil, err
 	}
-	fh, err := os.Open(path)
+	sess, err := NewClaude().Parse(ctx, path)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
-	defer func() { _ = fh.Close() }()
-	return parseJSONLRange(fh, fromIdx, toIdx)
+	if fromIdx >= len(sess.Turns) {
+		return nil, nil
+	}
+	if toIdx > len(sess.Turns) {
+		toIdx = len(sess.Turns)
+	}
+	return sess.Turns[fromIdx:toIdx], nil
 }
 
 // Close is a no-op; JSONL files are opened per-read.

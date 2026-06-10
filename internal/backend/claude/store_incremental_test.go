@@ -99,6 +99,34 @@ func TestStore_LoadRange_ReturnsSlice(t *testing.T) {
 	assert.Len(t, turns, 2)
 }
 
+// TestStore_LoadRange_SameIndexSpaceAsLoad guards against index drift between
+// LoadRange and Load: attached tool_result records are folded into their
+// assistant turn by Parse, so a range scan that counted them as standalone
+// turns would return earlier turns than asked for.
+func TestStore_LoadRange_SameIndexSpaceAsLoad(t *testing.T) {
+	// Arrange: fixture with tool_use records whose results attach to turns.
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "multi_topic.jsonl"), filepath.Join(proj, "sess.jsonl")))
+
+	store := claudeBackend.NewStore(root)
+	sess, _, err := store.Load(context.Background(), "sess")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(sess.Turns), 4)
+
+	// Act
+	turns, err := store.LoadRange(context.Background(), "sess", 2, 4)
+
+	// Assert: identical turns, not just identical count.
+	require.NoError(t, err)
+	require.Len(t, turns, 2)
+	assert.Equal(t, sess.Turns[2].Content, turns[0].Content)
+	assert.Equal(t, sess.Turns[2].RawIndex, turns[0].RawIndex)
+	assert.Equal(t, sess.Turns[3].Content, turns[1].Content)
+	assert.Equal(t, sess.Turns[3].RawIndex, turns[1].RawIndex)
+}
+
 func TestStore_LoadRange_InvalidRange_ReturnsError(t *testing.T) {
 	// Arrange
 	root := t.TempDir()

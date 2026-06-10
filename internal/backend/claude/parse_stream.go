@@ -76,38 +76,3 @@ func parseJSONLStream(r io.Reader) ([]session.Turn, int64, error) {
 		lineNum++
 	}
 }
-
-// parseJSONLRange reads from r and returns the turns with indices in [from, to).
-func parseJSONLRange(r io.Reader, from, to int) ([]session.Turn, error) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-
-	var turns []session.Turn
-	turnIdx := 0
-	lineNum := 0
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			lineNum++
-			continue
-		}
-		turn, ok := parseLine(line, lineNum)
-		if !ok {
-			lineNum++
-			continue
-		}
-		if turnIdx >= from && turnIdx < to {
-			turns = append(turns, turn)
-		}
-		if turnIdx >= to {
-			break
-		}
-		turnIdx++
-		lineNum++
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan range: %w", err)
-	}
-	return turns, nil
-}
