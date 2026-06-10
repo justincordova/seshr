@@ -16,7 +16,10 @@ func TestClusterAppend_EqualsFullCluster(t *testing.T) {
 	allTurns := []session.Turn{
 		{Role: session.RoleUser, Timestamp: base, Content: "set up express", Tokens: 10},
 		{Role: session.RoleAssistant, Timestamp: base.Add(2 * time.Second), Content: "done", Tokens: 5},
-		{Role: session.RoleUser, Timestamp: base.Add(10 * time.Minute), Content: "new topic", Tokens: 10},
+		// Tool calls on a topic-OPENING turn: the invariant must hold for
+		// ToolCallCount/FileSet too, not just TurnIndices.
+		{Role: session.RoleUser, Timestamp: base.Add(10 * time.Minute), Content: "new topic", Tokens: 10,
+			ToolCalls: []session.ToolCall{{ID: "t1", Name: "Read", Input: []byte(`{"file_path":"/tmp/a.go"}`)}}},
 		{Role: session.RoleAssistant, Timestamp: base.Add(10*time.Minute + 2*time.Second), Content: "ok", Tokens: 5},
 	}
 
@@ -39,6 +42,14 @@ func TestClusterAppend_EqualsFullCluster(t *testing.T) {
 	for i := range fullResult {
 		assert.Equal(t, fullResult[i].TurnIndices, incremental[i].TurnIndices,
 			"topic %d turn indices must match", i)
+		assert.Equal(t, fullResult[i].TokenCount, incremental[i].TokenCount,
+			"topic %d token count must match", i)
+		assert.Equal(t, fullResult[i].ToolCallCount, incremental[i].ToolCallCount,
+			"topic %d tool call count must match", i)
+		assert.Equal(t, fullResult[i].FileSet, incremental[i].FileSet,
+			"topic %d file set must match", i)
+		assert.Equal(t, fullResult[i].Duration, incremental[i].Duration,
+			"topic %d duration must match", i)
 	}
 }
 

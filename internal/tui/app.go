@@ -627,6 +627,9 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 	a.scanFailCount = 0
 	a.lastScanErr = nil
 	a.picker.banner = ""
+	// Record the success so the failure banner (which only shows when live
+	// detection *used to* work) can ever trigger.
+	a.cfg.LiveDetectionLastOK = time.Now()
 
 	// Run all detectors.
 	var detected []*backend.LiveSession

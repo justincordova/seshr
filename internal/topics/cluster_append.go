@@ -31,13 +31,11 @@ func ClusterAppend(sess *session.Session, opts Options, existing []Topic, newTur
 			continue
 		}
 
-		// Hard split at compact boundary.
+		// Hard split at compact boundary. buildTopic keeps the invariant with
+		// Cluster: a topic-opening turn must contribute its ToolCallCount and
+		// FileSet, not just tokens.
 		if _, isBoundary := boundaries[absIdx]; isBoundary {
-			result = append(result, Topic{
-				Label:       LabelFor([]session.Turn{tn}, len(result)),
-				TurnIndices: []int{absIdx},
-				TokenCount:  tn.Tokens,
-			})
+			result = append(result, buildTopic(sess, []int{absIdx}, len(result)))
 			continue
 		}
 
@@ -51,11 +49,7 @@ func ClusterAppend(sess *session.Session, opts Options, existing []Topic, newTur
 			KeywordScore(prev, tn, opts)
 
 		if score >= opts.BoundaryThreshold {
-			result = append(result, Topic{
-				Label:       LabelFor([]session.Turn{tn}, len(result)),
-				TurnIndices: []int{absIdx},
-				TokenCount:  tn.Tokens,
-			})
+			result = append(result, buildTopic(sess, []int{absIdx}, len(result)))
 		} else {
 			// Extend the last topic.
 			lastTopic.TurnIndices = append(lastTopic.TurnIndices, absIdx)

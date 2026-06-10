@@ -188,8 +188,11 @@ func (p *Picker) syncLiveMetas() {
 	}
 
 	if added {
-		// metas mirrors allMetas when no search filter is active.
-		p.metas = p.allMetas
+		// Re-derive metas through the filter: assigning allMetas directly
+		// would silently wipe an active search filter (and remap row indices
+		// under the cursor) whenever a new live session appears mid-search.
+		// applySearchFilter mirrors allMetas as-is when no query is active.
+		p.applySearchFilter()
 	}
 }
 
