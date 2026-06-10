@@ -42,9 +42,12 @@ func identitiesMatch(prev, current cursorData) bool {
 	}
 	// If inode is set on both, use it. mtime is allowed to regress: an
 	// inode match is a strong signal the file is the same and we'd rather
-	// tolerate touch/mtime-rewind than burn a full reload.
+	// tolerate touch/mtime-rewind than burn a full reload. A shrink is
+	// still a mismatch even on the same inode — in-place truncation keeps
+	// the inode but invalidates the byte offset (seeking past EOF today,
+	// into the middle of a record once the file regrows).
 	if prev.Inode != 0 && current.Inode != 0 {
-		return prev.Inode == current.Inode
+		return prev.Inode == current.Inode && current.SizeBytes >= prev.SizeBytes
 	}
 	// Darwin fallback: size is monotonically non-decreasing for an append-only
 	// JSONL. A shrink means truncation/rotation; a grow is a normal append.

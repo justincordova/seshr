@@ -8,7 +8,11 @@ import (
 	"syscall"
 )
 
-// fileIdentity reads Linux-compatible identity fields (inode + mtime).
+// fileIdentity reads Linux-compatible identity fields (inode + size + mtime).
+// Size matters even with an inode: an in-place truncation (as opposed to a
+// rename-style replace) keeps the inode, and identitiesMatch must still be
+// able to detect that the cursor's byte offset no longer points at a record
+// boundary.
 func fileIdentity(path string) (cursorData, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -19,7 +23,8 @@ func fileIdentity(path string) (cursorData, error) {
 		return cursorData{MtimeNs: info.ModTime().UnixNano(), SizeBytes: info.Size()}, nil
 	}
 	return cursorData{
-		MtimeNs: info.ModTime().UnixNano(),
-		Inode:   stat.Ino,
+		MtimeNs:   info.ModTime().UnixNano(),
+		SizeBytes: info.Size(),
+		Inode:     stat.Ino,
 	}, nil
 }
