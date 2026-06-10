@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -15,9 +16,13 @@ func extractLastToolUse(r io.Reader) string {
 		Name  string          `json:"name"`
 		Input json.RawMessage `json:"input"`
 	}
+	// Claude JSONL nests role/content under "message":
+	//   {"type":"assistant","message":{"role":"assistant","content":[...]}}
 	type record struct {
-		Role    string         `json:"role"`
-		Content []contentBlock `json:"content"`
+		Type    string `json:"type"`
+		Message struct {
+			Content []contentBlock `json:"content"`
+		} `json:"message"`
 	}
 
 	var lastTask string
@@ -29,10 +34,10 @@ func extractLastToolUse(r io.Reader) string {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			continue
 		}
-		if rec.Role != "assistant" {
+		if rec.Type != "assistant" {
 			continue
 		}
-		for _, blk := range rec.Content {
+		for _, blk := range rec.Message.Content {
 			if blk.Type != "tool_use" {
 				continue
 			}
@@ -65,11 +70,18 @@ func formatToolTask(name string, input json.RawMessage) string {
 				}
 			}
 		}
-		// Fall back to the first key alphabetically.
+		// Fall back to the first key alphabetically. Keys must be sorted —
+		// map iteration order is random, and a nondeterministic label would
+		// flicker in the picker between refreshes.
 		if firstArg == "" {
-			for _, raw := range args {
+			keys := make([]string, 0, len(args))
+			for k := range args {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
 				var s string
-				if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+				if err := json.Unmarshal(args[k], &s); err == nil && s != "" {
 					firstArg = s
 					break
 				}
