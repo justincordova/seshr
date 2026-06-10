@@ -56,6 +56,35 @@ func TestRestore_CopiesBakOverOriginal(t *testing.T) {
 	assert.Equal(t, "ORIGINAL", string(bak))
 }
 
+func TestCreateBackup_PreservesFileMode(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "session.jsonl")
+	require.NoError(t, os.WriteFile(src, []byte(`{"type":"user"}`+"\n"), 0o600))
+
+	err := editor.CreateBackup(src)
+
+	require.NoError(t, err)
+	info, err := os.Stat(src + ".bak")
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestRestore_LockedReturnsErrLocked(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte("PRUNED"), 0o644))
+	require.NoError(t, os.WriteFile(path+".bak", []byte("ORIGINAL"), 0o644))
+	lock, err := editor.TryLock(path)
+	require.NoError(t, err)
+	defer func() { _ = lock.Release() }()
+
+	err = editor.Restore(path)
+
+	assert.ErrorIs(t, err, editor.ErrLocked)
+	got, _ := os.ReadFile(path)
+	assert.Equal(t, "PRUNED", string(got), "locked restore must not touch the file")
+}
+
 func TestRestore_NoBackupReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
