@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/session"
@@ -69,7 +70,7 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 	// it is emitted whole once time.completed lands. Only the LAST message
 	// can be in-flight: OC appends strictly, so any message with a successor
 	// has finished changing.
-	if last := newMsgs[len(newMsgs)-1]; messageInFlight(last) {
+	if last := newMsgs[len(newMsgs)-1]; messageInFlight(last, time.Now()) {
 		newMsgs = newMsgs[:len(newMsgs)-1]
 		if len(newMsgs) == 0 {
 			return nil, cur, nil
@@ -100,18 +101,31 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 	return decoded.Turns, newCur, nil
 }
 
+// inFlightHoldback bounds how long a completed-less assistant message is
+// treated as "still streaming". If the agent died mid-step (crash, kill,
+// power loss), time.completed is NEVER written — without a bound, the
+// session's final partial turn would be held back forever, on every future
+// Load. Past the bound we emit the partial turn; the tradeoff is that a
+// single step legitimately running longer than this renders frozen at its
+// emit-time snapshot until the next full Load.
+const inFlightHoldback = 10 * time.Minute
+
 // messageInFlight reports whether a message is explicitly still streaming:
-// its envelope carries time.created but no time.completed yet. Messages
-// without a time field at all (older OC versions, fixtures) can't be
-// classified and are treated as settled — wrongly holding those back would
-// freeze the live tail entirely, which is worse than the stale-snapshot
-// problem this guards against.
-func messageInFlight(m messageRow) bool {
+// its envelope carries time.created but no time.completed yet, and it
+// started recently enough to plausibly still be running. Messages without a
+// time field at all (older OC versions, fixtures) can't be classified and
+// are treated as settled — wrongly holding those back would freeze the live
+// tail entirely, which is worse than the stale-snapshot problem this guards
+// against.
+func messageInFlight(m messageRow, now time.Time) bool {
 	env, err := decodeEnvelope(m.Data)
 	if err != nil {
 		return false // undecodable → decodeChain skips it anyway
 	}
-	return env.Role == "assistant" && env.Time.Created > 0 && env.Time.Completed == 0
+	if env.Role != "assistant" || env.Time.Created == 0 || env.Time.Completed != 0 {
+		return false
+	}
+	return now.Sub(time.UnixMilli(env.Time.Created)) < inFlightHoldback
 }
 
 // queryMessagesAfter fetches messages whose (time_created, id) is strictly

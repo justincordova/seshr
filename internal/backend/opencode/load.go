@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/session"
@@ -43,7 +44,7 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 	// cursor below would point past it, so its still-streaming parts are
 	// never re-read). Holding it back means the incremental path emits it
 	// whole once time.completed lands.
-	for len(chain) > 0 && messageInFlight(chain[len(chain)-1]) {
+	for len(chain) > 0 && messageInFlight(chain[len(chain)-1], time.Now()) {
 		chain = chain[:len(chain)-1]
 	}
 	if len(chain) == 0 {

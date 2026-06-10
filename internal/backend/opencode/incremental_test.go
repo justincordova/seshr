@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,14 +97,17 @@ func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) 
 
 	// OC starts a step: assistant message row exists (time.created set, no
 	// time.completed) with only an early text part — output still streaming.
-	mutate(t, dbPath, `
+	// The timestamp must be recent: in-flight status expires after
+	// inFlightHoldback so crashed sessions don't hide their last turn.
+	nowMs := time.Now().UnixMilli()
+	mutate(t, dbPath, fmt.Sprintf(`
 		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
-			('msg_live_a', 'ses_s1', 1700001080000, 1700001080000,
-			 '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+			('msg_live_a', 'ses_s1', %[1]d, %[1]d,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":%[1]d},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
 		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
-			('prt_live_1', 'msg_live_a', 'ses_s1', 1700001080001, 1700001080001,
+			('prt_live_1', 'msg_live_a', 'ses_s1', %[1]d, %[1]d,
 			 '{"type":"text","text":"first chunk"}');
-	`)
+	`, nowMs))
 
 	// Act 1: the in-flight message must be held back, cursor unmoved.
 	turns, midCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
@@ -112,13 +116,13 @@ func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) 
 	assert.Equal(t, cur.Data, midCur.Data, "cursor must hold before the in-flight message")
 
 	// OC finishes the step: more parts land and time.completed is written.
-	mutate(t, dbPath, `
+	mutate(t, dbPath, fmt.Sprintf(`
 		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
-			('prt_live_2', 'msg_live_a', 'ses_s1', 1700001081000, 1700001081000,
+			('prt_live_2', 'msg_live_a', 'ses_s1', %[1]d, %[1]d,
 			 '{"type":"text","text":"second chunk"}');
-		UPDATE message SET data = '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000,"completed":1700001082000},"tokens":{"input":5,"output":9,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}'
+		UPDATE message SET data = '{"role":"assistant","parentID":"msg_a2","time":{"created":%[2]d,"completed":%[1]d},"tokens":{"input":5,"output":9,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}'
 		WHERE id = 'msg_live_a';
-	`)
+	`, nowMs+1000, nowMs))
 
 	// Act 2: now it must be emitted whole — including the late part.
 	turns, _, err = store.LoadIncremental(context.Background(), "ses_s1", midCur)
@@ -130,13 +134,14 @@ func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) 
 }
 
 func TestLoad_TrailingInFlightAssistant_ExcludedAndCursorBeforeIt(t *testing.T) {
-	// Arrange: the session ends with a streaming assistant message.
+	// Arrange: the session ends with a recently started streaming assistant.
 	dbPath := copyFixture(t, "opencode_simple.db")
-	mutate(t, dbPath, `
+	nowMs := time.Now().UnixMilli()
+	mutate(t, dbPath, fmt.Sprintf(`
 		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
-			('msg_live_a', 'ses_s1', 1700001080000, 1700001080000,
-			 '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
-	`)
+			('msg_live_a', 'ses_s1', %[1]d, %[1]d,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":%[1]d},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+	`, nowMs))
 	store, err := NewStore(dbPath, t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
@@ -151,6 +156,31 @@ func TestLoad_TrailingInFlightAssistant_ExcludedAndCursorBeforeIt(t *testing.T) 
 	cd, err := decodeCursor(cur)
 	require.NoError(t, err)
 	assert.NotEqual(t, "msg_live_a", cd.LastMessageID)
+}
+
+func TestLoad_AbandonedInFlightAssistant_StillEmitted(t *testing.T) {
+	// Arrange: the agent died mid-step long ago — time.completed was never
+	// written. The hold-back must expire or this turn is invisible forever.
+	dbPath := copyFixture(t, "opencode_simple.db")
+	mutate(t, dbPath, `
+		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
+			('msg_dead_a', 'ses_s1', 1700001080000, 1700001080000,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+			('prt_dead_1', 'msg_dead_a', 'ses_s1', 1700001080001, 1700001080001,
+			 '{"type":"text","text":"last words"}');
+	`)
+	store, err := NewStore(dbPath, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	// Act
+	sess, _, err := store.Load(context.Background(), "ses_s1")
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, sess.Turns, 5, "abandoned partial turn must still be emitted")
+	assert.Contains(t, sess.Turns[4].Content, "last words")
 }
 
 func TestLoadIncremental_NoNewMessages_ReturnsEmpty(t *testing.T) {
