@@ -121,37 +121,54 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 // standalone turn in that case, matching the claude parser's semantics
 // (jsonl.go attachToolResult). Token accounting mirrors the parser too, so
 // the view's aggregates stay comparable to a fresh Load.
+//
+// Resolution is two-phase: targets are resolved first, mutations applied
+// only on full success. A partial match is common in a windowed view (the
+// issuing turn may have been evicted) and applying it eagerly would leave
+// the matched results BOTH folded into the issuing turn AND duplicated in
+// the kept standalone turn — rendered twice, tokens counted twice.
+//
+// Note: unlike the full parser, the fold does NOT record ExtraLineIndices.
+// Incrementally parsed turns carry chunk-relative RawIndex values (numbered
+// from the cursor's seek position), and ExtraLineIndices is defined as
+// absolute file line numbers consumed by the pruner. The editor re-parses
+// from disk before pruning, so the view's copy is display-only.
 func attachToolResultToView(sess *session.Session, pending []session.Turn, t session.Turn) bool {
 	if len(t.ToolResults) == 0 {
 		return false
 	}
-	attached := make([]bool, len(t.ToolResults))
-	tryAttach := func(target *session.Turn) {
+
+	// Phase 1: resolve a target turn for every result, newest-first, without
+	// mutating anything.
+	targets := make([]*session.Turn, len(t.ToolResults))
+	resolve := func(target *session.Turn) {
 		for _, tc := range target.ToolCalls {
 			for ri, tr := range t.ToolResults {
-				if attached[ri] || tc.ID != tr.ID {
-					continue
+				if targets[ri] == nil && tc.ID == tr.ID {
+					targets[ri] = target
 				}
-				est := tokenizer.Estimate(tr.Content)
-				target.ToolResults = append(target.ToolResults, tr)
-				target.Tokens += est
-				target.ExtraLineIndices = append(target.ExtraLineIndices, t.RawIndex)
-				sess.TokenCount += est
-				sess.ToolResultTokens += est
-				attached[ri] = true
 			}
 		}
 	}
 	for i := len(pending) - 1; i >= 0; i-- {
-		tryAttach(&pending[i])
+		resolve(&pending[i])
 	}
 	for i := len(sess.Turns) - 1; i >= 0; i-- {
-		tryAttach(&sess.Turns[i])
+		resolve(&sess.Turns[i])
 	}
-	for _, ok := range attached {
-		if !ok {
+	for _, tgt := range targets {
+		if tgt == nil {
 			return false
 		}
+	}
+
+	// Phase 2: every result has a home — apply.
+	for ri, tr := range t.ToolResults {
+		est := tokenizer.Estimate(tr.Content)
+		targets[ri].ToolResults = append(targets[ri].ToolResults, tr)
+		targets[ri].Tokens += est
+		sess.TokenCount += est
+		sess.ToolResultTokens += est
 	}
 	return true
 }

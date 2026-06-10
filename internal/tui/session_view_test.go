@@ -147,6 +147,39 @@ func TestSessionView_Append_AttachesToolResultToPriorTurn(t *testing.T) {
 	assert.Equal(t, "tool output", last.ToolResults[0].Content)
 }
 
+func TestSessionView_Append_PartialMatchDoesNotDuplicate(t *testing.T) {
+	// Arrange: the view holds an assistant turn that issued ONLY t1; the
+	// streamed result turn answers t1 AND t2 (t2's issuer was evicted).
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+	view.Session.Turns = append(view.Session.Turns, session.Turn{
+		Role:      session.RoleAssistant,
+		Content:   "running tool",
+		ToolCalls: []session.ToolCall{{ID: "t1", Name: "Bash"}},
+	})
+	view.TotalTurns++
+	view.TurnsLoadedTo = view.TotalTurns
+	asstIdx := len(view.Session.Turns) - 1
+	before := view.TotalTurns
+
+	// Act
+	view.Append([]session.Turn{{
+		Role:    session.RoleToolResult,
+		Content: "out1",
+		ToolResults: []session.ToolResult{
+			{ID: "t1", Content: "out1"},
+			{ID: "t2", Content: "out2"},
+		},
+	}}, view.Cursor)
+
+	// Assert: kept standalone (not every result found a home), and the
+	// issuing turn must NOT have absorbed a duplicate copy of t1's result.
+	assert.Equal(t, before+1, view.TotalTurns)
+	assert.Empty(t, view.Session.Turns[asstIdx].ToolResults,
+		"partial match must not eagerly fold results that are also kept standalone")
+}
+
 func TestSessionView_Append_KeepsUnmatchedToolResult(t *testing.T) {
 	// Arrange
 	store, meta, _ := makeTestStore(t, "simple.jsonl")
