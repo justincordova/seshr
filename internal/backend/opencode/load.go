@@ -38,6 +38,21 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 
 	chain := takeCurrentBranch(msgs)
 
+	// Exclude a trailing in-flight assistant message, mirroring
+	// LoadIncremental: emitting it would freeze it at this snapshot (the
+	// cursor below would point past it, so its still-streaming parts are
+	// never re-read). Holding it back means the incremental path emits it
+	// whole once time.completed lands.
+	for len(chain) > 0 && messageInFlight(chain[len(chain)-1]) {
+		chain = chain[:len(chain)-1]
+	}
+	if len(chain) == 0 {
+		return &session.Session{
+			ID:     id,
+			Source: session.SourceOpenCode,
+		}, encodeCursor(cursorData{}), nil
+	}
+
 	parts, err := queryPartsForMessages(ctx, s.conns.read, id, chainIDs(chain))
 	if err != nil {
 		return nil, backend.Cursor{}, err

@@ -84,6 +84,75 @@ func TestLoadIncremental_NewMessage_ReturnsIncremental(t *testing.T) {
 	assert.NotEqual(t, cur.Data, newCur.Data, "cursor must advance past the new rows")
 }
 
+func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) {
+	// Arrange
+	dbPath := copyFixture(t, "opencode_simple.db")
+	store, err := NewStore(dbPath, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	_, cur, err := store.Load(context.Background(), "ses_s1")
+	require.NoError(t, err)
+
+	// OC starts a step: assistant message row exists (time.created set, no
+	// time.completed) with only an early text part — output still streaming.
+	mutate(t, dbPath, `
+		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
+			('msg_live_a', 'ses_s1', 1700001080000, 1700001080000,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+			('prt_live_1', 'msg_live_a', 'ses_s1', 1700001080001, 1700001080001,
+			 '{"type":"text","text":"first chunk"}');
+	`)
+
+	// Act 1: the in-flight message must be held back, cursor unmoved.
+	turns, midCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
+	require.NoError(t, err)
+	assert.Empty(t, turns, "streaming assistant message must not be emitted yet")
+	assert.Equal(t, cur.Data, midCur.Data, "cursor must hold before the in-flight message")
+
+	// OC finishes the step: more parts land and time.completed is written.
+	mutate(t, dbPath, `
+		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+			('prt_live_2', 'msg_live_a', 'ses_s1', 1700001081000, 1700001081000,
+			 '{"type":"text","text":"second chunk"}');
+		UPDATE message SET data = '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000,"completed":1700001082000},"tokens":{"input":5,"output":9,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}'
+		WHERE id = 'msg_live_a';
+	`)
+
+	// Act 2: now it must be emitted whole — including the late part.
+	turns, _, err = store.LoadIncremental(context.Background(), "ses_s1", midCur)
+	require.NoError(t, err)
+	require.Len(t, turns, 1)
+	assert.Contains(t, turns[0].Content, "first chunk")
+	assert.Contains(t, turns[0].Content, "second chunk",
+		"parts written after the message row was first observed must not be lost")
+}
+
+func TestLoad_TrailingInFlightAssistant_ExcludedAndCursorBeforeIt(t *testing.T) {
+	// Arrange: the session ends with a streaming assistant message.
+	dbPath := copyFixture(t, "opencode_simple.db")
+	mutate(t, dbPath, `
+		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
+			('msg_live_a', 'ses_s1', 1700001080000, 1700001080000,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":1700001080000},"tokens":{"input":5,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+	`)
+	store, err := NewStore(dbPath, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	// Act
+	sess, cur, err := store.Load(context.Background(), "ses_s1")
+
+	// Assert: the in-flight turn is held back and the cursor sits before it,
+	// so the incremental path can emit it whole once it completes.
+	require.NoError(t, err)
+	assert.Len(t, sess.Turns, 4, "in-flight assistant must not appear as a frozen turn")
+	cd, err := decodeCursor(cur)
+	require.NoError(t, err)
+	assert.NotEqual(t, "msg_live_a", cd.LastMessageID)
+}
+
 func TestLoadIncremental_NoNewMessages_ReturnsEmpty(t *testing.T) {
 	dbPath := copyFixture(t, "opencode_simple.db")
 	store, err := NewStore(dbPath, t.TempDir())

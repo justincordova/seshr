@@ -59,6 +59,23 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 		return nil, cur, nil
 	}
 
+	// Hold back a still-streaming trailing assistant message. OC creates the
+	// assistant message row when the step STARTS and inserts/updates part
+	// rows as output streams in. If we emitted it now, the cursor would
+	// advance past it and every part written afterwards would belong to a
+	// message <= cursor — never fetched again, freezing the turn at this
+	// first (mostly empty) snapshot. Keeping the cursor before it means the
+	// next tick re-reads the message with its parts as written so far, and
+	// it is emitted whole once time.completed lands. Only the LAST message
+	// can be in-flight: OC appends strictly, so any message with a successor
+	// has finished changing.
+	if last := newMsgs[len(newMsgs)-1]; messageInFlight(last) {
+		newMsgs = newMsgs[:len(newMsgs)-1]
+		if len(newMsgs) == 0 {
+			return nil, cur, nil
+		}
+	}
+
 	parts, err := queryPartsForMessages(ctx, s.conns.read, id, chainIDs(newMsgs))
 	if err != nil {
 		return nil, cur, err
@@ -81,6 +98,20 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 		LastMessageID:   last.ID,
 	})
 	return decoded.Turns, newCur, nil
+}
+
+// messageInFlight reports whether a message is explicitly still streaming:
+// its envelope carries time.created but no time.completed yet. Messages
+// without a time field at all (older OC versions, fixtures) can't be
+// classified and are treated as settled — wrongly holding those back would
+// freeze the live tail entirely, which is worse than the stale-snapshot
+// problem this guards against.
+func messageInFlight(m messageRow) bool {
+	env, err := decodeEnvelope(m.Data)
+	if err != nil {
+		return false // undecodable → decodeChain skips it anyway
+	}
+	return env.Role == "assistant" && env.Time.Created > 0 && env.Time.Completed == 0
 }
 
 // queryMessagesAfter fetches messages whose (time_created, id) is strictly
