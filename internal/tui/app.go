@@ -484,6 +484,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				om, _ := a.overview.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
 				a.overview = om.(Overview)
 			}
+			// Reset the live view too: its turns and cursor still describe
+			// the pre-prune state. For OpenCode the cursor stays "valid"
+			// after a prune (it's a (time,id) tuple), so without this the
+			// next fast tick would append onto the stale turn list and
+			// syncLiveSessionState would re-publish the pruned turns.
+			if a.currentView != nil && a.currentView.Meta.ID == m.Session.ID {
+				a.currentView.Reset(m.Session, m.Cursor)
+			}
 		}
 		return a, rescanAllStoresCmd(a.registry)
 	case spinner.TickMsg:

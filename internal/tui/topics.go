@@ -1256,7 +1256,7 @@ func reloadAfterPruneCmd(reg *backend.Registry, id string, kind session.SourceKi
 		if !ok {
 			return PruneReloadMsg{Session: nil, Topics: nil}
 		}
-		sess, _, err := store.Load(context.Background(), id)
+		sess, cur, err := store.Load(context.Background(), id)
 		if err != nil {
 			slog.Error("reload after prune failed", "id", id, "err", err)
 			return PruneReloadMsg{Session: nil, Topics: nil}
@@ -1266,11 +1266,15 @@ func reloadAfterPruneCmd(reg *backend.Registry, id string, kind session.SourceKi
 			opts.GapThreshold = time.Duration(gapSec) * time.Second
 		}
 		tops := topics.Cluster(sess, opts)
-		return PruneReloadMsg{Session: sess, Topics: tops}
+		return PruneReloadMsg{Session: sess, Topics: tops, Cursor: cur}
 	}
 }
 
 type PruneReloadMsg struct {
 	Session *session.Session
 	Topics  []topics.Topic
+	// Cursor is the fresh incremental cursor from the post-prune Load; the
+	// app uses it to reset the live SessionView so the fast tick doesn't
+	// keep appending onto (and re-publishing) the pre-prune turn list.
+	Cursor backend.Cursor
 }
