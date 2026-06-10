@@ -39,7 +39,10 @@ const maxIncrementalRows = 1000
 func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Cursor) ([]session.Turn, backend.Cursor, error) {
 	cd, err := decodeCursor(cur)
 	if err != nil {
-		return nil, cur, err
+		// A cursor we can't decode can't be advanced from — map it to the
+		// rebuild contract instead of a transient error the caller would
+		// retry forever (mirrors the claude store).
+		return nil, cur, fmt.Errorf("%w: %v", backend.ErrCursorInvalid, err)
 	}
 
 	if cd.LastMessageID == "" {

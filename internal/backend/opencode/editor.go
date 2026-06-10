@@ -153,6 +153,11 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, sel backend.Se
 		return resolvedSelection{}, fmt.Errorf("session %s has no decodable turns", id)
 	}
 
+	// A half-built selection must never fall through to an unguarded delete.
+	if len(sel.TurnTimestamps) > 0 && len(sel.TurnTimestamps) != len(turnIdx) {
+		return resolvedSelection{}, fmt.Errorf("selection has %d indices but %d timestamps", len(turnIdx), len(sel.TurnTimestamps))
+	}
+
 	// Deduplicate + validate indices.
 	wanted := make(map[int]struct{}, len(turnIdx))
 	for k, i := range turnIdx {
@@ -162,7 +167,7 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, sel backend.Se
 		// Staleness guard: turn timestamps come from message.time_created
 		// (decodeChain), so a selection made against an older view of the
 		// chain (regen branch switch, concurrent prune) won't line up here.
-		if len(sel.TurnTimestamps) == len(turnIdx) && !sel.TurnTimestamps[k].IsZero() &&
+		if len(sel.TurnTimestamps) > 0 && !sel.TurnTimestamps[k].IsZero() &&
 			sel.TurnTimestamps[k].UnixMilli() != turnMsgs[i].TimeCreated {
 			return resolvedSelection{}, backend.ErrSelectionStale
 		}
