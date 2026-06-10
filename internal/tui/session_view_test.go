@@ -72,6 +72,55 @@ func TestSessionView_Append_EvictsWhenOverMax(t *testing.T) {
 	assert.Equal(t, 601, view.TotalTurns)
 }
 
+func TestSessionView_Append_AttachesToolResultToPriorTurn(t *testing.T) {
+	// Arrange: the view holds an assistant turn that issued tool call t9.
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+	view.Session.Turns = append(view.Session.Turns, session.Turn{
+		Role:      session.RoleAssistant,
+		Content:   "running tool",
+		ToolCalls: []session.ToolCall{{ID: "t9", Name: "Bash"}},
+	})
+	view.TotalTurns++
+	view.TurnsLoadedTo = view.TotalTurns
+	before := view.TotalTurns
+
+	// Act: the next tick streams the tool result as a standalone turn —
+	// exactly what the incremental parser produces.
+	view.Append([]session.Turn{{
+		Role:        session.RoleToolResult,
+		Content:     "tool output",
+		ToolResults: []session.ToolResult{{ID: "t9", Content: "tool output"}},
+	}}, view.Cursor)
+
+	// Assert: folded into the issuing turn, not appended — matching the turn
+	// index space of a fresh full parse.
+	assert.Equal(t, before, view.TotalTurns, "attached result must not become a standalone turn")
+	last := view.Session.Turns[len(view.Session.Turns)-1]
+	require.Len(t, last.ToolResults, 1)
+	assert.Equal(t, "tool output", last.ToolResults[0].Content)
+}
+
+func TestSessionView_Append_KeepsUnmatchedToolResult(t *testing.T) {
+	// Arrange
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+	before := view.TotalTurns
+
+	// Act: a result whose tool call doesn't exist anywhere in the view
+	// (e.g. the issuing turn was evicted) stays standalone.
+	view.Append([]session.Turn{{
+		Role:        session.RoleToolResult,
+		Content:     "orphan",
+		ToolResults: []session.ToolResult{{ID: "nope", Content: "orphan"}},
+	}}, view.Cursor)
+
+	// Assert
+	assert.Equal(t, before+1, view.TotalTurns)
+}
+
 func TestSessionView_HasTurn_RespectsWindow(t *testing.T) {
 	// Arrange
 	store, meta, _ := makeTestStore(t, "simple.jsonl")

@@ -5,6 +5,7 @@ import (
 
 	"github.com/justincordova/seshr/internal/backend"
 	"github.com/justincordova/seshr/internal/session"
+	"github.com/justincordova/seshr/internal/tokenizer"
 	"github.com/justincordova/seshr/internal/topics"
 )
 
@@ -66,10 +67,30 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 		v.Cursor = newCursor
 		return
 	}
+
+	// Fold tool-result turns into the assistant turn that issued the call,
+	// mirroring the claude full parser's attachToolResult. The incremental
+	// stream parser cannot do this itself: the issuing assistant turn was
+	// usually returned by an EARLIER tick and exists only in this view.
+	// Without the fold, the live view's turn-index space drifts one right of
+	// a fresh Parse per attached result — wrong turn counts, and prune
+	// selections that the editor-side staleness guard then has to refuse.
+	kept := make([]session.Turn, 0, len(newTurns))
+	for _, t := range newTurns {
+		if t.Role == session.RoleToolResult && attachToolResultToView(v.Session, kept, t) {
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if len(kept) == 0 {
+		v.Cursor = newCursor
+		return
+	}
+
 	hadEvictionBefore := v.TurnsLoadedFrom > 0
 
-	v.Session.Turns = append(v.Session.Turns, newTurns...)
-	v.TotalTurns += len(newTurns)
+	v.Session.Turns = append(v.Session.Turns, kept...)
+	v.TotalTurns += len(kept)
 	v.TurnsLoadedTo = v.TotalTurns
 
 	if hadEvictionBefore {
@@ -78,7 +99,7 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 		// indices must add TurnsLoadedFrom themselves.
 		v.Topics = topics.Cluster(v.Session, topics.DefaultOptions())
 	} else {
-		v.Topics = topics.ClusterAppend(v.Session, topics.DefaultOptions(), v.Topics, newTurns)
+		v.Topics = topics.ClusterAppend(v.Session, topics.DefaultOptions(), v.Topics, kept)
 	}
 
 	// Evict oldest turns if over the window.
@@ -89,6 +110,48 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 	}
 
 	v.Cursor = newCursor
+}
+
+// attachToolResultToView merges a tool-result turn's results into the
+// assistant turn that issued the matching tool calls, searching the current
+// batch (pending) first, then the view's existing turns, newest first.
+// Returns true only when EVERY result found a home — the caller drops the
+// standalone turn in that case, matching the claude parser's semantics
+// (jsonl.go attachToolResult). Token accounting mirrors the parser too, so
+// the view's aggregates stay comparable to a fresh Load.
+func attachToolResultToView(sess *session.Session, pending []session.Turn, t session.Turn) bool {
+	if len(t.ToolResults) == 0 {
+		return false
+	}
+	attached := make([]bool, len(t.ToolResults))
+	tryAttach := func(target *session.Turn) {
+		for _, tc := range target.ToolCalls {
+			for ri, tr := range t.ToolResults {
+				if attached[ri] || tc.ID != tr.ID {
+					continue
+				}
+				est := tokenizer.Estimate(tr.Content)
+				target.ToolResults = append(target.ToolResults, tr)
+				target.Tokens += est
+				target.ExtraLineIndices = append(target.ExtraLineIndices, t.RawIndex)
+				sess.TokenCount += est
+				sess.ToolResultTokens += est
+				attached[ri] = true
+			}
+		}
+	}
+	for i := len(pending) - 1; i >= 0; i-- {
+		tryAttach(&pending[i])
+	}
+	for i := len(sess.Turns) - 1; i >= 0; i-- {
+		tryAttach(&sess.Turns[i])
+	}
+	for _, ok := range attached {
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // Reset replaces the view's contents with a freshly loaded session. Used
