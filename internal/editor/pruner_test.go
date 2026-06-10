@@ -95,11 +95,31 @@ func TestPruneSession_LockedReturnsErrLocked(t *testing.T) {
 	l, err := editor.TryLock(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Release() })
-	sess := &session.Session{Path: path}
+	sess := &session.Session{Path: path, Turns: []session.Turn{{RawIndex: 0}}}
 
-	err = editor.PruneSession(sess, editor.Selection{})
+	err = editor.PruneSession(sess, editor.Selection{Turns: map[int]bool{0: true}})
 
 	assert.ErrorIs(t, err, editor.ErrLocked)
+}
+
+func TestPruneSession_EmptySelectionIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	content := `{"type":"user"}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	// A pre-existing .bak from an earlier prune must survive a no-op.
+	require.NoError(t, os.WriteFile(path+".bak", []byte("EARLIER STATE\n"), 0o644))
+	sess := &session.Session{Path: path, Turns: []session.Turn{{RawIndex: 0}}}
+
+	err := editor.PruneSession(sess, editor.Selection{Turns: map[int]bool{}})
+
+	require.NoError(t, err)
+	bak, err := os.ReadFile(path + ".bak")
+	require.NoError(t, err)
+	assert.Equal(t, "EARLIER STATE\n", string(bak), "no-op prune must not overwrite the backup")
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(got))
 }
 
 func TestPrune_UsesRawIndexNotTurnIndex(t *testing.T) {

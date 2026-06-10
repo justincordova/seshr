@@ -49,6 +49,27 @@ func TestExpandSelection_ToolUsePullsInToolResult(t *testing.T) {
 	assert.True(t, got.Turns[1], "tool_result must be pulled in with tool_use")
 }
 
+func TestExpandSelection_ClosesTransitively(t *testing.T) {
+	// Selecting only one tool result must transitively pull in: the assistant
+	// turn that issued it, that assistant's OTHER parallel tool call's result,
+	// and the assistant's paired user turn. A single pairing pass misses the
+	// second result and the user partner.
+	sess := &session.Session{Turns: []session.Turn{
+		{Role: session.RoleUser},
+		{Role: session.RoleAssistant, ToolCalls: []session.ToolCall{{ID: "t1"}, {ID: "t2"}}},
+		{Role: session.RoleToolResult, ToolResults: []session.ToolResult{{ID: "t1"}}},
+		{Role: session.RoleToolResult, ToolResults: []session.ToolResult{{ID: "t2"}}},
+	}}
+	ts := []topics.Topic{{TurnIndices: []int{0, 1, 2, 3}}}
+	sel := editor.Selection{Turns: map[int]bool{2: true}}
+
+	got := editor.ExpandSelection(sess, ts, sel)
+
+	assert.True(t, got.Turns[1], "assistant issuing the tool call must be pulled in")
+	assert.True(t, got.Turns[3], "the assistant's other tool result must be pulled in")
+	assert.True(t, got.Turns[0], "the assistant's paired user turn must be pulled in")
+}
+
 func TestExpandSelection_SystemAndSummaryAreNotSelectable(t *testing.T) {
 	sess := &session.Session{Turns: []session.Turn{
 		{Role: session.RoleSystem},

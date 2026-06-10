@@ -38,11 +38,26 @@ func ExpandSelection(sess *session.Session, ts []topics.Topic, in Selection) Sel
 		}
 	}
 
-	for idx := range out.Turns {
-		pullUserAssistantPartner(sess, idx, out.Turns)
+	// Iterate both pairing passes to a fixpoint: each pass can pull in turns
+	// the other pass then needs to process. E.g. a selected tool result pulls
+	// in its assistant turn, whose OTHER parallel tool call has a result that
+	// must also come along, and whose user partner must be paired — otherwise
+	// the pruned file is left with orphaned tool_results or unpaired turns.
+	// Growth is monotonic and bounded by len(sess.Turns), so this terminates.
+	for {
+		before := len(out.Turns)
+		keys := make([]int, 0, len(out.Turns))
+		for idx := range out.Turns {
+			keys = append(keys, idx)
+		}
+		for _, idx := range keys {
+			pullUserAssistantPartner(sess, idx, out.Turns)
+		}
+		PullToolPartners(sess, out.Turns)
+		if len(out.Turns) == before {
+			break
+		}
 	}
-
-	PullToolPartners(sess, out.Turns)
 
 	return out
 }

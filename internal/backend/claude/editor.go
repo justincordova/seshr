@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -57,9 +58,16 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 	ts := topics.Cluster(sess, topics.DefaultOptions())
 	expanded := editor.ExpandSelection(sess, ts, edSel)
 
+	// An empty expansion (e.g. the selection contained only system/summary
+	// turns) is a no-op: rewriting would change nothing, but CreateBackup
+	// would still overwrite the .bak with current content.
+	if len(expanded.Turns) == 0 {
+		return backend.PruneResult{}, nil
+	}
+
 	// pruneWithoutLock does the same work as PruneSession but without
 	// re-acquiring the flock we already hold.
-	if err := pruneWithoutLock(sess, expanded); err != nil {
+	if err := pruneWithoutLock(ctx, sess, expanded); err != nil {
 		return backend.PruneResult{}, err
 	}
 
@@ -68,7 +76,7 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 
 // pruneWithoutLock backs Prune above. Callers MUST already hold the
 // per-session flock; this is unexported to keep the lock invariant local.
-func pruneWithoutLock(sess *session.Session, expanded editor.Selection) error {
+func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded editor.Selection) error {
 	path := sess.Path
 
 	if err := editor.CreateBackup(path); err != nil {
@@ -79,6 +87,20 @@ func pruneWithoutLock(sess *session.Session, expanded editor.Selection) error {
 	if err := editor.Prune(sess, expanded, tmp); err != nil {
 		_ = os.Remove(tmp)
 		return err
+	}
+
+	// Validate the pruned output BEFORE it replaces the live file: it must
+	// parse cleanly and contain exactly the expected number of turns. This is
+	// the last line of defense against a selection/pairing bug corrupting a
+	// session (the .bak would still exist, but the user shouldn't need it).
+	after, err := NewClaude().Parse(ctx, tmp)
+	if err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("pruned output failed validation: %w", err)
+	}
+	if want := len(sess.Turns) - len(expanded.Turns); len(after.Turns) != want {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("pruned output has %d turns, want %d: aborting before replace", len(after.Turns), want)
 	}
 
 	if err := editor.AtomicReplace(tmp, path); err != nil {

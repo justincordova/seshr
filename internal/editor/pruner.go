@@ -76,6 +76,13 @@ func Prune(sess *session.Session, selection Selection, dstPath string) (retErr e
 }
 
 func PruneSession(sess *session.Session, selection Selection) error {
+	// An empty selection is a no-op: rewriting would change nothing but
+	// CreateBackup below would still overwrite the .bak — destroying the
+	// only copy of the pre-previous-prune state.
+	if len(selection.Turns) == 0 {
+		return nil
+	}
+
 	path := sess.Path
 	lock, err := TryLock(path)
 	if err != nil {
@@ -93,8 +100,6 @@ func PruneSession(sess *session.Session, selection Selection) error {
 		return fmt.Errorf("write tmp: %w", err)
 	}
 
-	// Validation skipped — the pruned tmp file is validated by the caller
-	// (backend/claude/editor.go) which can parse without import cycle.
 	if err := AtomicReplace(tmp, path); err != nil {
 		return fmt.Errorf("atomic replace: %w", err)
 	}
