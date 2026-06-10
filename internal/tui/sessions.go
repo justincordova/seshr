@@ -130,8 +130,11 @@ func (p Picker) ReplaceMetas(metas []backend.SessionMeta) Picker {
 		p.collapsed[g.Name] = true
 	}
 	p.rebuildGroups()
-	if p.cursor >= len(p.flatRows) && p.cursor > 0 {
+	if p.cursor >= len(p.flatRows) {
 		p.cursor = len(p.flatRows) - 1
+	}
+	if p.cursor < 0 {
+		p.cursor = 0
 	}
 	return p
 }
@@ -271,7 +274,7 @@ func (p *Picker) skipDividerForward() {
 
 // selectedRow returns the flat row at the cursor, or false if no rows.
 func (p Picker) selectedRow() (PickerRow, bool) {
-	if len(p.flatRows) == 0 || p.cursor >= len(p.flatRows) {
+	if len(p.flatRows) == 0 || p.cursor < 0 || p.cursor >= len(p.flatRows) {
 		return PickerRow{}, false
 	}
 	return p.flatRows[p.cursor], true

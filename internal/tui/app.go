@@ -452,11 +452,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RestoreDoneMsg:
 		a.overview = NewOverview(a.session, a.topicsCache, a.theme, a.cfg.GapThresholdSeconds, a.registry)
 		a.state = stateList
-		var store backend.SessionStore
-		if a.registry != nil {
-			store, _ = a.registry.Store(session.SourceClaude)
-		}
-		return a, rescanCmd(store)
+		// Rescan every store: a Claude-only rescan would replace the picker's
+		// meta list and wipe all OpenCode sessions from it.
+		return a, rescanAllStoresCmd(a.registry)
 	case RestoreErrMsg:
 		a.lastErr = m.Err.Error()
 		a.prevState = a.state
@@ -707,19 +705,6 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 	}
 
 	return a, fastTickCmd()
-}
-
-func rescanCmd(store backend.SessionStore) tea.Cmd {
-	if store == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		metas, err := store.Scan(context.Background())
-		if err != nil {
-			slog.Warn("rescan failed", "kind", store.Kind(), "err", err)
-		}
-		return RescanDoneMsg{Metas: metas}
-	}
 }
 
 func rescanAllStoresCmd(reg *backend.Registry) tea.Cmd {
