@@ -14,9 +14,10 @@ import (
 //
 // The -a flag is critical: lsof's filter args (-p, -d) default to OR
 // semantics, so without -a "lsof -p 23758 -d cwd" returns the cwd of every
-// process on the system. -a forces AND.
+// process on the system. -a forces AND. -b avoids kernel calls that can
+// block on stalled filesystems, and -w suppresses the warnings -b produces.
 func platformReadCWD(ctx context.Context, pid int) (string, error) {
-	cmd := exec.CommandContext(ctx, "lsof", "-a", "-p", fmt.Sprintf("%d", pid), "-d", "cwd", "-Fn")
+	cmd := exec.CommandContext(ctx, "lsof", "-a", "-b", "-w", "-p", fmt.Sprintf("%d", pid), "-d", "cwd", "-Fn")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("lsof pid %d: %w", pid, err)

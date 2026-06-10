@@ -96,7 +96,9 @@ func Load() (Config, error) {
 	if cfg.Theme == "" {
 		cfg.Theme = d.Theme
 	}
-	if cfg.GapThresholdSeconds == 0 {
+	// <= 0 also catches a hand-edited negative value, which would make every
+	// inter-turn gap "exceed" the threshold and degenerate topic clustering.
+	if cfg.GapThresholdSeconds <= 0 {
 		cfg.GapThresholdSeconds = d.GapThresholdSeconds
 	}
 	if cfg.SchemaVersion == 0 {

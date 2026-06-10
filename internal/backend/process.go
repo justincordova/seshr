@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// cwdLookupTimeout bounds a single per-PID CWD resolution (lsof/procfs).
+const cwdLookupTimeout = 2 * time.Second
+
 // ProcessSnapshot is a point-in-time view of running processes.
 type ProcessSnapshot struct {
 	At       time.Time
@@ -59,10 +62,15 @@ func (p *ProcessScanner) Scan(ctx context.Context) (ProcessSnapshot, error) {
 		children[pr.PPID] = append(children[pr.PPID], pr.PID)
 	}
 
-	// Populate CWD only for agent candidates.
+	// Populate CWD only for agent candidates. Each lookup gets its own
+	// timeout: lsof can block indefinitely on stalled network mounts, and a
+	// single wedged call must not freeze the whole scan (and with it the
+	// live-detection refresh) when the caller's context has no deadline.
 	for pid, pr := range byPID {
 		if isAgentCandidate(pr.Command) {
-			cwd, err := p.readCWD(ctx, pid)
+			cctx, cancel := context.WithTimeout(ctx, cwdLookupTimeout)
+			cwd, err := p.readCWD(cctx, pid)
+			cancel()
 			if err != nil {
 				// Silently ignore per-PID CWD errors.
 				continue
