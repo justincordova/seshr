@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -330,6 +331,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleFastTick()
 	}
 
+	// ── Async tick results: apply state and reschedule the chains ────────────
+	if dm, ok := msg.(liveDetectDoneMsg); ok {
+		return a.handleDetectDone(dm)
+	}
+	if fm, ok := msg.(fastLoadDoneMsg); ok {
+		return a.handleFastLoadDone(fm)
+	}
+
 	switch m := msg.(type) {
 	case OpenSessionMsg:
 		a.currentViewMeta = m.Meta
@@ -605,21 +614,68 @@ func restoreViaRegistryCmd(id string, kind session.SourceKind, reg *backend.Regi
 	}
 }
 
-// handleSlowTick runs all detectors, reconciles the live index, and manages
-// the fast ticker and failure banner.
+// liveDetectDoneMsg carries the result of an async scan + detect pass.
+type liveDetectDoneMsg struct {
+	detected []*backend.LiveSession
+	err      error
+}
+
+// fastLoadDoneMsg carries the result of an async incremental load (or the
+// full reload performed after cursor invalidation).
+type fastLoadDoneMsg struct {
+	sessionID  string
+	kind       session.SourceKind
+	fromCursor backend.Cursor
+	turns      []session.Turn
+	newCur     backend.Cursor
+	rebuilt    *session.Session // non-nil when the cursor was invalidated and a clean Load ran
+	err        error
+}
+
+// handleSlowTick kicks off the async scan+detect pass. Process scanning
+// (ps + per-PID lsof) and detector DB queries must never run on the UI
+// thread — a slow disk or wedged subprocess would freeze rendering and
+// input. The tick chain is rescheduled when the result message is applied,
+// so scans cannot overlap.
 func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 	if a.LiveDisabled || a.registry == nil {
 		return a, nil
 	}
-	// Skip while overlay is active.
+	// Skip the work while an overlay is open, but keep the chain alive.
 	if a.overlayActive() {
 		return a, slowTickCmd()
 	}
+	return a, detectLiveCmd(a.ctx, a.scanner, a.registry)
+}
 
-	snap, err := a.scanner.Scan(a.ctx)
-	if err != nil {
+func detectLiveCmd(ctx context.Context, scanner *backend.ProcessScanner, reg *backend.Registry) tea.Cmd {
+	return func() tea.Msg {
+		snap, err := scanner.Scan(ctx)
+		if err != nil {
+			return liveDetectDoneMsg{err: err}
+		}
+		var detected []*backend.LiveSession
+		for _, d := range reg.Detectors() {
+			lives, derr := d.DetectLive(ctx, snap)
+			if derr != nil {
+				slog.Warn("detector failed", "kind", d.Kind(), "err", derr)
+				continue
+			}
+			for i := range lives {
+				cp := lives[i]
+				detected = append(detected, &cp)
+			}
+		}
+		return liveDetectDoneMsg{detected: detected}
+	}
+}
+
+// handleDetectDone applies the scan results: reconciles the live index,
+// updates the picker, and manages the fast ticker and failure banner.
+func (a App) handleDetectDone(m liveDetectDoneMsg) (App, tea.Cmd) {
+	if m.err != nil {
 		a.scanFailCount++
-		a.lastScanErr = err
+		a.lastScanErr = m.err
 		if a.scanFailCount >= 3 && !a.cfg.LiveDetectionLastOK.IsZero() {
 			a.picker.banner = "live detection paused · press ? for details"
 		}
@@ -632,22 +688,8 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 	// detection *used to* work) can ever trigger.
 	a.cfg.LiveDetectionLastOK = time.Now()
 
-	// Run all detectors.
-	var detected []*backend.LiveSession
-	for _, d := range a.registry.Detectors() {
-		lives, err := d.DetectLive(a.ctx, snap)
-		if err != nil {
-			slog.Warn("detector failed", "kind", d.Kind(), "err", err)
-			continue
-		}
-		for i := range lives {
-			cp := lives[i]
-			detected = append(detected, &cp)
-		}
-	}
-
 	// Reconcile with hysteresis.
-	_ = a.liveIndex.Reconcile(detected)
+	_ = a.liveIndex.Reconcile(m.detected)
 
 	// Push the reconciled snapshot into the picker so its rows render the
 	// live pulse / status / current-task. Without this the picker stays
@@ -667,10 +709,12 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-// handleFastTick performs incremental loads for the currently-open live
-// session. We scope the tail to the view the user is actively looking at:
-// other live sessions have their status refreshed by the slow tick detector
-// pass, and tailing them too would multiply DB work with no UI benefit.
+// handleFastTick kicks off the async incremental load for the currently-open
+// live session. We scope the tail to the view the user is actively looking
+// at: other live sessions have their status refreshed by the slow tick
+// detector pass, and tailing them too would multiply DB work with no UI
+// benefit. The chain is rescheduled when the result message is applied, so
+// loads cannot overlap.
 func (a App) handleFastTick() (App, tea.Cmd) {
 	if a.LiveDisabled {
 		return a, nil
@@ -687,42 +731,66 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 
 	// Only tail if the user is actively viewing a live session.
 	if a.currentView != nil && a.currentView.Live != nil && a.registry != nil {
-		store, ok := a.registry.Store(a.currentView.Meta.Kind)
-		if ok {
-			turns, newCur, err := store.LoadIncremental(a.ctx, a.currentView.Meta.ID, a.currentView.Cursor)
-			switch {
-			case errors.Is(err, backend.ErrCursorInvalid):
-				// File rotated/truncated/pruned under us: appending would
-				// duplicate every turn. Rebuild the view from a clean load.
-				sess, freshCur, lerr := store.Load(a.ctx, a.currentView.Meta.ID)
-				if lerr != nil {
-					slog.Warn("fast-tick rebuild after cursor invalidation failed",
-						"session", a.currentView.Meta.ID, "err", lerr)
-					break
-				}
-				a.currentView.Reset(sess, freshCur)
-				a.syncLiveSessionState()
-				slog.Info("fast-tick view rebuilt after cursor invalidation",
-					"session", a.currentView.Meta.ID, "turns", len(sess.Turns))
-			case err != nil:
-				slog.Warn("fast-tick incremental load failed",
-					"session", a.currentView.Meta.ID,
-					"kind", a.currentView.Meta.Kind,
-					"err", err)
-			case len(turns) > 0:
-				a.currentView.Append(turns, newCur)
-				a.syncLiveSessionState()
-				slog.Debug("fast-tick appended turns",
-					"session", a.currentView.Meta.ID, "count", len(turns))
-			default:
-				// No new turns — still advance the cursor if it changed
-				// (e.g., cold-cursor fall-through in OC).
-				a.currentView.Cursor = newCur
-			}
+		if store, ok := a.registry.Store(a.currentView.Meta.Kind); ok {
+			return a, incrementalLoadCmd(a.ctx, store, a.currentView.Meta.ID, a.currentView.Cursor)
 		}
 	}
 
 	return a, fastTickCmd()
+}
+
+func incrementalLoadCmd(ctx context.Context, store backend.SessionStore, id string, cur backend.Cursor) tea.Cmd {
+	return func() tea.Msg {
+		turns, newCur, err := store.LoadIncremental(ctx, id, cur)
+		if errors.Is(err, backend.ErrCursorInvalid) {
+			// File rotated/truncated/pruned under us: appending would
+			// duplicate every turn. Rebuild from a clean load.
+			sess, freshCur, lerr := store.Load(ctx, id)
+			if lerr != nil {
+				return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+					err: fmt.Errorf("rebuild after cursor invalidation: %w", lerr)}
+			}
+			return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+				rebuilt: sess, newCur: freshCur}
+		}
+		return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+			turns: turns, newCur: newCur, err: err}
+	}
+}
+
+// handleFastLoadDone applies the incremental-load result to the current view.
+func (a App) handleFastLoadDone(m fastLoadDoneMsg) (App, tea.Cmd) {
+	// Discard results computed for a view that's gone or has moved on
+	// (closed, re-opened, pruned+reloaded). The cursor comparison ensures we
+	// only apply a delta against the exact state it was computed from.
+	if a.currentView == nil || a.currentView.Meta.ID != m.sessionID ||
+		!cursorsEqual(a.currentView.Cursor, m.fromCursor) {
+		return a, fastTickCmd()
+	}
+	switch {
+	case m.err != nil:
+		slog.Warn("fast-tick incremental load failed",
+			"session", m.sessionID, "kind", m.kind, "err", m.err)
+	case m.rebuilt != nil:
+		a.currentView.Reset(m.rebuilt, m.newCur)
+		a.syncLiveSessionState()
+		slog.Info("fast-tick view rebuilt after cursor invalidation",
+			"session", m.sessionID, "turns", len(m.rebuilt.Turns))
+	case len(m.turns) > 0:
+		a.currentView.Append(m.turns, m.newCur)
+		a.syncLiveSessionState()
+		slog.Debug("fast-tick appended turns",
+			"session", m.sessionID, "count", len(m.turns))
+	default:
+		// No new turns — still advance the cursor if it changed
+		// (e.g., cold-cursor fall-through in OC).
+		a.currentView.Cursor = m.newCur
+	}
+	return a, fastTickCmd()
+}
+
+func cursorsEqual(x, y backend.Cursor) bool {
+	return x.Kind == y.Kind && bytes.Equal(x.Data, y.Data)
 }
 
 // syncLiveSessionState propagates fast-tick mutations of the current view
