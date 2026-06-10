@@ -121,6 +121,7 @@ type App struct {
 	scanFailCount int
 	lastScanErr   error
 	fastActive    bool // true when the fast ticker is running
+	fastGen       int  // fast-tick chain generation; stale ticks/results are dropped
 	ctx           context.Context
 	cancel        context.CancelFunc
 }
@@ -327,8 +328,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// ── Fast tick (2s): incremental load for live sessions ───────────────────
-	if _, ok := msg.(liveFastMsg); ok {
-		return a.handleFastTick()
+	if fm, ok := msg.(liveFastMsg); ok {
+		return a.handleFastTick(fm.Gen)
 	}
 
 	// ── Async tick results: apply state and reschedule the chains ────────────
@@ -423,6 +424,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case ReturnToPickerMsg:
 		a.state = stateList
+		// The tail is scoped to the view the user is actively looking at;
+		// closing it must stop the per-tick incremental loads.
+		a.currentView = nil
 		return a, nil
 	case OpenOverviewMsg:
 		a.state = stateOverview
@@ -631,6 +635,7 @@ type liveDetectDoneMsg struct {
 // fastLoadDoneMsg carries the result of an async incremental load (or the
 // full reload performed after cursor invalidation).
 type fastLoadDoneMsg struct {
+	gen        int // fast-tick chain generation this load belongs to
 	sessionID  string
 	kind       session.SourceKind
 	fromCursor backend.Cursor
@@ -639,6 +644,16 @@ type fastLoadDoneMsg struct {
 	rebuilt    *session.Session // non-nil when the cursor was invalidated and a clean Load ran
 	err        error
 }
+
+// Timeouts for the async tick commands. The tick chains are suspended while
+// a command is in flight (that's how overlap is prevented), so a command
+// that never returns — lsof wedged on a dead mount, a stuck DB — would
+// otherwise silently kill live detection or tailing forever. A timeout
+// surfaces as an error result, which reschedules the chain.
+const (
+	detectTimeout   = 8 * time.Second
+	fastLoadTimeout = 15 * time.Second
+)
 
 // handleSlowTick kicks off the async scan+detect pass. Process scanning
 // (ps + per-PID lsof) and detector DB queries must never run on the UI
@@ -658,6 +673,8 @@ func (a App) handleSlowTick(_ interface{}) (App, tea.Cmd) {
 
 func detectLiveCmd(ctx context.Context, scanner *backend.ProcessScanner, reg *backend.Registry) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, detectTimeout)
+		defer cancel()
 		snap, err := scanner.Scan(ctx)
 		if err != nil {
 			return liveDetectDoneMsg{err: err}
@@ -704,14 +721,20 @@ func (a App) handleDetectDone(m liveDetectDoneMsg) (App, tea.Cmd) {
 	// visually ended-only even when DetectLive returned matches.
 	a.picker.SetLiveIndex(a.liveIndex.SnapshotMap())
 
-	// Start or stop the fast ticker.
+	// Start or stop the fast ticker. Starting bumps the generation so any
+	// remnant of an older chain (e.g. a load still in flight from before
+	// the chain was stopped) is dropped instead of resuming alongside the
+	// new one — without the gen, a slow in-flight load + a stop/start cycle
+	// would leave two chains ticking forever.
 	var cmds []tea.Cmd
 	liveCount := len(a.liveIndex.Snapshot())
 	if liveCount > 0 && !a.fastActive {
 		a.fastActive = true
-		cmds = append(cmds, fastTickCmd())
+		a.fastGen++
+		cmds = append(cmds, fastTickCmd(a.fastGen))
 	} else if liveCount == 0 {
 		a.fastActive = false
+		a.fastGen++
 	}
 	cmds = append(cmds, slowTickCmd())
 	return a, tea.Batch(cmds...)
@@ -723,57 +746,68 @@ func (a App) handleDetectDone(m liveDetectDoneMsg) (App, tea.Cmd) {
 // detector pass, and tailing them too would multiply DB work with no UI
 // benefit. The chain is rescheduled when the result message is applied, so
 // loads cannot overlap.
-func (a App) handleFastTick() (App, tea.Cmd) {
+func (a App) handleFastTick(gen int) (App, tea.Cmd) {
+	// Tick from a superseded chain: drop it without rescheduling.
+	if gen != a.fastGen {
+		return a, nil
+	}
 	if a.LiveDisabled {
 		return a, nil
 	}
 	if a.overlayActive() {
-		return a, fastTickCmd()
+		return a, fastTickCmd(a.fastGen)
 	}
 
 	liveCount := len(a.liveIndex.Snapshot())
 	if !shouldRunFastTick(liveCount, false) {
 		a.fastActive = false
+		a.fastGen++
 		return a, nil
 	}
 
 	// Only tail if the user is actively viewing a live session.
 	if a.currentView != nil && a.currentView.Live != nil && a.registry != nil {
 		if store, ok := a.registry.Store(a.currentView.Meta.Kind); ok {
-			return a, incrementalLoadCmd(a.ctx, store, a.currentView.Meta.ID, a.currentView.Cursor)
+			return a, incrementalLoadCmd(a.ctx, store, a.currentView.Meta.ID, a.currentView.Cursor, a.fastGen)
 		}
 	}
 
-	return a, fastTickCmd()
+	return a, fastTickCmd(a.fastGen)
 }
 
-func incrementalLoadCmd(ctx context.Context, store backend.SessionStore, id string, cur backend.Cursor) tea.Cmd {
+func incrementalLoadCmd(ctx context.Context, store backend.SessionStore, id string, cur backend.Cursor, gen int) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(ctx, fastLoadTimeout)
+		defer cancel()
 		turns, newCur, err := store.LoadIncremental(ctx, id, cur)
 		if errors.Is(err, backend.ErrCursorInvalid) {
 			// File rotated/truncated/pruned under us: appending would
 			// duplicate every turn. Rebuild from a clean load.
 			sess, freshCur, lerr := store.Load(ctx, id)
 			if lerr != nil {
-				return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+				return fastLoadDoneMsg{gen: gen, sessionID: id, kind: store.Kind(), fromCursor: cur,
 					err: fmt.Errorf("rebuild after cursor invalidation: %w", lerr)}
 			}
-			return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+			return fastLoadDoneMsg{gen: gen, sessionID: id, kind: store.Kind(), fromCursor: cur,
 				rebuilt: sess, newCur: freshCur}
 		}
-		return fastLoadDoneMsg{sessionID: id, kind: store.Kind(), fromCursor: cur,
+		return fastLoadDoneMsg{gen: gen, sessionID: id, kind: store.Kind(), fromCursor: cur,
 			turns: turns, newCur: newCur, err: err}
 	}
 }
 
 // handleFastLoadDone applies the incremental-load result to the current view.
 func (a App) handleFastLoadDone(m fastLoadDoneMsg) (App, tea.Cmd) {
+	// Result from a superseded chain: drop it without rescheduling.
+	if m.gen != a.fastGen {
+		return a, nil
+	}
 	// Discard results computed for a view that's gone or has moved on
 	// (closed, re-opened, pruned+reloaded). The cursor comparison ensures we
 	// only apply a delta against the exact state it was computed from.
 	if a.currentView == nil || a.currentView.Meta.ID != m.sessionID ||
 		!cursorsEqual(a.currentView.Cursor, m.fromCursor) {
-		return a, fastTickCmd()
+		return a, fastTickCmd(a.fastGen)
 	}
 	switch {
 	case m.err != nil:
@@ -794,7 +828,7 @@ func (a App) handleFastLoadDone(m fastLoadDoneMsg) (App, tea.Cmd) {
 		// (e.g., cold-cursor fall-through in OC).
 		a.currentView.Cursor = m.newCur
 	}
-	return a, fastTickCmd()
+	return a, fastTickCmd(a.fastGen)
 }
 
 func cursorsEqual(x, y backend.Cursor) bool {

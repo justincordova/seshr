@@ -9,15 +9,21 @@ import (
 // liveSlowMsg is the slow-tick message (10s): run detectors, reconcile index.
 type liveSlowMsg struct{ At time.Time }
 
-// liveFastMsg is the fast-tick message (2s): incremental load for live sessions.
-type liveFastMsg struct{ At time.Time }
+// liveFastMsg is the fast-tick message (2s): incremental load for live
+// sessions. Gen identifies the chain generation — ticks from a superseded
+// chain are dropped so two chains can never run concurrently (tea.Tick
+// cannot be cancelled; this mirrors the replay autoplay TickMsg.Gen pattern).
+type liveFastMsg struct {
+	At  time.Time
+	Gen int
+}
 
 func slowTickCmd() tea.Cmd {
 	return tea.Tick(10*time.Second, func(t time.Time) tea.Msg { return liveSlowMsg{At: t} })
 }
 
-func fastTickCmd() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return liveFastMsg{At: t} })
+func fastTickCmd(gen int) tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return liveFastMsg{At: t, Gen: gen} })
 }
 
 // ShouldRunFastTick returns true when there are live sessions and no overlay
