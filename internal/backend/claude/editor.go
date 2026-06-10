@@ -123,10 +123,6 @@ func verifySelection(sess *session.Session, sel backend.Selection) error {
 func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded editor.Selection, preInfo os.FileInfo) error {
 	path := sess.Path
 
-	if err := editor.CreateBackup(path); err != nil {
-		return err
-	}
-
 	tmp := path + ".tmp"
 	if err := editor.Prune(sess, expanded, tmp); err != nil {
 		_ = os.Remove(tmp)
@@ -157,6 +153,14 @@ func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded edito
 	} else if curInfo.Size() != preInfo.Size() || !curInfo.ModTime().Equal(preInfo.ModTime()) {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("session file changed while pruning (live agent wrote to it); retry: %w", backend.ErrSelectionStale)
+	}
+
+	// The backup is taken LAST, after every abort path has had its chance:
+	// CreateBackup overwrites any previous .bak, and an aborted prune must
+	// not consume the user's restore point from the last successful one.
+	if err := editor.CreateBackup(path); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
 
 	if err := editor.AtomicReplace(tmp, path); err != nil {
