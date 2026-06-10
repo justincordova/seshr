@@ -647,6 +647,11 @@ func (o Overview) renderHeader(width int) string {
 
 func (o Overview) renderStatsStrip(width int) string {
 	s := o.sess
+	// Reachable from Update (clampTopicOffset → topicBodyHeight) before any
+	// session is loaded, unlike View which guards nil itself.
+	if s == nil {
+		return ""
+	}
 
 	dur := s.ModifiedAt.Sub(s.CreatedAt).Round(time.Minute)
 	if dur < 0 {

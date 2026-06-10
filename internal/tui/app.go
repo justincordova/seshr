@@ -394,6 +394,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Live:    live,
 			}
 			a.currentView = view
+			// Clear state from any previously loaded session so the landing
+			// page's `t`/`r` actions don't open a stale (or nil) session.
+			a.session = nil
+			a.topicsCache = nil
+			a.overview = NewOverview(nil, nil, a.theme, a.cfg.GapThresholdSeconds, a.registry)
 			a.landing = NewLandingModel(view, a.theme)
 			if a.width > 0 {
 				lm, _ := a.landing.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
@@ -426,6 +431,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.overlay = ovNone
 		return a, nil
 	case OpenReplayMsg:
+		if a.session == nil {
+			// Nothing loaded (e.g. landing page shown after a load error).
+			return a, nil
+		}
 		a.replay = NewReplay(a.session, a.topicsCache, a.theme)
 		a.replay = a.replay.SetSize(a.width, a.height).(Replay)
 		a.state = stateReplay
