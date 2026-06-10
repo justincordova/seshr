@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/justincordova/seshr/internal/backend"
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
@@ -70,6 +71,50 @@ func TestSessionView_Append_EvictsWhenOverMax(t *testing.T) {
 	// Assert: window holds exactly 500 turns.
 	assert.Equal(t, 500, view.TurnsLoadedTo-view.TurnsLoadedFrom)
 	assert.Equal(t, 601, view.TotalTurns)
+}
+
+func TestSessionView_Append_TopicIndicesValidAfterEviction(t *testing.T) {
+	// Arrange — a full window about to evict.
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+
+	base := time.Unix(1_700_000_000, 0)
+	bigTurns := make([]session.Turn, 600)
+	for i := range bigTurns {
+		bigTurns[i] = session.Turn{
+			Role:      session.RoleUser,
+			Content:   "t",
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		}
+	}
+	view.Session.Turns = bigTurns
+	view.TurnsLoadedFrom = 0
+	view.TurnsLoadedTo = 600
+	view.TotalTurns = 600
+
+	// Act: this append triggers eviction.
+	view.Append([]session.Turn{{
+		Role:      session.RoleAssistant,
+		Content:   "x",
+		Timestamp: base.Add(601 * time.Second),
+	}}, view.Cursor)
+
+	// Assert: every topic index must be a valid window-relative index whose
+	// turn actually exists. Clustering before evicting would leave indices
+	// shifted by the eviction excess — pruning would target the wrong turns.
+	n := len(view.Session.Turns)
+	require.Equal(t, 500, n)
+	for ti, top := range view.Topics {
+		for _, idx := range top.TurnIndices {
+			assert.GreaterOrEqual(t, idx, 0, "topic %d", ti)
+			assert.Less(t, idx, n, "topic %d index must be window-relative", ti)
+		}
+	}
+	// The newest turn must be reachable through the last topic.
+	last := view.Topics[len(view.Topics)-1]
+	lastIdx := last.TurnIndices[len(last.TurnIndices)-1]
+	assert.Equal(t, "x", view.Session.Turns[lastIdx].Content)
 }
 
 func TestSessionView_Append_AttachesToolResultToPriorTurn(t *testing.T) {
