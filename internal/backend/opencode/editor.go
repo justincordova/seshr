@@ -94,8 +94,11 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 		if err != nil {
 			return fmt.Errorf("resolve selection: %w", err)
 		}
-		if len(r.MsgIDs) == 0 {
-			// Nothing left to delete after running-tool filtering.
+		if len(r.MsgIDs) == 0 && len(r.PartIDs) == 0 {
+			// Nothing left to delete after running-tool filtering. Note that
+			// PartIDs must be checked too: a mixed message (live tool +
+			// completed parts) keeps its message row but still has parts to
+			// delete.
 			resolved = r
 			return nil
 		}
@@ -182,13 +185,13 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, turnIdx []int)
 		partIDs = append(partIDs, p.ID)
 	}
 
-	// If every part of a message is preserved (live tool), the message itself
-	// should NOT be deleted either — otherwise we'd orphan the part via
-	// CASCADE. Drop such messages from MsgIDs.
-	//
-	// Edge case defense: count deletable parts per message; messages whose
-	// parts are entirely skipped get re-examined.
-	msgIDs = filterMessagesWithAllPartsLive(msgIDs, parts)
+	// A message with ANY live part must keep its message row: deleting the
+	// row would CASCADE onto the live part — destroying data the agent is
+	// still writing, which was also excluded from PartIDs and therefore from
+	// the backup. Its completed parts are still deleted individually via
+	// PartIDs (partial prune). Messages with no live parts (including ones
+	// with zero part rows) are deleted whole.
+	msgIDs = filterMessagesWithLiveParts(msgIDs, parts)
 
 	return resolvedSelection{
 		MsgIDs:              msgIDs,
@@ -217,21 +220,19 @@ func partIsLiveTool(raw json.RawMessage) bool {
 	return head.State.Status == "running" || head.State.Status == "pending"
 }
 
-// filterMessagesWithAllPartsLive returns only those msgIDs that have at
-// least one non-live part (i.e., at least one row we'd actually delete).
-// A message whose every part is live gets preserved whole — deleting the
-// message via CASCADE would remove its live parts too.
-func filterMessagesWithAllPartsLive(msgIDs []string, parts []partRow) []string {
-	wanted := make(map[string]bool, len(msgIDs))
-	for _, id := range msgIDs {
-		wanted[id] = false // false = no deletable part seen yet
-	}
+// filterMessagesWithLiveParts returns only those msgIDs that have NO live
+// (running/pending) tool part. A message with even one live part must keep
+// its message row: a message-row DELETE cascades onto every part, so it would
+// destroy the live part — which resolveSelection excluded from PartIDs and
+// the backup never captured. The message's non-live parts remain in PartIDs
+// and are deleted individually. Messages with zero part rows pass through
+// unchanged: there is nothing to cascade onto, and dropping them here would
+// make such turns silently unprunable.
+func filterMessagesWithLiveParts(msgIDs []string, parts []partRow) []string {
+	hasLive := make(map[string]bool, len(msgIDs))
 	for _, p := range parts {
-		if _, ok := wanted[p.MessageID]; !ok {
-			continue
-		}
-		if !partIsLiveTool(p.Data) {
-			wanted[p.MessageID] = true
+		if partIsLiveTool(p.Data) {
+			hasLive[p.MessageID] = true
 		}
 	}
 	// Allocate a fresh slice rather than reuse msgIDs's backing array.
@@ -240,7 +241,7 @@ func filterMessagesWithAllPartsLive(msgIDs []string, parts []partRow) []string {
 	// caller would have no way to know.
 	out := make([]string, 0, len(msgIDs))
 	for _, id := range msgIDs {
-		if wanted[id] {
+		if !hasLive[id] {
 			out = append(out, id)
 		}
 	}

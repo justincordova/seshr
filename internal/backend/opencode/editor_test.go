@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"os"
@@ -83,6 +84,33 @@ func TestEditor_Prune_LiveToolPart_SkippedAndCounted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sess.Turns, 4)
 	assert.Len(t, sess.Turns[3].ToolCalls, 2)
+}
+
+func TestEditor_Prune_MixedLiveParts_KeepsMessageAndLiveParts(t *testing.T) {
+	ed, store, dbPath := newEditorTest(t, "opencode_with_tools.db")
+
+	// Make msg_ta2 (turn index 3: running + pending tools) a MIXED message by
+	// adding a completed text part alongside its live tool parts. Deleting
+	// the message row would cascade onto the live parts.
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+		('prt_ta2_txt', 'msg_ta2', 'ses_tl', 1700004040000, 1700004040000, '{"type":"text","text":"starting the long task"}')`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	result, err := ed.Prune(context.Background(), "ses_tl", backend.Selection{TurnIndices: []int{3}})
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.SkippedRunningTools)
+
+	// The message row must survive with its live tool parts intact; only the
+	// completed text part is deleted.
+	sess, _, err := store.Load(context.Background(), "ses_tl")
+	require.NoError(t, err)
+	require.Len(t, sess.Turns, 4)
+	assert.Len(t, sess.Turns[3].ToolCalls, 2, "live tool parts must survive a mixed-message prune")
+	assert.NotContains(t, sess.Turns[3].Content, "starting the long task",
+		"completed part of a mixed message should be pruned")
 }
 
 func TestEditor_Prune_EmptySelection_NoOp(t *testing.T) {
