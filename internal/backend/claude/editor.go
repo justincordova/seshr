@@ -27,9 +27,15 @@ func (e *Editor) Kind() session.SourceKind { return session.SourceClaude }
 
 // Prune expands the selection using tool-pairing logic, then rewrites the JSONL.
 //
-// The per-session flock is acquired BEFORE the file is parsed so a live
-// agent appending bytes between read and rewrite cannot have its appends
-// silently truncated by the eventual atomic-replace.
+// The per-session flock serializes seshr's own destructive operations
+// (Prune vs Delete vs Restore). Claude Code does NOT participate in the
+// flock, so two additional guards protect against the live agent:
+//   - selection timestamps (when provided) are verified against the fresh
+//     parse, so a transcript rewrite between the UI's load and this prune
+//     cannot shift indices onto the wrong turns;
+//   - the file is re-stat'ed immediately before the atomic replace, so
+//     records appended mid-prune abort the operation instead of being
+//     silently truncated away.
 func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (backend.PruneResult, error) {
 	path, err := e.store.transcriptPath(id)
 	if err != nil {
@@ -42,9 +48,21 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 	}
 	defer func() { _ = lock.Release() }()
 
+	preInfo, err := os.Stat(path)
+	if err != nil {
+		return backend.PruneResult{}, fmt.Errorf("stat %s: %w", path, err)
+	}
+
 	p := NewClaude()
 	sess, err := p.Parse(ctx, path)
 	if err != nil {
+		return backend.PruneResult{}, err
+	}
+
+	// Verify the selection still points at the turns the user saw. Indices
+	// are positional; if the agent rewrote/compacted the transcript (or the
+	// UI's index space drifted), timestamps won't line up.
+	if err := verifySelection(sess, sel); err != nil {
 		return backend.PruneResult{}, err
 	}
 
@@ -67,16 +85,42 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 
 	// pruneWithoutLock does the same work as PruneSession but without
 	// re-acquiring the flock we already hold.
-	if err := pruneWithoutLock(ctx, sess, expanded); err != nil {
+	if err := pruneWithoutLock(ctx, sess, expanded, preInfo); err != nil {
 		return backend.PruneResult{}, err
 	}
 
 	return backend.PruneResult{}, nil
 }
 
+// verifySelection checks that each selected turn's timestamp (when the
+// caller provided them) matches the freshly parsed session.
+func verifySelection(sess *session.Session, sel backend.Selection) error {
+	if len(sel.TurnTimestamps) == 0 {
+		return nil
+	}
+	if len(sel.TurnTimestamps) != len(sel.TurnIndices) {
+		return fmt.Errorf("selection has %d indices but %d timestamps", len(sel.TurnIndices), len(sel.TurnTimestamps))
+	}
+	for i, idx := range sel.TurnIndices {
+		if idx < 0 || idx >= len(sess.Turns) {
+			return backend.ErrSelectionStale
+		}
+		want := sel.TurnTimestamps[i]
+		if want.IsZero() {
+			continue
+		}
+		if !sess.Turns[idx].Timestamp.Equal(want) {
+			return backend.ErrSelectionStale
+		}
+	}
+	return nil
+}
+
 // pruneWithoutLock backs Prune above. Callers MUST already hold the
 // per-session flock; this is unexported to keep the lock invariant local.
-func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded editor.Selection) error {
+// preInfo is the source file's stat from before the parse — used to detect
+// a live agent writing mid-prune.
+func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded editor.Selection, preInfo os.FileInfo) error {
 	path := sess.Path
 
 	if err := editor.CreateBackup(path); err != nil {
@@ -101,6 +145,18 @@ func pruneWithoutLock(ctx context.Context, sess *session.Session, expanded edito
 	if want := len(sess.Turns) - len(expanded.Turns); len(after.Turns) != want {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("pruned output has %d turns, want %d: aborting before replace", len(after.Turns), want)
+	}
+
+	// Last-moment write detection: the flock only excludes other seshr
+	// processes — a live Claude Code agent can append while we rewrite.
+	// Anything it wrote after our parse would be destroyed by the replace,
+	// so abort instead and let the user retry.
+	if curInfo, statErr := os.Stat(path); statErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("re-stat before replace: %w", statErr)
+	} else if curInfo.Size() != preInfo.Size() || !curInfo.ModTime().Equal(preInfo.ModTime()) {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("session file changed while pruning (live agent wrote to it); retry: %w", backend.ErrSelectionStale)
 	}
 
 	if err := editor.AtomicReplace(tmp, path); err != nil {

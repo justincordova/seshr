@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/justincordova/seshr/internal/backend"
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
@@ -68,6 +69,55 @@ func TestEditor_PruneAndRestore_RoundTrip(t *testing.T) {
 	sess, _, err := store.Load(context.Background(), "prunesess")
 	require.NoError(t, err)
 	assert.NotEmpty(t, sess.Turns)
+}
+
+func TestEditor_Prune_StaleTimestamps_Aborts(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	projDir := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(projDir, 0o755))
+	dst := filepath.Join(projDir, "prunesess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "prune_basic.jsonl"), dst))
+
+	store := claudeBackend.NewStore(root)
+	ed := claudeBackend.NewEditor(store)
+
+	// Act: a selection whose timestamp doesn't match turn 0 — as if the
+	// transcript was rewritten after the UI computed the selection.
+	_, err := ed.Prune(context.Background(), "prunesess", backend.Selection{
+		TurnIndices:    []int{0},
+		TurnTimestamps: []time.Time{time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)},
+	})
+
+	// Assert: refused, file untouched, no backup taken.
+	assert.ErrorIs(t, err, backend.ErrSelectionStale)
+	assert.False(t, ed.HasBackup("prunesess"))
+}
+
+func TestEditor_Prune_MatchingTimestamps_Succeeds(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	projDir := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(projDir, 0o755))
+	dst := filepath.Join(projDir, "prunesess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "prune_basic.jsonl"), dst))
+
+	store := claudeBackend.NewStore(root)
+	ed := claudeBackend.NewEditor(store)
+	sess, _, err := store.Load(context.Background(), "prunesess")
+	require.NoError(t, err)
+
+	// Act: timestamps taken from the loaded session, like the TUI does.
+	_, err = ed.Prune(context.Background(), "prunesess", backend.Selection{
+		TurnIndices:    []int{0},
+		TurnTimestamps: []time.Time{sess.Turns[0].Timestamp},
+	})
+
+	// Assert
+	require.NoError(t, err)
+	after, _, err := store.Load(context.Background(), "prunesess")
+	require.NoError(t, err)
+	assert.Less(t, len(after.Turns), len(sess.Turns))
 }
 
 func TestEditor_Delete_RemovesFile(t *testing.T) {

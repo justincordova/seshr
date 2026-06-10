@@ -122,6 +122,41 @@ func TestEditor_Prune_EmptySelection_NoOp(t *testing.T) {
 	assert.Equal(t, 0, result.SkippedRunningTools)
 }
 
+func TestEditor_Prune_StaleTimestamps_Aborts(t *testing.T) {
+	ed, store, _ := newEditorTest(t, "opencode_simple.db")
+
+	// Act: a timestamp that doesn't match turn 0's message time_created — as
+	// if the chain changed after the UI computed the selection.
+	_, err := ed.Prune(context.Background(), "ses_s1", backend.Selection{
+		TurnIndices:    []int{0},
+		TurnTimestamps: []time.Time{time.UnixMilli(1)},
+	})
+
+	// Assert: refused and nothing deleted.
+	assert.ErrorIs(t, err, backend.ErrSelectionStale)
+	sess, _, err := store.Load(context.Background(), "ses_s1")
+	require.NoError(t, err)
+	assert.Len(t, sess.Turns, 4)
+}
+
+func TestEditor_Prune_MatchingTimestamps_Succeeds(t *testing.T) {
+	ed, store, _ := newEditorTest(t, "opencode_simple.db")
+	sess, _, err := store.Load(context.Background(), "ses_s1")
+	require.NoError(t, err)
+
+	// Act: timestamps taken from the loaded session, like the TUI does.
+	_, err = ed.Prune(context.Background(), "ses_s1", backend.Selection{
+		TurnIndices:    []int{0},
+		TurnTimestamps: []time.Time{sess.Turns[0].Timestamp},
+	})
+
+	// Assert
+	require.NoError(t, err)
+	after, _, err := store.Load(context.Background(), "ses_s1")
+	require.NoError(t, err)
+	assert.Len(t, after.Turns, 3)
+}
+
 func TestEditor_Prune_InvalidIndex_Error(t *testing.T) {
 	ed, _, _ := newEditorTest(t, "opencode_simple.db")
 

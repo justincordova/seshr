@@ -1151,10 +1151,19 @@ func renderStats(st Styles, sess *session.Session, tops []topics.Topic) string {
 }
 
 // pruneCmd runs the prune operation asynchronously via the registry editor.
+// Each selected index is paired with the turn's timestamp so the editor can
+// verify the selection still points at the same turns (the transcript may
+// have been rewritten between load and prune — indices are positional).
 func pruneCmd(sess *session.Session, sel editor.Selection, reg *backend.Registry, sessionID string) tea.Cmd {
 	indices := make([]int, 0, len(sel.Turns))
+	stamps := make([]time.Time, 0, len(sel.Turns))
 	for idx := range sel.Turns {
 		indices = append(indices, idx)
+		if idx >= 0 && idx < len(sess.Turns) {
+			stamps = append(stamps, sess.Turns[idx].Timestamp)
+		} else {
+			stamps = append(stamps, time.Time{})
+		}
 	}
 	return func() tea.Msg {
 		if reg == nil {
@@ -1164,7 +1173,7 @@ func pruneCmd(sess *session.Session, sel editor.Selection, reg *backend.Registry
 		if !ok {
 			return PruneErrMsg{Err: fmt.Errorf("no editor for source %s", sess.Source)}
 		}
-		if _, err := ed.Prune(context.Background(), sessionID, backend.Selection{TurnIndices: indices}); err != nil {
+		if _, err := ed.Prune(context.Background(), sessionID, backend.Selection{TurnIndices: indices, TurnTimestamps: stamps}); err != nil {
 			return PruneErrMsg{Err: err}
 		}
 		return PruneDoneMsg{RemovedTurns: len(indices)}

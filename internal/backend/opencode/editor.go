@@ -90,7 +90,7 @@ func (e *Editor) Prune(ctx context.Context, id string, sel backend.Selection) (b
 	// concurrent winner deletes rows the loser thought it had captured.
 	var resolved resolvedSelection
 	if err := e.withSessionLock(id, func() error {
-		r, err := e.resolveSelection(ctx, id, sel.TurnIndices)
+		r, err := e.resolveSelection(ctx, id, sel)
 		if err != nil {
 			return fmt.Errorf("resolve selection: %w", err)
 		}
@@ -132,7 +132,8 @@ type resolvedSelection struct {
 // to OC message IDs, and collects all PRUNABLE part IDs belonging to them.
 // Running/pending tool parts are excluded from the delete set; we count them
 // so the caller can toast "N tool calls skipped".
-func (e *Editor) resolveSelection(ctx context.Context, id string, turnIdx []int) (resolvedSelection, error) {
+func (e *Editor) resolveSelection(ctx context.Context, id string, sel backend.Selection) (resolvedSelection, error) {
+	turnIdx := sel.TurnIndices
 	msgs, err := queryAllMessages(ctx, e.store.conns.read, id)
 	if err != nil {
 		return resolvedSelection{}, err
@@ -154,9 +155,16 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, turnIdx []int)
 
 	// Deduplicate + validate indices.
 	wanted := make(map[int]struct{}, len(turnIdx))
-	for _, i := range turnIdx {
+	for k, i := range turnIdx {
 		if i < 0 || i >= len(turnMsgs) {
 			return resolvedSelection{}, fmt.Errorf("turn index out of range: %d (have %d turns)", i, len(turnMsgs))
+		}
+		// Staleness guard: turn timestamps come from message.time_created
+		// (decodeChain), so a selection made against an older view of the
+		// chain (regen branch switch, concurrent prune) won't line up here.
+		if len(sel.TurnTimestamps) == len(turnIdx) && !sel.TurnTimestamps[k].IsZero() &&
+			sel.TurnTimestamps[k].UnixMilli() != turnMsgs[i].TimeCreated {
+			return resolvedSelection{}, backend.ErrSelectionStale
 		}
 		wanted[i] = struct{}{}
 	}
