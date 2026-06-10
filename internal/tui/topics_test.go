@@ -50,6 +50,46 @@ func TestOverview_View_ContainsTopicLabel(t *testing.T) {
 	assert.Contains(t, out, tops[0].Label)
 }
 
+func TestOverview_SyncLiveTurns_PreservesSelectionOnAppend(t *testing.T) {
+	// Arrange: select topic 0.
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0, nil)
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeySpace})
+	o = next.(tui.Overview)
+	require.True(t, o.IsSelected(0))
+
+	// Act: a fast-tick append added a topic; window offset unchanged.
+	s.Turns = append(s.Turns, session.Turn{
+		Role: session.RoleUser, Timestamp: s.ModifiedAt.Add(20 * time.Minute), Content: "later", Tokens: 5,
+	})
+	newTops := topics.Cluster(s, topics.DefaultOptions())
+	o.SyncLiveTurns(s, newTops, 0)
+
+	// Assert: append-only sync keeps the selection (indices are prefix-stable).
+	assert.True(t, o.IsSelected(0))
+}
+
+func TestOverview_SyncLiveTurns_ClearsSelectionOnEviction(t *testing.T) {
+	// Arrange: select topic 0.
+	s, tops := demoSessionAndTopics()
+	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0, nil)
+	next, _ := o.Update(tea.KeyMsg{Type: tea.KeySpace})
+	o = next.(tui.Overview)
+	require.True(t, o.IsSelected(0))
+
+	// Act: the view evicted turns — every topic index remapped.
+	evicted := &session.Session{
+		ID: s.ID, Source: s.Source, Path: s.Path,
+		CreatedAt: s.CreatedAt, ModifiedAt: s.ModifiedAt,
+		Turns: s.Turns[2:],
+	}
+	newTops := topics.Cluster(evicted, topics.DefaultOptions())
+	o.SyncLiveTurns(evicted, newTops, 2)
+
+	// Assert: stale selection would prune the wrong turns — must be cleared.
+	assert.False(t, o.IsSelected(0))
+}
+
 func TestOverview_DownKey_MovesCursor(t *testing.T) {
 	s, tops := demoSessionAndTopics()
 	o := tui.NewOverview(s, tops, tui.CatppuccinMocha(), 0, nil)

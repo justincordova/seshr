@@ -113,6 +113,10 @@ type Overview struct {
 	registry    *backend.Registry
 	sessionID   string
 	sessionKind session.SourceKind
+	// turnOffset is the absolute index of o.sess.Turns[0] in the full
+	// session. Non-zero only for live sessions whose SessionView evicted
+	// old turns; prune selections must add it to window-relative indices.
+	turnOffset int
 }
 
 // NewOverview constructs the screen from a parsed session and its topics.
@@ -221,6 +225,57 @@ func (o Overview) currentSelection() editor.Selection {
 	return editor.Selection{Turns: turns}
 }
 
+// SyncLiveTurns refreshes the overview after the fast tick mutated the
+// shared live session (append, eviction, or a full view rebuild). Without
+// this, o.topics holds indices computed against an older snapshot of
+// sess.Turns — wrong content rendered, and wrong turns pruned once eviction
+// shifts the slice.
+//
+// Selection survives plain appends: ClusterAppend only appends new topics or
+// extends the last one, so existing topic indices are prefix-stable. It is
+// cleared when the window offset changes (eviction re-clusters the window
+// and remaps every index) and when a search filter is active (the filtered
+// list is rebuilt).
+func (o *Overview) SyncLiveTurns(sess *session.Session, tops []topics.Topic, turnOffset int) {
+	if o.sess == nil || sess == nil {
+		return
+	}
+	// Never mutate state under an open confirm dialog — the user is about
+	// to commit a selection. The next tick syncs after it closes, and the
+	// editor-side timestamp guard protects the prune in between.
+	if o.confirm != nil {
+		return
+	}
+	offsetChanged := turnOffset != o.turnOffset
+	o.sess = sess
+	o.turnOffset = turnOffset
+
+	sorted := make([]topics.Topic, len(tops))
+	copy(sorted, tops)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return topicStartTime(sess, sorted[i]).Before(topicStartTime(sess, sorted[j]))
+	})
+	o.allTopics = sorted
+
+	if o.search.Active() || o.search.Query() != "" {
+		// Re-derives o.topics and clears selection/expansion (indices remap).
+		o.applyTopicSearchFilter()
+		return
+	}
+	o.topics = sorted
+	if offsetChanged {
+		o.selected = map[int]bool{}
+		o.expanded = map[int]bool{}
+	}
+	if o.cursor >= len(o.topics) {
+		o.cursor = len(o.topics) - 1
+	}
+	if o.cursor < 0 {
+		o.cursor = 0
+	}
+	o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
+}
+
 func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Confirmation dialog intercepts all input when active.
 	if o.confirm != nil {
@@ -234,7 +289,7 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sel := o.currentSelection()
 					o.pruning = true
 					o.status = "pruning…"
-					return o, pruneCmd(o.sess, sel, o.registry, o.sessionID)
+					return o, pruneCmd(o.sess, sel, o.registry, o.sessionID, o.turnOffset)
 				}
 			}
 			return o, nil
@@ -1154,11 +1209,15 @@ func renderStats(st Styles, sess *session.Session, tops []topics.Topic) string {
 // Each selected index is paired with the turn's timestamp so the editor can
 // verify the selection still points at the same turns (the transcript may
 // have been rewritten between load and prune — indices are positional).
-func pruneCmd(sess *session.Session, sel editor.Selection, reg *backend.Registry, sessionID string) tea.Cmd {
+//
+// sel.Turns indices are relative to sess.Turns (the in-memory window);
+// turnOffset converts them to absolute indices into the full session when
+// the view has evicted old turns.
+func pruneCmd(sess *session.Session, sel editor.Selection, reg *backend.Registry, sessionID string, turnOffset int) tea.Cmd {
 	indices := make([]int, 0, len(sel.Turns))
 	stamps := make([]time.Time, 0, len(sel.Turns))
 	for idx := range sel.Turns {
-		indices = append(indices, idx)
+		indices = append(indices, idx+turnOffset)
 		if idx >= 0 && idx < len(sess.Turns) {
 			stamps = append(stamps, sess.Turns[idx].Timestamp)
 		} else {

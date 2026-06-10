@@ -701,6 +701,7 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 					break
 				}
 				a.currentView.Reset(sess, freshCur)
+				a.syncLiveSessionState()
 				slog.Info("fast-tick view rebuilt after cursor invalidation",
 					"session", a.currentView.Meta.ID, "turns", len(sess.Turns))
 			case err != nil:
@@ -710,6 +711,7 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 					"err", err)
 			case len(turns) > 0:
 				a.currentView.Append(turns, newCur)
+				a.syncLiveSessionState()
 				slog.Debug("fast-tick appended turns",
 					"session", a.currentView.Meta.ID, "count", len(turns))
 			default:
@@ -721,6 +723,26 @@ func (a App) handleFastTick() (App, tea.Cmd) {
 	}
 
 	return a, fastTickCmd()
+}
+
+// syncLiveSessionState propagates fast-tick mutations of the current view
+// (appends, evictions, full rebuilds) to the screens that hold their own
+// references: a.session/a.topicsCache (used to open Replay) and the Overview
+// (whose topic indices would otherwise go stale against the shifted slice).
+func (a *App) syncLiveSessionState() {
+	if a.currentView == nil {
+		return
+	}
+	// Only when the view is the session the rest of the app has open.
+	if a.session != nil && a.session.ID != "" && a.currentView.Session != nil &&
+		a.currentView.Session.ID != "" && a.session.ID != a.currentView.Session.ID {
+		return
+	}
+	if a.session != nil {
+		a.session = a.currentView.Session
+		a.topicsCache = a.currentView.Topics
+	}
+	a.overview.SyncLiveTurns(a.currentView.Session, a.currentView.Topics, a.currentView.TurnsLoadedFrom)
 }
 
 func rescanAllStoresCmd(reg *backend.Registry) tea.Cmd {
