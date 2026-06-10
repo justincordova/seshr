@@ -63,6 +63,32 @@ func TestReplay_VimGotoLastTurn(t *testing.T) {
 	assert.Equal(t, 2, next.(tui.Replay).Cursor())
 }
 
+func TestReplay_MainPanelScrollsLongTurn(t *testing.T) {
+	// Arrange: a turn whose body is far taller than the viewport. The main
+	// viewport's content must be set from Update (View works on a copy), or
+	// every scroll key is a silent no-op.
+	long := ""
+	for i := 0; i < 200; i++ {
+		long += "line\n\n"
+	}
+	sess := &session.Session{
+		ID: "s1",
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: long, Timestamp: time.Unix(100, 0)},
+		},
+	}
+	m := tui.NewReplay(sess, nil, tui.CatppuccinMocha())
+	m = m.SetSize(100, 24).(tui.Replay)
+	require.Equal(t, 0, m.MainScrollOffset())
+
+	// Act
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+
+	// Assert
+	assert.Greater(t, next.(tui.Replay).MainScrollOffset(), 0,
+		"j must scroll the main panel on a long turn")
+}
+
 func TestReplay_VimPageKeysNoCrash(t *testing.T) {
 	// Arrange
 	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())

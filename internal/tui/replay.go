@@ -43,6 +43,7 @@ type Replay struct {
 	searchScrollTop    int
 	sidebarFocus       bool
 	sidebarCursor      int
+	mainPrimed         bool // mainVP has had content set at least once
 }
 
 // NewReplay constructs a Replay model with sensible defaults.
@@ -71,7 +72,52 @@ func (m Replay) PlayGen() int          { return m.playGen }
 func (m Replay) Speed() int            { return m.speed }
 func (m Replay) ToolExpanded() bool    { return m.expandedTool >= 0 }
 
+// MainScrollOffset exposes the main panel's scroll position for tests.
+func (m Replay) MainScrollOffset() int { return m.mainVP.YOffset }
+
+// Update wraps update with main-viewport content syncing. View operates on a
+// COPY of the model, so a SetContent there can never persist — scrolling
+// would forever operate on an empty viewport. Whenever something that
+// affects the rendered turn changes (cursor, slim, thinking, dimensions),
+// the persistent mainVP's content is re-rendered here, in Update, where the
+// mutation sticks.
 func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.contentSig()
+	res, cmd := m.update(msg)
+	next, ok := res.(Replay)
+	if !ok {
+		return res, cmd
+	}
+	if !next.mainPrimed || next.contentSig() != before {
+		next.syncMainContent()
+	}
+	return next, cmd
+}
+
+// contentSig captures every model field the main panel's rendered body
+// depends on. A change in the signature invalidates mainVP's content.
+type replayContentSig struct {
+	cursor, width, height int
+	slim, thinking        bool
+}
+
+func (m Replay) contentSig() replayContentSig {
+	return replayContentSig{
+		cursor:   m.cursor,
+		width:    m.width,
+		height:   m.height,
+		slim:     m.slim,
+		thinking: m.showThinking,
+	}
+}
+
+// syncMainContent renders the current turn into the persistent main viewport.
+func (m *Replay) syncMainContent() {
+	m.mainVP.SetContent(m.renderMain(m.mainVP.Width))
+	m.mainPrimed = true
+}
+
+func (m Replay) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.search.Active() {
@@ -139,6 +185,9 @@ func (m Replay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.slim {
 					m.skipInvisibleBackward()
 				}
+				// Content must be set BEFORE GotoBottom so the max offset is
+				// computed against the new turn's body, not stale content.
+				m.syncMainContent()
 				m.mainVP.GotoBottom()
 			}
 			return m, nil
@@ -367,6 +416,7 @@ func (m Replay) SetSize(w, h int) tea.Model {
 	m.vp.Width = w
 	m.vp.Height = h - 1
 	m.syncMainVPSize()
+	m.syncMainContent()
 	return m
 }
 
@@ -736,7 +786,7 @@ func (m Replay) renderMainPanel(width, height int) string {
 		body, _ := RenderSearchResults(m.sess, m.search.Matches(), m.searchResultCursor, width-4, innerH, m.searchScrollTop, m.styles, m.theme)
 		return style.Render(body)
 	}
-	body := m.renderMain(width - 4)
-	m.mainVP.SetContent(body)
+	// Content is kept in sync by Update (syncMainContent) — setting it here
+	// would only mutate View's copy of the model and be lost.
 	return style.Render(m.mainVP.View())
 }
