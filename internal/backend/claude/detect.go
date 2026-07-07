@@ -66,13 +66,27 @@ func filterClaudePIDs(snap backend.ProcessSnapshot) map[int]backend.ProcInfo {
 		if !isClaude {
 			continue
 		}
-		// Skip non-interactive mode.
-		if strings.Contains(cmd, "--print") {
+		// Skip non-interactive (SDK/print) mode: `claude --print` or its short
+		// alias `claude -p`. Match on whole argv tokens — a substring check for
+		// "-p" would false-positive on paths and longer flags (e.g.
+		// --permission-mode), and "--print" as a substring would miss "-p".
+		if hasPrintFlag(tokens) {
 			continue
 		}
 		out[pid] = proc
 	}
 	return out
+}
+
+// hasPrintFlag reports whether the argv tokens include Claude's non-interactive
+// print flag, either the long form (--print) or the short alias (-p).
+func hasPrintFlag(tokens []string) bool {
+	for _, tok := range tokens {
+		if tok == "--print" || tok == "-p" {
+			return true
+		}
+	}
+	return false
 }
 
 // detectViaSidecar runs layer 1. Returns matched LiveSessions plus the set of

@@ -118,6 +118,54 @@ func TestDeriveStatus_TranscriptFresh_ReturnsWorking(t *testing.T) {
 	assert.Equal(t, backend.StatusWorking, lives[0].Status)
 }
 
+func TestDetector_SkipsPrintMode_ShortAndLongFlag(t *testing.T) {
+	// A non-interactive `claude -p` / `claude --print` invocation must not be
+	// surfaced as a live session, even when its CWD points at a fresh transcript.
+	for _, cmd := range []string{"claude -p \"explain this\"", "claude --print \"explain this\""} {
+		t.Run(cmd, func(t *testing.T) {
+			projectsRoot := t.TempDir()
+			det := claudeBackend.NewDetector(projectsRoot, t.TempDir())
+
+			freshDir := t.TempDir()
+			encodedDir := filepath.Join(projectsRoot, encodeForTest(freshDir))
+			require.NoError(t, os.MkdirAll(encodedDir, 0o755))
+			require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), filepath.Join(encodedDir, "sess.jsonl")))
+
+			snap := backend.ProcessSnapshot{
+				At:       time.Now(),
+				ByPID:    map[int]backend.ProcInfo{42: {PID: 42, Command: cmd, CPU: 0.0, CWD: freshDir}},
+				Children: map[int][]int{},
+			}
+
+			lives, err := det.DetectLive(context.Background(), snap)
+			require.NoError(t, err)
+			assert.Empty(t, lives, "print-mode invocation must be filtered")
+		})
+	}
+}
+
+func TestDetector_PermissionModeFlagNotMistakenForPrint(t *testing.T) {
+	// The token-based print filter must not false-match "-p" inside a longer
+	// flag like --permission-mode; such a session is interactive and live.
+	projectsRoot := t.TempDir()
+	det := claudeBackend.NewDetector(projectsRoot, t.TempDir())
+
+	freshDir := t.TempDir()
+	encodedDir := filepath.Join(projectsRoot, encodeForTest(freshDir))
+	require.NoError(t, os.MkdirAll(encodedDir, 0o755))
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), filepath.Join(encodedDir, "sess.jsonl")))
+
+	snap := backend.ProcessSnapshot{
+		At:       time.Now(),
+		ByPID:    map[int]backend.ProcInfo{42: {PID: 42, Command: "claude --permission-mode plan", CPU: 0.0, CWD: freshDir}},
+		Children: map[int][]int{},
+	}
+
+	lives, err := det.DetectLive(context.Background(), snap)
+	require.NoError(t, err)
+	require.Len(t, lives, 1, "an interactive --permission-mode session must still be detected")
+}
+
 // encodeForTest replicates the encoding logic for test setup.
 // /Users/foo/bar → -Users-foo-bar
 func encodeForTest(cwd string) string {
