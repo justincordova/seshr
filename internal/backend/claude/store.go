@@ -43,23 +43,32 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 	if err != nil {
 		return nil, backend.Cursor{}, err
 	}
-	p := NewClaude()
-	sess, err := p.Parse(ctx, path)
+	ident, identErr := fileIdentity(path)
+	offset, offErr := lastRecordBoundary(path)
+	if identErr != nil || offErr != nil {
+		// Without a trustworthy identity or boundary offset we cannot set
+		// ByteOffset. Emitting the identity fields with ByteOffset==0 would
+		// make the next LoadIncremental match identity and seek to offset 0,
+		// re-reading the whole file and duplicating every turn. Return a cold
+		// cursor so the next incremental load takes the clean full-reload
+		// path instead. Parse the full file (including any mid-write trailing
+		// record) since no incremental append will follow this cursor.
+		sess, err := NewClaude().Parse(ctx, path)
+		if err != nil {
+			return nil, backend.Cursor{}, err
+		}
+		return sess, encodeCursor(cursorData{}), nil
+	}
+	// Parse only the newline-terminated prefix [0, offset). bufio.Scanner
+	// (used by Parse) emits a trailing record that lacks a final newline, but
+	// lastRecordBoundary anchors ByteOffset BEFORE that record. Parsing the
+	// full file would seed a mid-write record as a turn that the next
+	// LoadIncremental then re-reads and appends again — a duplicated turn in
+	// the live view. Bounding the read to the cursor's byte range keeps the
+	// seed turn set and the cursor in the same index space.
+	sess, err := s.parseBounded(ctx, path, offset)
 	if err != nil {
 		return nil, backend.Cursor{}, err
-	}
-	ident, err := fileIdentity(path)
-	if err != nil {
-		return sess, encodeCursor(cursorData{}), nil
-	}
-	offset, err := lastRecordBoundary(path)
-	if err != nil {
-		// Without a trustworthy boundary offset we cannot set ByteOffset.
-		// Emitting the identity fields with ByteOffset==0 would make the next
-		// LoadIncremental match identity and seek to offset 0, re-reading the
-		// whole file and duplicating every turn. Return a cold cursor so the
-		// next incremental load takes the clean full-reload path instead.
-		return sess, encodeCursor(cursorData{}), nil
 	}
 	// Anchor ByteOffset to the last newline-terminated record boundary rather
 	// than info.Size(). If the live agent is mid-write when Load runs, the
@@ -69,6 +78,25 @@ func (s *Store) Load(ctx context.Context, id string) (*session.Session, backend.
 	// turn. parseJSONLStream uses the same boundary accounting.
 	ident.ByteOffset = offset
 	return sess, encodeCursor(ident), nil
+}
+
+// parseBounded parses only the first `limit` bytes of the session file, which
+// the caller has chosen to be a newline-terminated record boundary. This
+// excludes any partial mid-write trailing record so the seed turn set matches
+// the cursor's ByteOffset.
+func (s *Store) parseBounded(ctx context.Context, path string, limit int64) (*session.Session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	return parseReader(ctx, io.LimitReader(f, limit), path, info.ModTime())
 }
 
 // lastRecordBoundary returns the byte offset immediately after the final

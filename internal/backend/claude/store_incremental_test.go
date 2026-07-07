@@ -10,6 +10,7 @@ import (
 
 	"github.com/justincordova/seshr/internal/backend"
 	claudeBackend "github.com/justincordova/seshr/internal/backend/claude"
+	"github.com/justincordova/seshr/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,6 +79,60 @@ func TestStore_LoadIncremental_PartialTrailingRecordAtLoad(t *testing.T) {
 	require.Len(t, res.Turns, 2, "completed mid-write record must not be lost")
 	assert.True(t, strings.HasPrefix(res.Turns[0].Content, "MID_WRITE_MARKER"),
 		"the record being written at Load time must be re-read whole")
+}
+
+// TestStore_Load_ExcludesMidWriteTrailingRecord guards against a duplicated
+// turn in the live view: bufio.Scanner (used by Parse) yields a trailing record
+// that lacks a final newline, but Load anchors the cursor BEFORE that record.
+// If Load seeded that mid-write record as a turn, the next LoadIncremental would
+// re-read and append it — the same turn twice. Load must bound its parse to the
+// cursor's byte range so the mid-write record is owned solely by the next tick.
+func TestStore_Load_ExcludesMidWriteTrailingRecord(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	path := filepath.Join(proj, "sess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), path))
+
+	// A COMPLETE JSON record with NO trailing newline (agent wrote the payload
+	// but not yet the terminating '\n').
+	midWrite := `{"type":"user","message":{"role":"user","content":"MID_WRITE_MARKER"},"uuid":"umid","parentUuid":null,"timestamp":"2026-03-20T12:00:00.000Z","sessionId":"sess-simple"}`
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(midWrite)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	store := claudeBackend.NewStore(root)
+
+	// Act: seed load, then the writer terminates the record and the next tick
+	// appends the delta.
+	sess, cur, err := store.Load(context.Background(), "sess")
+	require.NoError(t, err)
+
+	for _, turn := range sess.Turns {
+		assert.NotContains(t, turn.Content, "MID_WRITE_MARKER",
+			"Load must not seed the mid-write (newline-less) record as a turn")
+	}
+
+	f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString("\n")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+	require.NoError(t, err)
+
+	// Assert: the record appears exactly once across seed + delta.
+	count := 0
+	for _, turn := range append(append([]session.Turn{}, sess.Turns...), res.Turns...) {
+		if strings.Contains(turn.Content, "MID_WRITE_MARKER") {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "mid-write record must appear exactly once, not duplicated")
 }
 
 // TestStore_LoadIncremental_CompactBoundaryThreaded guards against dropping a

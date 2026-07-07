@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/justincordova/seshr/internal/session"
 	"github.com/justincordova/seshr/internal/tokenizer"
@@ -41,13 +43,23 @@ func (c *Claude) Parse(ctx context.Context, path string) (*session.Session, erro
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
 
+	return parseReader(ctx, f, path, info.ModTime())
+}
+
+// parseReader parses JSONL records from r into a Session. Split out of Parse
+// so callers (notably Store.Load) can bound r to a newline-terminated byte
+// range via io.LimitReader, keeping the returned turn set aligned with the
+// cursor's ByteOffset. bufio.Scanner emits a trailing line that lacks a final
+// newline; without bounding, Load would surface a mid-write record that the
+// next LoadIncremental re-reads and duplicates.
+func parseReader(ctx context.Context, r io.Reader, path string, modTime time.Time) (*session.Session, error) {
 	sess := &session.Session{
 		Path:       path,
 		Source:     session.SourceClaude,
-		ModifiedAt: info.ModTime(),
+		ModifiedAt: modTime,
 	}
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	// Claude assistant lines can be large (tool inputs/thinking blobs).
 	// 10MB per line should cover anything reasonable.
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
