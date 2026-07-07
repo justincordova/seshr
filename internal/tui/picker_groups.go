@@ -96,7 +96,9 @@ func projectColor(name string, th Theme) lipgloss.TerminalColor {
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
-	idx := int(h.Sum32()) % len(th.ProjectPalette)
+	// Take the modulo in unsigned space: int(h.Sum32()) can be negative on a
+	// 32-bit build (high bit set), which would make idx negative and panic.
+	idx := int(h.Sum32() % uint32(len(th.ProjectPalette)))
 	return th.ProjectPalette[idx]
 }
 
