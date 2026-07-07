@@ -43,5 +43,8 @@ sandbox/run/
 # Backups accidentally created in-tree
 *.bak
 
+# Runtime file locks (gofrs/flock) — never commit
+*.lock
+
 # Release tooling
 .goreleaser/
