@@ -163,6 +163,27 @@ func (p *Picker) SetLiveIndex(idx map[string]*backend.LiveSession) {
 	// presence, live-row pinning, divider). Always rebuild so the next
 	// View() reflects current liveness.
 	p.rebuildGroups()
+	// A live session ending between ticks removes its pinned row (and possibly
+	// the live/ended divider), shrinking flatRows. Re-clamp so the cursor
+	// doesn't strand out of range — an out-of-range cursor renders no
+	// highlight and makes Enter a silent no-op until the user moves it.
+	p.clampCursorAndOffset()
+}
+
+// clampCursorAndOffset re-bounds the cursor into the current flatRows, skips a
+// divider it may have landed on, and re-derives the scroll offset. Mirrors the
+// tail of applySearchFilter so every path that reshapes flatRows can share it.
+func (p *Picker) clampCursorAndOffset() {
+	if p.cursor >= len(p.flatRows) {
+		p.cursor = len(p.flatRows) - 1
+	}
+	if p.cursor < 0 {
+		p.cursor = 0
+	}
+	if p.cursor < len(p.flatRows) && p.flatRows[p.cursor].Kind == RowDivider {
+		p.skipDividerForward()
+	}
+	p.offset = p.clampOffset(p.cursor, p.offset)
 }
 
 // syncLiveMetas augments allMetas with synthesized entries for live sessions
@@ -364,12 +385,14 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(p.flatRows) > 0 && p.cursor > 0 {
 					p.cursor--
 					p.skipDividerBackward()
+					p.offset = p.clampOffset(p.cursor, p.offset)
 				}
 				return p, nil
 			case "down", "ctrl+n":
 				if p.cursor < len(p.flatRows)-1 {
 					p.cursor++
 					p.skipDividerForward()
+					p.offset = p.clampOffset(p.cursor, p.offset)
 				}
 				return p, nil
 			default:

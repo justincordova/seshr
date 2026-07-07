@@ -353,11 +353,13 @@ func (o Overview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "ctrl+p":
 				if o.cursor > 0 {
 					o.cursor--
+					o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 				}
 				return o, nil
 			case "down", "ctrl+n":
 				if o.cursor < len(o.topics)-1 {
 					o.cursor++
+					o.offset = o.clampTopicOffset(o.cursor, o.offset, o.topicBodyHeight())
 				}
 				return o, nil
 			default:

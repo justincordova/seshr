@@ -459,6 +459,34 @@ func TestPicker_ProjectView_LivePinnedAtTop(t *testing.T) {
 	}
 }
 
+func TestPicker_SetLiveIndex_ReclampsCursorWhenLiveRowDisappears(t *testing.T) {
+	// A live session ending between ticks removes its pinned row, shrinking the
+	// flat list. SetLiveIndex must re-clamp the cursor so it doesn't strand out
+	// of range (invisible highlight, Enter no-ops).
+	metas := []backend.SessionMeta{
+		{ID: "e1", Project: "p", Kind: session.SourceClaude, UpdatedAt: time.Now().Add(-2 * time.Hour)},
+		{ID: "e2", Project: "p", Kind: session.SourceClaude, UpdatedAt: time.Now().Add(-3 * time.Hour)},
+		{ID: "live", Project: "p", Kind: session.SourceClaude, UpdatedAt: time.Now()},
+	}
+	p := tui.NewPicker(metas, tui.CatppuccinMocha(), nil, config.PickerViewRecent)
+	next, _ := p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	p = next.(tui.Picker)
+
+	// Pin "live" as a live session, then move the cursor to the last row.
+	p.SetLiveIndex(map[string]*backend.LiveSession{
+		"live": {SessionID: "live", Status: backend.StatusWorking},
+	})
+	p = pressDown(p, 20) // walk to the bottom (bounded by row count)
+	require.Positive(t, p.Cursor())
+
+	// The live session ends: its pinned row (and any divider) disappears.
+	p.SetLiveIndex(map[string]*backend.LiveSession{})
+
+	// Cursor must remain selectable, not stranded past the end.
+	_, ok := p.Selected()
+	assert.True(t, ok, "cursor must stay in range after the live row disappears")
+}
+
 func TestPicker_RecentView_DeleteKey_NoCrash(t *testing.T) {
 	// Arrange — Recent view; cursor on a session row.
 	metas := []backend.SessionMeta{
