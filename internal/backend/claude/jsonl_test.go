@@ -1,7 +1,9 @@
 package claude_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -259,4 +261,44 @@ func TestClaude_Parse_EmbeddedToolResult_BlockArrayContent(t *testing.T) {
 	require.Len(t, found.ToolResults, 1)
 	assert.Contains(t, found.ToolResults[0].Content, "line one")
 	assert.Contains(t, found.ToolResults[0].Content, "line two")
+}
+
+// TestClaude_Parse_KnownInfraRecords_SilentlyDropped guards against format
+// drift log spam. Current Claude Code emits attachment, queue-operation,
+// last-prompt, mode, and permission-mode records interleaved with turns.
+// None carry renderable content, so they must be dropped WITHOUT a
+// "unknown record type" warning — otherwise a real session floods the debug
+// log with hundreds of spurious warnings (verified: ~73% of records in a live
+// session are these infra types). Fails if any type is dropped from the
+// known-infra case in parseLine.
+func TestClaude_Parse_KnownInfraRecords_SilentlyDropped(t *testing.T) {
+	// Arrange: capture the default slog logger for the duration of the test.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	path := dir + "/infra.jsonl"
+	input := `{"type":"user","message":{"role":"user","content":"go"},"sessionId":"s"}` + "\n" +
+		`{"type":"attachment","attachment":{"type":"skill_listing"},"sessionId":"s"}` + "\n" +
+		`{"type":"queue-operation","operation":"enqueue","sessionId":"s"}` + "\n" +
+		`{"type":"last-prompt","lastPrompt":"go","sessionId":"s"}` + "\n" +
+		`{"type":"mode","mode":"default","sessionId":"s"}` + "\n" +
+		`{"type":"permission-mode","permissionMode":"default","sessionId":"s"}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"uuid":"a1","timestamp":"2025-01-01T00:00:00Z","sessionId":"s"}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(input), 0o644))
+
+	// Act
+	p := claudeBackend.NewClaude()
+	s, err := p.Parse(context.Background(), path)
+
+	// Assert: only the real user + assistant turns survive; infra dropped.
+	require.NoError(t, err)
+	require.Len(t, s.Turns, 2)
+	assert.Equal(t, session.RoleUser, s.Turns[0].Role)
+	assert.Equal(t, session.RoleAssistant, s.Turns[1].Role)
+	// And no spurious "unknown record type" warning for any infra record.
+	assert.NotContains(t, buf.String(), "unknown record type",
+		"known infra records must be dropped silently, not warned")
 }

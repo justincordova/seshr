@@ -871,7 +871,7 @@ Each line in a Claude Code JSONL session file is a JSON object with a `type` fie
 | `system`      | System/compaction messages | `message.content`, `isCompactSummary`, `subtype`, `compactMetadata`     |
 | `summary`     | Session summary            | Summary text, generated asynchronously                                  |
 
-Unknown types (`file-history-snapshot`, `progress`, `hook`, etc.) are logged at warn and skipped.
+Known infrastructure types (`file-history-snapshot`, `progress`, `hook`, `attachment`, `queue-operation`, `last-prompt`, `mode`, `permission-mode`) are skipped silently. Only genuinely unrecognized types are logged at warn before being skipped.
 
 #### Compact Boundary Records
 

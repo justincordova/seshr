@@ -130,7 +130,9 @@ func parseCompactBoundary(b []byte, nextTurnIndex int) (session.CompactBoundary,
 
 // parseLine converts one JSONL line into a session.Turn. Returns ok=false when the
 // line is malformed, has an unknown type, or is of a type we intentionally
-// drop (file-history-snapshot, progress). Logged at warn for unknown types.
+// drop (system, summary, file-history-snapshot, progress, hook, attachment,
+// queue-operation, last-prompt, mode, permission-mode). Only genuinely
+// unrecognized types are logged at warn.
 func parseLine(b []byte, lineNum int) (session.Turn, bool) {
 	var rec rawRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
@@ -157,8 +159,11 @@ func parseLine(b []byte, lineNum int) (session.Turn, bool) {
 		return toolResultTurn(rec, lineNum), true
 	case "system", "summary":
 		return session.Turn{}, false
-	case "", "file-history-snapshot", "progress", "hook":
-		// Infrastructure records, silently ignored.
+	case "", "file-history-snapshot", "progress", "hook",
+		"attachment", "queue-operation", "last-prompt", "mode", "permission-mode":
+		// Infrastructure records, silently ignored. Claude Code emits these
+		// alongside conversation turns (tool/agent/skill listings, prompt
+		// queue bookkeeping, mode markers); none carry renderable content.
 		return session.Turn{}, false
 	default:
 		slog.Warn("unknown record type", "type", rec.Type, "line", lineNum)
