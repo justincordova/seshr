@@ -147,6 +147,68 @@ func TestReplay_PrevTopicFromMidTopicJumpsToStart(t *testing.T) {
 	assert.Equal(t, 0, u2.(tui.Replay).Cursor())
 }
 
+func TestReplay_NextTopicResetsScroll(t *testing.T) {
+	// Arrange: first topic's turn is tall enough to scroll; second topic is a
+	// separate turn to jump to.
+	long := ""
+	for i := 0; i < 200; i++ {
+		long += "line\n\n"
+	}
+	sess := &session.Session{
+		ID: "s1",
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: long, Timestamp: time.Unix(100, 0)},
+			{Role: session.RoleUser, Content: "second topic", Timestamp: time.Unix(110, 0)},
+		},
+	}
+	ts := []topics.Topic{
+		{Label: "Long", TurnIndices: []int{0}},
+		{Label: "Next", TurnIndices: []int{1}},
+	}
+	m := tui.NewReplay(sess, ts, tui.CatppuccinMocha())
+	m = m.SetSize(100, 24).(tui.Replay)
+	scrolled, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = scrolled.(tui.Replay)
+	require.Greater(t, m.MainScrollOffset(), 0)
+
+	// Act: jump to the next topic.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+
+	// Assert: landed on the new topic's turn, scrolled to the top.
+	r := next.(tui.Replay)
+	assert.Equal(t, 1, r.Cursor())
+	assert.Equal(t, 0, r.MainScrollOffset(), "topic jump must reset scroll to top of new turn")
+}
+
+func TestReplay_NextTopicFromUncategorizedTurnGoesToNextTopic(t *testing.T) {
+	// A system turn between two topics belongs to no topic; pressing ] must
+	// advance to the next topic, not jump to the end of the session.
+	sess := &session.Session{
+		ID: "s1",
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "a", Timestamp: time.Unix(100, 0)},
+			{Role: session.RoleSystem, Content: "sys", Timestamp: time.Unix(105, 0)},
+			{Role: session.RoleUser, Content: "b", Timestamp: time.Unix(110, 0)},
+			{Role: session.RoleUser, Content: "c", Timestamp: time.Unix(120, 0)},
+		},
+	}
+	ts := []topics.Topic{
+		{Label: "First", TurnIndices: []int{0}},
+		{Label: "Second", TurnIndices: []int{2}},
+		{Label: "Third", TurnIndices: []int{3}},
+	}
+	m := tui.NewReplay(sess, ts, tui.CatppuccinMocha())
+	// Move cursor onto the uncategorized system turn (index 1).
+	step, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = step.(tui.Replay)
+	require.Equal(t, 1, m.Cursor())
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+
+	assert.Equal(t, 2, next.(tui.Replay).Cursor(),
+		"] from an uncategorized turn must land on the next topic, not the session end")
+}
+
 func TestReplay_ToggleThinking(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 

@@ -234,7 +234,7 @@ func (m Replay) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.sidebarCursor >= 0 && m.sidebarCursor < len(m.topicsList) {
 					t := m.topicsList[m.sidebarCursor]
 					if len(t.TurnIndices) > 0 {
-						m.cursor = t.TurnIndices[0]
+						m.jumpToTurn(t.TurnIndices[0])
 					}
 				}
 				m.sidebarFocus = false
@@ -289,10 +289,10 @@ func (m Replay) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.expandedTool = -1
 			}
 		case key.Matches(msg, m.keys.NextTopic):
-			m.cursor = m.nextTopicStart()
+			m.jumpToTurn(m.nextTopicStart())
 			m.expandedTool = -1
 		case key.Matches(msg, m.keys.PrevTopic):
-			m.cursor = m.prevTopicStart()
+			m.jumpToTurn(m.prevTopicStart())
 			m.expandedTool = -1
 		case key.Matches(msg, m.keys.ToggleThinking):
 			m.showThinking = !m.showThinking
@@ -451,7 +451,18 @@ func (m Replay) currentTopicIndex() int {
 
 func (m Replay) nextTopicStart() int {
 	cur := m.currentTopicIndex()
-	if cur < 0 || cur >= len(m.topicsList)-1 {
+	// Cursor sits on an uncategorized turn (system/summary/continuation turns
+	// belong to no topic). Advance to the first topic that starts after the
+	// cursor rather than jumping to the end of the session.
+	if cur < 0 {
+		for _, t := range m.topicsList {
+			if len(t.TurnIndices) > 0 && t.TurnIndices[0] > m.cursor {
+				return t.TurnIndices[0]
+			}
+		}
+		return len(m.sess.Turns) - 1
+	}
+	if cur >= len(m.topicsList)-1 {
 		return len(m.sess.Turns) - 1
 	}
 	next := m.topicsList[cur+1]
@@ -463,7 +474,15 @@ func (m Replay) nextTopicStart() int {
 
 func (m Replay) prevTopicStart() int {
 	cur := m.currentTopicIndex()
+	// Cursor sits on an uncategorized turn: fall back to the last topic that
+	// starts before the cursor rather than jumping to the very top.
 	if cur < 0 {
+		for i := len(m.topicsList) - 1; i >= 0; i-- {
+			t := m.topicsList[i]
+			if len(t.TurnIndices) > 0 && t.TurnIndices[0] < m.cursor {
+				return t.TurnIndices[0]
+			}
+		}
 		return 0
 	}
 	curTopic := m.topicsList[cur]
@@ -737,6 +756,31 @@ func (m Replay) turnVisible(turn session.Turn) bool {
 		return len(turn.ToolCalls) > 0 || len(turn.ToolResults) > 0
 	}
 	return false
+}
+
+// jumpToTurn moves the cursor to idx and normalizes viewport state the same
+// way the arrow-key paths do: clamp into range, skip slim-hidden turns so the
+// main panel is never left blank, and reset the scroll offset to the top of
+// the new turn. Topic jumps and sidebar jumps must go through here — setting
+// m.cursor alone leaves mainVP scrolled to the previous turn's offset (bubbles
+// SetContent only snaps when the new content is SHORTER than the old offset),
+// stranding the user mid-turn.
+func (m *Replay) jumpToTurn(idx int) {
+	if n := len(m.sess.Turns); n > 0 {
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= n {
+			idx = n - 1
+		}
+	} else {
+		idx = 0
+	}
+	m.cursor = idx
+	if m.slim {
+		m.skipInvisibleForward()
+	}
+	m.mainVP.GotoTop()
 }
 
 func (m *Replay) skipInvisibleForward() {
