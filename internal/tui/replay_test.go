@@ -209,6 +209,46 @@ func TestReplay_NextTopicFromUncategorizedTurnGoesToNextTopic(t *testing.T) {
 		"] from an uncategorized turn must land on the next topic, not the session end")
 }
 
+func TestReplay_RefreshSession_RemapsCommittedSearchToNewSlice(t *testing.T) {
+	// A committed search's match indices point into the turn slice at commit
+	// time. When the live session mutates (eviction shifts turns left), a
+	// refresh must re-run the search so pressing enter jumps to the right turn.
+	sess := &session.Session{
+		ID: "s1",
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "alpha", Timestamp: time.Unix(100, 0)},
+			{Role: session.RoleUser, Content: "beta", Timestamp: time.Unix(110, 0)},
+			{Role: session.RoleUser, Content: "ZEBRA", Timestamp: time.Unix(120, 0)},
+		},
+	}
+	m := tui.NewReplay(sess, nil, tui.CatppuccinMocha())
+
+	// Open search, type "ZEBRA", commit. Match is turn index 2.
+	step, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = step.(tui.Replay)
+	for _, r := range "ZEBRA" {
+		s2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = s2.(tui.Replay)
+	}
+	committed, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = committed.(tui.Replay)
+
+	// Simulate an eviction: the first turn is dropped, so ZEBRA is now index 1.
+	shifted := &session.Session{
+		ID: "s1",
+		Turns: []session.Turn{
+			{Role: session.RoleUser, Content: "beta", Timestamp: time.Unix(110, 0)},
+			{Role: session.RoleUser, Content: "ZEBRA", Timestamp: time.Unix(120, 0)},
+		},
+	}
+	m = m.RefreshSession(shifted, nil)
+
+	// Press enter to jump to the (single) match — must land on the new index 1.
+	jumped, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	r := jumped.(tui.Replay)
+	assert.Equal(t, 1, r.Cursor(), "search jump must use the remapped index after refresh")
+}
+
 func TestReplay_ToggleThinking(t *testing.T) {
 	m := tui.NewReplay(sampleSession(), sampleTopics(), tui.CatppuccinMocha())
 

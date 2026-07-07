@@ -423,6 +423,18 @@ func (m Replay) RefreshSession(sess *session.Session, ts []topics.Topic) Replay 
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+	// A committed search holds match indices into the OLD turn slice. After an
+	// append/eviction/rebuild those indices point at the wrong turns (or out
+	// of range), so re-run the search against the new slice and clamp the
+	// result cursor. Otherwise pressing enter would jump to a stale index.
+	if m.searchHasQuery {
+		m.applyTurnSearch()
+		if n := m.search.MatchCount(); n == 0 {
+			m.searchResultCursor = 0
+		} else if m.searchResultCursor >= n {
+			m.searchResultCursor = n - 1
+		}
+	}
 	m.syncMainContent()
 	return m
 }
