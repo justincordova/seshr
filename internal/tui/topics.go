@@ -731,7 +731,7 @@ func (o Overview) renderStatsStrip(width int) string {
 		statInline("DURATION", dur.String(), colLavender),
 	}
 
-	sep := dimStyle.Render("  │  ")
+	sep := dimStyle.Render(" · ")
 	row := strings.Join(items, sep)
 	return lipgloss.NewStyle().Width(width).Padding(0, 2).Render(row)
 }
@@ -866,17 +866,20 @@ func (o Overview) renderTopicCard(i int, top topics.Topic, width int) string {
 	isSelected := o.selected[i]
 	preCompact := isPreCompact(o.sess, top)
 
-	// Gutter bar: mauve when cursor OR selected; surface1 otherwise.
-	var barStyle lipgloss.Style
+	// Gutter bar. Cursor and selected are distinguished by glyph *and* color,
+	// not weight alone: the cursor is a heavy accent bar (┃), a prune-selected
+	// row is a solid mauve block (█), and a row that is both keeps the accent
+	// cursor bar (cursor takes visual priority; selection is summarized in the
+	// selection strip). Unmarked rows get a faint surface bar.
+	var bar string
 	switch {
 	case isCursor:
-		barStyle = lipgloss.NewStyle().Foreground(colMauve).Bold(true)
+		bar = lipgloss.NewStyle().Foreground(o.theme.Accent).Bold(true).Render("┃")
 	case isSelected:
-		barStyle = lipgloss.NewStyle().Foreground(colMauve)
+		bar = lipgloss.NewStyle().Foreground(colMauve).Bold(true).Render("█")
 	default:
-		barStyle = lipgloss.NewStyle().Foreground(colSurface1)
+		bar = lipgloss.NewStyle().Foreground(colSurface1).Render("▌")
 	}
-	bar := barStyle.Render("▌")
 
 	// Pad raw label to a fixed rune width *before* applying lipgloss styling —
 	// fmt %-Ns counts ANSI escape bytes, which misaligns styled strings.

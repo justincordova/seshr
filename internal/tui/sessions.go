@@ -756,11 +756,12 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 		glyph = "▸"
 	}
 
-	gutterStyle := lipgloss.NewStyle().Foreground(g.Color).Bold(true)
-	if !selected {
-		gutterStyle = lipgloss.NewStyle().Foreground(g.Color).Faint(true)
+	var gutter string
+	if selected {
+		gutter = lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true).Render("┃")
+	} else {
+		gutter = lipgloss.NewStyle().Foreground(g.Color).Faint(true).Render("▌")
 	}
-	gutter := gutterStyle.Render("▌")
 
 	// LIVE pinned group renders with the bullet glyph + green title; no
 	// uppercase remap because the name is already shaped for display.
@@ -794,12 +795,15 @@ func (p Picker) renderGroupHeader(row PickerRow, selected bool, width int) strin
 func (p Picker) renderSessionRow(m backend.SessionMeta, projectColor lipgloss.TerminalColor, selected bool, width int) string {
 	live := p.liveIndex[m.ID]
 
-	// Gutter
-	gutterStyle := lipgloss.NewStyle().Foreground(projectColor).Bold(true)
-	if !selected {
-		gutterStyle = lipgloss.NewStyle().Foreground(projectColor).Faint(true)
+	// Gutter. The selected row uses a solid accent-colored bar (distinct from
+	// the faint project-colored bar of unselected rows) so the cursor reads at
+	// a glance without a full-row background highlight.
+	var gutter string
+	if selected {
+		gutter = lipgloss.NewStyle().Foreground(p.theme.Accent).Bold(true).Render("┃")
+	} else {
+		gutter = lipgloss.NewStyle().Foreground(projectColor).Faint(true).Render("▌")
 	}
-	gutter := gutterStyle.Render("▌")
 
 	// Glyph: live vs ended
 	var glyph string

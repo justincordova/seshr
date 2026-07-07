@@ -117,9 +117,9 @@ func (s SearchBar) View(width int) string {
 
 	count := ""
 	if s.query != "" && len(s.matches) > 0 {
-		count = dimStyle.Render(lipgloss.NewStyle().
+		count = lipgloss.NewStyle().
 			Foreground(colSubtext0).
-			Render(fmt.Sprintf(" %d/%d", s.matchIdx+1, len(s.matches))))
+			Render(fmt.Sprintf(" %d/%d", s.matchIdx+1, len(s.matches)))
 	} else if s.query != "" {
 		count = dimStyle.Render(" no match")
 	}
