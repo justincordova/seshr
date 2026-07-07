@@ -163,3 +163,22 @@ func centerBlock(s string, termWidth int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// renderStatusScreen centers a short titled message on both axes. Used for the
+// app-level loading, error, and too-small states so failures and transitions
+// look intentional rather than like raw top-left debug text. detail and hint
+// are optional; empty strings are omitted.
+func renderStatusScreen(width, height int, accent lipgloss.TerminalColor, title, detail, hint string) string {
+	lines := []string{lipgloss.NewStyle().Foreground(accent).Bold(true).Render(title)}
+	if detail != "" {
+		lines = append(lines, "", textStyle.Render(detail))
+	}
+	if hint != "" {
+		lines = append(lines, "", dimStyle.Render(hint))
+	}
+	body := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	if width <= 0 || height <= 0 {
+		return body
+	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, body)
+}

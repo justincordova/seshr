@@ -370,7 +370,8 @@ func (m Replay) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.vp.Width = msg.Width
-		m.vp.Height = msg.Height - 1
+		// Expanded tool view reserves a header + footer line (see renderExpanded).
+		m.vp.Height = msg.Height - 3
 		m.syncMainVPSize()
 
 	case tea.MouseMsg:
@@ -444,7 +445,8 @@ func (m Replay) SetSize(w, h int) tea.Model {
 	m.width = w
 	m.height = h
 	m.vp.Width = w
-	m.vp.Height = h - 1
+	// Expanded tool view reserves a header + footer line (see renderExpanded).
+	m.vp.Height = h - 3
 	m.syncMainVPSize()
 	m.syncMainContent()
 	return m
@@ -547,7 +549,25 @@ func (m Replay) renderView() string {
 }
 
 func (m Replay) renderExpanded() string {
-	return m.vp.View()
+	title := "◆ Tool Output"
+	if m.cursor >= 0 && m.cursor < len(m.sess.Turns) &&
+		m.sess.Turns[m.cursor].IsCompactContinuation {
+		title = "◆ Compact Summary"
+	}
+	header := lipgloss.NewStyle().
+		Width(m.width).
+		Padding(0, 1).
+		Background(colMantle).
+		Foreground(colMauve).
+		Bold(true).
+		Render(title)
+
+	footer := renderCenteredFooter([]string{
+		kbdPill("↑↓/jk", "scroll"),
+		kbdPill("esc", "collapse"),
+	}, m.width)
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, m.vp.View(), footer)
 }
 
 func (m Replay) renderHeader() string {

@@ -559,9 +559,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a App) View() string {
 	if a.width > 0 && a.height > 0 && (a.width < minWidth || a.height < minHeight) {
-		return a.styles.App.Render(
-			fmt.Sprintf("Terminal too small (%dx%d). Need at least %dx%d.", a.width, a.height, minWidth, minHeight),
-		)
+		return renderStatusScreen(a.width, a.height, a.theme.Warning,
+			"Terminal too small",
+			fmt.Sprintf("%dx%d — need at least %dx%d", a.width, a.height, minWidth, minHeight),
+			"resize the window to continue")
 	}
 
 	// Log viewer replaces the base screen entirely.
@@ -573,7 +574,8 @@ func (a App) View() string {
 	var base string
 	switch a.state {
 	case stateLoading:
-		base = a.styles.App.Render(fmt.Sprintf("%s  parsing %s…\n", a.spinner.View(), a.loading))
+		base = renderStatusScreen(a.width, a.height, a.theme.Accent,
+			fmt.Sprintf("%s  parsing %s…", a.spinner.View(), a.loading), "", "")
 	case stateLanding:
 		base = a.landing.View()
 	case stateOverview:
@@ -583,10 +585,8 @@ func (a App) View() string {
 	case stateConfirmRestore:
 		base = a.restoreModal.View()
 	case stateError:
-		base = a.styles.App.Render(
-			a.styles.Error.Render("error: ") + a.lastErr + "\n\n" +
-				a.styles.Hint.Render("press esc to go back"),
-		)
+		base = renderStatusScreen(a.width, a.height, a.theme.Error,
+			"Something went wrong", a.lastErr, "press esc to go back")
 	default:
 		base = a.picker.View()
 	}

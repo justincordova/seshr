@@ -66,7 +66,8 @@ func TestApp_SessionLoadErrMsg_ShowsErrorState(t *testing.T) {
 	app := tui.NewApp(nil, testCfg(), "", nil, false)
 	next, _ := app.Update(tui.SessionLoadErrMsg{Path: "/x", Err: errBoom})
 	out := next.(tui.App).View()
-	assert.Contains(t, out, "error:")
+	// The error state must surface the underlying error and a way back.
+	assert.Contains(t, out, "boom")
 	assert.Contains(t, out, "press esc")
 }
 
