@@ -117,6 +117,50 @@ func TestSessionView_Append_TopicIndicesValidAfterEviction(t *testing.T) {
 	assert.Equal(t, "x", view.Session.Turns[lastIdx].Content)
 }
 
+func TestSessionView_Append_RebasesBoundariesOnEviction(t *testing.T) {
+	// Compact boundaries are physical indices into v.Session.Turns; eviction
+	// re-bases the slice, so boundaries must shift left by the evicted excess
+	// (and drop out if they fall before the window). Otherwise clustering would
+	// force a hard split at the wrong turn.
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+
+	base := time.Unix(1_700_000_000, 0)
+	bigTurns := make([]session.Turn, 600)
+	for i := range bigTurns {
+		bigTurns[i] = session.Turn{
+			Role:      session.RoleUser,
+			Content:   "t",
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		}
+	}
+	view.Session.Turns = bigTurns
+	view.TurnsLoadedFrom = 0
+	view.TurnsLoadedTo = 600
+	view.TotalTurns = 600
+	// One boundary that will survive eviction (at 550), one that will be
+	// evicted out of the window (at 10).
+	view.Session.CompactBoundaries = []session.CompactBoundary{
+		{TurnIndex: 10, Trigger: "manual"},
+		{TurnIndex: 550, Trigger: "auto"},
+	}
+
+	// Act: append 1 turn → total 601 → evicts excess = 101 from the front.
+	view.Append([]session.Turn{{
+		Role:      session.RoleAssistant,
+		Content:   "x",
+		Timestamp: base.Add(601 * time.Second),
+	}}, nil, view.Cursor)
+
+	// Assert: excess = 601 - 500 = 101. Boundary 10 is dropped (10-101 < 0);
+	// boundary 550 shifts to 449, still a valid physical index.
+	require.Len(t, view.Session.CompactBoundaries, 1)
+	assert.Equal(t, 449, view.Session.CompactBoundaries[0].TurnIndex)
+	assert.Equal(t, "auto", view.Session.CompactBoundaries[0].Trigger)
+	assert.Less(t, view.Session.CompactBoundaries[0].TurnIndex, len(view.Session.Turns))
+}
+
 func TestSessionView_Append_AttachesToolResultToPriorTurn(t *testing.T) {
 	// Arrange: the view holds an assistant turn that issued tool call t9.
 	store, meta, _ := makeTestStore(t, "simple.jsonl")

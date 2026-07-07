@@ -119,6 +119,11 @@ func (v *SessionView) Append(newTurns []session.Turn, boundaries []session.Compa
 		excess := len(v.Session.Turns) - maxTurnsInMemory
 		v.Session.Turns = v.Session.Turns[excess:]
 		v.TurnsLoadedFrom += excess
+		// Re-base compact boundaries onto the shifted window and drop any that
+		// fell out of it. Cluster/ClusterAppend read CompactBoundaries as
+		// physical indices into v.Session.Turns; leaving them at their pre-
+		// eviction positions would force topic hard-splits at the wrong turns.
+		v.rebaseBoundaries(excess)
 		evictedNow = true
 	}
 
@@ -230,6 +235,25 @@ func (v *SessionView) mergeBoundaries(boundaries []session.CompactBoundary, base
 		v.Session.CompactBoundaries = append(v.Session.CompactBoundaries, cb)
 		existing[abs] = struct{}{}
 	}
+}
+
+// rebaseBoundaries shifts every compact boundary left by excess (the number of
+// turns just evicted from the front of the window) and drops any that now fall
+// before the window. Keeps CompactBoundaries aligned with the re-based
+// v.Session.Turns slice that Cluster indexes.
+func (v *SessionView) rebaseBoundaries(excess int) {
+	if excess <= 0 || len(v.Session.CompactBoundaries) == 0 {
+		return
+	}
+	kept := v.Session.CompactBoundaries[:0]
+	for _, cb := range v.Session.CompactBoundaries {
+		cb.TurnIndex -= excess
+		if cb.TurnIndex < 0 {
+			continue
+		}
+		kept = append(kept, cb)
+	}
+	v.Session.CompactBoundaries = kept
 }
 
 // Reset replaces the view's contents with a freshly loaded session. Used
