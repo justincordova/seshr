@@ -143,6 +143,19 @@ func (e *Editor) resolveSelection(ctx context.Context, id string, sel backend.Se
 		return resolvedSelection{}, fmt.Errorf("session %s has no messages", id)
 	}
 
+	// Exclude a trailing in-flight assistant message, mirroring Load. The
+	// UI's turn list is built by Load, which trims it (load.go); without the
+	// same trim here the editor's turn list would be one longer, so a stale
+	// selection could carry an index the UI can never produce and target the
+	// still-streaming trailing message. Keeping the two derivations identical
+	// upholds the "turn N == message N" contract emittedMessages documents.
+	for len(chain) > 0 && messageInFlight(chain[len(chain)-1], time.Now()) {
+		chain = chain[:len(chain)-1]
+	}
+	if len(chain) == 0 {
+		return resolvedSelection{}, fmt.Errorf("session %s has no decodable turns", id)
+	}
+
 	// Map turn indices to messages using the SAME emit/skip logic as
 	// decodeChain. The UI's turn list comes from decodeChain, which drops
 	// messages with an undecodable envelope or unknown role. Indexing the

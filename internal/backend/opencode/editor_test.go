@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -84,6 +85,35 @@ func TestEditor_Prune_LiveToolPart_SkippedAndCounted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sess.Turns, 4)
 	assert.Len(t, sess.Turns[3].ToolCalls, 2)
+}
+
+func TestEditor_Prune_InFlightTrailingMessage_NotSelectable(t *testing.T) {
+	// The editor's turn list must match Load's: Load trims a trailing
+	// in-flight assistant message, so the editor must too. Otherwise a stale
+	// selection could reference the phantom trailing index and prune the
+	// still-streaming message the UI never rendered as a turn.
+	ed, store, dbPath := newEditorTest(t, "opencode_simple.db")
+
+	// Append a recent in-flight assistant (time.created set, no completed).
+	nowMs := time.Now().UnixMilli()
+	mutate(t, dbPath, fmt.Sprintf(`
+		INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES
+			('msg_live_z', 'ses_s1', %[1]d, %[1]d,
+			 '{"role":"assistant","parentID":"msg_a2","time":{"created":%[1]d},"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0}');
+		INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+			('prt_live_z', 'msg_live_z', 'ses_s1', %[1]d, %[1]d,
+			 '{"type":"text","text":"streaming..."}');
+	`, nowMs))
+
+	// Load trims the in-flight tail → still 4 turns (indices 0..3).
+	sess, _, err := store.Load(context.Background(), "ses_s1")
+	require.NoError(t, err)
+	require.Len(t, sess.Turns, 4)
+
+	// The phantom index 4 (the in-flight message) must be rejected, not pruned.
+	_, err = ed.Prune(context.Background(), "ses_s1", backend.Selection{TurnIndices: []int{4}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "out of range")
 }
 
 func TestEditor_Prune_MixedLiveParts_KeepsMessageAndLiveParts(t *testing.T) {
