@@ -61,8 +61,12 @@ func NewSessionView(ctx context.Context, store backend.SessionStore, meta backen
 // EVER occurred (its index math assumes sess.Turns[0] is absolute turn 0);
 // any eviction — now or earlier — forces a full O(window) re-cluster, which
 // is acceptable given eviction only happens on >500-turn sessions.
-func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) {
+func (v *SessionView) Append(newTurns []session.Turn, boundaries []session.CompactBoundary, newCursor backend.Cursor) {
 	if len(newTurns) == 0 {
+		// A tick may carry only a compact boundary (the /compact record with
+		// no renderable turn yet). Still merge it so clustering and prune
+		// safety see the live compaction.
+		v.mergeBoundaries(boundaries, len(v.Session.Turns), nil)
 		v.Cursor = newCursor
 		return
 	}
@@ -75,18 +79,34 @@ func (v *SessionView) Append(newTurns []session.Turn, newCursor backend.Cursor) 
 	// a fresh Parse per attached result — wrong turn counts, and prune
 	// selections that the editor-side staleness guard then has to refuse.
 	kept := make([]session.Turn, 0, len(newTurns))
-	for _, t := range newTurns {
+	// keptBefore[si] = number of kept turns among newTurns[:si]. Boundary
+	// TurnIndex values are stream-relative to the UNFOLDED newTurns; the fold
+	// drops tool-result turns, so a boundary's kept-index is keptBefore[si].
+	keptBefore := make([]int, len(newTurns)+1)
+	for i, t := range newTurns {
+		keptBefore[i] = len(kept)
 		if t.Role == session.RoleToolResult && attachToolResultToView(v.Session, kept, t) {
 			continue
 		}
 		kept = append(kept, t)
 	}
+	keptBefore[len(newTurns)] = len(kept)
+
+	base := len(v.Session.Turns)
+
 	if len(kept) == 0 {
+		v.mergeBoundaries(boundaries, base, keptBefore)
 		v.Cursor = newCursor
 		return
 	}
 
 	hadEvictionBefore := v.TurnsLoadedFrom > 0
+
+	// Merge boundaries BEFORE appending/clustering: base is the absolute index
+	// of the first kept turn, and mergeBoundaries maps each stream-relative
+	// boundary onto its post-fold absolute index. Clustering below then sees
+	// them and can force the compact hard split.
+	v.mergeBoundaries(boundaries, base, keptBefore)
 
 	v.Session.Turns = append(v.Session.Turns, kept...)
 	v.TotalTurns += len(kept)
@@ -171,6 +191,45 @@ func attachToolResultToView(sess *session.Session, pending []session.Turn, t ses
 		sess.ToolResultTokens += est
 	}
 	return true
+}
+
+// mergeBoundaries appends incrementally-parsed compact boundaries to the
+// session, translating each from its stream-relative TurnIndex to an absolute
+// index into v.Session.Turns.
+//
+// base is the absolute index of the first turn in this delta. keptBefore, when
+// non-nil, maps a stream (unfolded) turn index to the count of kept turns
+// before it, so a boundary that sat before unfolded turn si lands at
+// base+keptBefore[si] — the same absolute slot the surviving turn occupies
+// after tool-result folding. When keptBefore is nil (no renderable turns in the
+// delta) every boundary collapses onto base.
+func (v *SessionView) mergeBoundaries(boundaries []session.CompactBoundary, base int, keptBefore []int) {
+	if len(boundaries) == 0 {
+		return
+	}
+	existing := make(map[int]struct{}, len(v.Session.CompactBoundaries))
+	for _, cb := range v.Session.CompactBoundaries {
+		existing[cb.TurnIndex] = struct{}{}
+	}
+	for _, cb := range boundaries {
+		abs := base
+		if keptBefore != nil {
+			si := cb.TurnIndex
+			if si < 0 {
+				si = 0
+			}
+			if si >= len(keptBefore) {
+				si = len(keptBefore) - 1
+			}
+			abs = base + keptBefore[si]
+		}
+		if _, dup := existing[abs]; dup {
+			continue
+		}
+		cb.TurnIndex = abs
+		v.Session.CompactBoundaries = append(v.Session.CompactBoundaries, cb)
+		existing[abs] = struct{}{}
+	}
 }
 
 // Reset replaces the view's contents with a freshly loaded session. Used

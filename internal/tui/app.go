@@ -640,6 +640,7 @@ type fastLoadDoneMsg struct {
 	kind       session.SourceKind
 	fromCursor backend.Cursor
 	turns      []session.Turn
+	boundaries []session.CompactBoundary // compact boundaries within the appended delta
 	newCur     backend.Cursor
 	rebuilt    *session.Session // non-nil when the cursor was invalidated and a clean Load ran
 	err        error
@@ -779,7 +780,7 @@ func incrementalLoadCmd(ctx context.Context, store backend.SessionStore, id stri
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, fastLoadTimeout)
 		defer cancel()
-		turns, newCur, err := store.LoadIncremental(ctx, id, cur)
+		res, newCur, err := store.LoadIncremental(ctx, id, cur)
 		if errors.Is(err, backend.ErrCursorInvalid) {
 			// File rotated/truncated/pruned under us: appending would
 			// duplicate every turn. Rebuild from a clean load.
@@ -792,7 +793,7 @@ func incrementalLoadCmd(ctx context.Context, store backend.SessionStore, id stri
 				rebuilt: sess, newCur: freshCur}
 		}
 		return fastLoadDoneMsg{gen: gen, sessionID: id, kind: store.Kind(), fromCursor: cur,
-			turns: turns, newCur: newCur, err: err}
+			turns: res.Turns, boundaries: res.Boundaries, newCur: newCur, err: err}
 	}
 }
 
@@ -819,7 +820,7 @@ func (a App) handleFastLoadDone(m fastLoadDoneMsg) (App, tea.Cmd) {
 		slog.Info("fast-tick view rebuilt after cursor invalidation",
 			"session", m.sessionID, "turns", len(m.rebuilt.Turns))
 	case len(m.turns) > 0:
-		a.currentView.Append(m.turns, m.newCur)
+		a.currentView.Append(m.turns, m.boundaries, m.newCur)
 		a.syncLiveSessionState()
 		slog.Debug("fast-tick appended turns",
 			"session", m.sessionID, "count", len(m.turns))

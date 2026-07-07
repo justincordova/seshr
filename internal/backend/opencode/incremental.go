@@ -36,13 +36,13 @@ const maxIncrementalRows = 1000
 // Cap detection: if the query fills maxIncrementalRows we return with the
 // cursor advanced only through the returned rows; the next tick resumes
 // from there.
-func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Cursor) ([]session.Turn, backend.Cursor, error) {
+func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Cursor) (backend.IncrementalResult, backend.Cursor, error) {
 	cd, err := decodeCursor(cur)
 	if err != nil {
 		// A cursor we can't decode can't be advanced from — map it to the
 		// rebuild contract instead of a transient error the caller would
 		// retry forever (mirrors the claude store).
-		return nil, cur, fmt.Errorf("%w: %v", backend.ErrCursorInvalid, err)
+		return backend.IncrementalResult{}, cur, fmt.Errorf("%w: %v", backend.ErrCursorInvalid, err)
 	}
 
 	if cd.LastMessageID == "" {
@@ -50,17 +50,17 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 		// Callers expect the cursor round-trip to work from the Load result.
 		sess, newCur, err := s.Load(ctx, id)
 		if err != nil {
-			return nil, cur, err
+			return backend.IncrementalResult{}, cur, err
 		}
-		return sess.Turns, newCur, nil
+		return backend.IncrementalResult{Turns: sess.Turns, Boundaries: sess.CompactBoundaries}, newCur, nil
 	}
 
 	newMsgs, err := queryMessagesAfter(ctx, s.conns.read, id, cd.LastTimeCreated, cd.LastMessageID, maxIncrementalRows)
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 	if len(newMsgs) == 0 {
-		return nil, cur, nil
+		return backend.IncrementalResult{}, cur, nil
 	}
 
 	// Hold back a still-streaming trailing assistant message. OC creates the
@@ -76,13 +76,13 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 	if last := newMsgs[len(newMsgs)-1]; messageInFlight(last, time.Now()) {
 		newMsgs = newMsgs[:len(newMsgs)-1]
 		if len(newMsgs) == 0 {
-			return nil, cur, nil
+			return backend.IncrementalResult{}, cur, nil
 		}
 	}
 
 	parts, err := queryPartsForMessages(ctx, s.conns.read, id, chainIDs(newMsgs))
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 
 	// decodeChain assumes caller-provided chronological order; our SQL gives
@@ -93,7 +93,7 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 	// → chain rebuild if empty) is the correction path.
 	decoded, err := decodeChain(newMsgs, parts)
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 
 	last := newMsgs[len(newMsgs)-1]
@@ -101,7 +101,9 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 		LastTimeCreated: last.TimeCreated,
 		LastMessageID:   last.ID,
 	})
-	return decoded.Turns, newCur, nil
+	// decoded.Boundaries carry TurnIndex values relative to this delta (the
+	// chunk starts fresh at turn 0), matching IncrementalResult's contract.
+	return backend.IncrementalResult{Turns: decoded.Turns, Boundaries: decoded.Boundaries}, newCur, nil
 }
 
 // inFlightHoldback bounds how long a completed-less assistant message is

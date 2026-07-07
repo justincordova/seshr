@@ -20,12 +20,23 @@ type SessionStore interface {
 	Kind() session.SourceKind
 	Scan(ctx context.Context) ([]SessionMeta, error)
 	Load(ctx context.Context, id string) (*session.Session, Cursor, error)
-	// LoadIncremental returns ONLY turns appended since cur; callers append
-	// them to their existing view. When the cursor can no longer be trusted
-	// it returns ErrCursorInvalid and the caller must rebuild via Load.
-	LoadIncremental(ctx context.Context, id string, cur Cursor) ([]session.Turn, Cursor, error)
+	// LoadIncremental returns turns appended since cur; callers append them
+	// to their existing view. When the cursor can no longer be trusted it
+	// returns ErrCursorInvalid and the caller must rebuild via Load.
+	LoadIncremental(ctx context.Context, id string, cur Cursor) (IncrementalResult, Cursor, error)
 	LoadRange(ctx context.Context, id string, fromIdx, toIdx int) ([]session.Turn, error)
 	Close() error
+}
+
+// IncrementalResult carries the delta produced by LoadIncremental: the turns
+// appended since the cursor, plus any compact boundaries that fell within the
+// appended range. Boundary TurnIndex values are RELATIVE to this delta (the
+// first appended turn is index 0); the caller offsets them by its current turn
+// count before merging. Dropping boundaries here would silence live /compact
+// events in topic clustering, prune-safety, and the compaction stats line.
+type IncrementalResult struct {
+	Turns      []session.Turn
+	Boundaries []session.CompactBoundary
 }
 
 // LiveDetector detects running agent processes and maps them to sessions.

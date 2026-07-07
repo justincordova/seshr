@@ -75,13 +75,13 @@ func TestLoadIncremental_NewMessage_ReturnsIncremental(t *testing.T) {
 	`)
 
 	// Act
-	newTurns, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
+	res, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
 
 	// Assert
 	require.NoError(t, err)
-	require.Len(t, newTurns, 2)
-	assert.Equal(t, "another prompt", newTurns[0].Content)
-	assert.Equal(t, "new reply", newTurns[1].Content)
+	require.Len(t, res.Turns, 2)
+	assert.Equal(t, "another prompt", res.Turns[0].Content)
+	assert.Equal(t, "new reply", res.Turns[1].Content)
 	assert.NotEqual(t, cur.Data, newCur.Data, "cursor must advance past the new rows")
 }
 
@@ -110,9 +110,9 @@ func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) 
 	`, nowMs))
 
 	// Act 1: the in-flight message must be held back, cursor unmoved.
-	turns, midCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
+	res, midCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
 	require.NoError(t, err)
-	assert.Empty(t, turns, "streaming assistant message must not be emitted yet")
+	assert.Empty(t, res.Turns, "streaming assistant message must not be emitted yet")
 	assert.Equal(t, cur.Data, midCur.Data, "cursor must hold before the in-flight message")
 
 	// OC finishes the step: more parts land and time.completed is written.
@@ -125,11 +125,11 @@ func TestLoadIncremental_InFlightAssistant_HeldBackUntilCompleted(t *testing.T) 
 	`, nowMs+1000, nowMs))
 
 	// Act 2: now it must be emitted whole — including the late part.
-	turns, _, err = store.LoadIncremental(context.Background(), "ses_s1", midCur)
+	res, _, err = store.LoadIncremental(context.Background(), "ses_s1", midCur)
 	require.NoError(t, err)
-	require.Len(t, turns, 1)
-	assert.Contains(t, turns[0].Content, "first chunk")
-	assert.Contains(t, turns[0].Content, "second chunk",
+	require.Len(t, res.Turns, 1)
+	assert.Contains(t, res.Turns[0].Content, "first chunk")
+	assert.Contains(t, res.Turns[0].Content, "second chunk",
 		"parts written after the message row was first observed must not be lost")
 }
 
@@ -193,10 +193,10 @@ func TestLoadIncremental_NoNewMessages_ReturnsEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	// No mutations.
-	turns, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
+	res, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", cur)
 
 	require.NoError(t, err)
-	assert.Empty(t, turns)
+	assert.Empty(t, res.Turns)
 	assert.Equal(t, cur.Data, newCur.Data, "cursor unchanged when nothing new")
 }
 
@@ -209,10 +209,10 @@ func TestLoadIncremental_EmptyCursor_FallsBackToLoad(t *testing.T) {
 	// Zero-value cursor.
 	empty := encodeCursor(cursorData{})
 
-	turns, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", empty)
+	res, newCur, err := store.LoadIncremental(context.Background(), "ses_s1", empty)
 
 	require.NoError(t, err)
-	assert.Len(t, turns, 4, "cold cursor must return the full chain")
+	assert.Len(t, res.Turns, 4, "cold cursor must return the full chain")
 	assert.NotEmpty(t, newCur.Data)
 }
 

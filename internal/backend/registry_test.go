@@ -22,8 +22,8 @@ func (s *stubStore) Scan(_ context.Context) ([]backend.SessionMeta, error) { ret
 func (s *stubStore) Load(_ context.Context, _ string) (*session.Session, backend.Cursor, error) {
 	return nil, backend.Cursor{}, nil
 }
-func (s *stubStore) LoadIncremental(_ context.Context, _ string, cur backend.Cursor) ([]session.Turn, backend.Cursor, error) {
-	return nil, cur, nil
+func (s *stubStore) LoadIncremental(_ context.Context, _ string, cur backend.Cursor) (backend.IncrementalResult, backend.Cursor, error) {
+	return backend.IncrementalResult{}, cur, nil
 }
 func (s *stubStore) LoadRange(_ context.Context, _ string, _, _ int) ([]session.Turn, error) {
 	return nil, nil

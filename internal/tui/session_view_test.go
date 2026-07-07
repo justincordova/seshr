@@ -66,7 +66,7 @@ func TestSessionView_Append_EvictsWhenOverMax(t *testing.T) {
 
 	// Act: append 1 more turn.
 	extra := []session.Turn{{Role: session.RoleAssistant, Content: "x"}}
-	view.Append(extra, view.Cursor)
+	view.Append(extra, nil, view.Cursor)
 
 	// Assert: window holds exactly 500 turns.
 	assert.Equal(t, 500, view.TurnsLoadedTo-view.TurnsLoadedFrom)
@@ -98,7 +98,7 @@ func TestSessionView_Append_TopicIndicesValidAfterEviction(t *testing.T) {
 		Role:      session.RoleAssistant,
 		Content:   "x",
 		Timestamp: base.Add(601 * time.Second),
-	}}, view.Cursor)
+	}}, nil, view.Cursor)
 
 	// Assert: every topic index must be a valid window-relative index whose
 	// turn actually exists. Clustering before evicting would leave indices
@@ -137,7 +137,7 @@ func TestSessionView_Append_AttachesToolResultToPriorTurn(t *testing.T) {
 		Role:        session.RoleToolResult,
 		Content:     "tool output",
 		ToolResults: []session.ToolResult{{ID: "t9", Content: "tool output"}},
-	}}, view.Cursor)
+	}}, nil, view.Cursor)
 
 	// Assert: folded into the issuing turn, not appended — matching the turn
 	// index space of a fresh full parse.
@@ -171,7 +171,7 @@ func TestSessionView_Append_PartialMatchDoesNotDuplicate(t *testing.T) {
 			{ID: "t1", Content: "out1"},
 			{ID: "t2", Content: "out2"},
 		},
-	}}, view.Cursor)
+	}}, nil, view.Cursor)
 
 	// Assert: kept standalone (not every result found a home), and the
 	// issuing turn must NOT have absorbed a duplicate copy of t1's result.
@@ -193,10 +193,42 @@ func TestSessionView_Append_KeepsUnmatchedToolResult(t *testing.T) {
 		Role:        session.RoleToolResult,
 		Content:     "orphan",
 		ToolResults: []session.ToolResult{{ID: "nope", Content: "orphan"}},
-	}}, view.Cursor)
+	}}, nil, view.Cursor)
 
 	// Assert
 	assert.Equal(t, before+1, view.TotalTurns)
+}
+
+func TestSessionView_Append_MergesBoundaryWithFoldOffset(t *testing.T) {
+	// Arrange: a view with one assistant turn that issued tool call t1.
+	store, meta, _ := makeTestStore(t, "simple.jsonl")
+	view, err := tui.NewSessionView(context.Background(), store, meta)
+	require.NoError(t, err)
+	view.Session.Turns = append(view.Session.Turns, session.Turn{
+		Role:      session.RoleAssistant,
+		Content:   "call",
+		ToolCalls: []session.ToolCall{{ID: "t1", Name: "Bash"}},
+	})
+	view.TotalTurns++
+	view.TurnsLoadedTo = view.TotalTurns
+	base := len(view.Session.Turns)
+
+	// Act: a delta of [tool_result(t1) → folds away, user turn]. The boundary
+	// sits before the user turn at stream index 1 (unfolded). After folding
+	// away the tool_result, the user turn lands at absolute index `base`, and
+	// the boundary must merge onto `base`, not base+1.
+	delta := []session.Turn{
+		{Role: session.RoleToolResult, Content: "out", ToolResults: []session.ToolResult{{ID: "t1", Content: "out"}}},
+		{Role: session.RoleUser, Content: "after compact"},
+	}
+	boundaries := []session.CompactBoundary{{TurnIndex: 1, Trigger: "manual"}}
+	view.Append(delta, boundaries, view.Cursor)
+
+	// Assert
+	require.Len(t, view.Session.CompactBoundaries, 1)
+	assert.Equal(t, base, view.Session.CompactBoundaries[0].TurnIndex,
+		"boundary must land on the folded absolute index of the first post-compact turn")
+	assert.Equal(t, "after compact", view.Session.Turns[base].Content)
 }
 
 func TestSessionView_HasTurn_RespectsWindow(t *testing.T) {

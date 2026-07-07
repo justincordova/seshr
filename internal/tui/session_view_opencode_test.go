@@ -82,11 +82,11 @@ func TestSessionView_LiveTail_OpenCode(t *testing.T) {
 	prevCursor := view.Cursor
 
 	// This is the call the fast-tick handler makes.
-	turns, newCur, err := store.LoadIncremental(context.Background(), meta.ID, view.Cursor)
+	res, newCur, err := store.LoadIncremental(context.Background(), meta.ID, view.Cursor)
 	require.NoError(t, err)
-	require.Len(t, turns, 2)
+	require.Len(t, res.Turns, 2)
 
-	view.Append(turns, newCur)
+	view.Append(res.Turns, res.Boundaries, newCur)
 
 	assert.Equal(t, initial+2, len(view.Session.Turns))
 	assert.Equal(t, "live reply", view.Session.Turns[len(view.Session.Turns)-1].Content)

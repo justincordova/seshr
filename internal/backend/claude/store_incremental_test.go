@@ -27,11 +27,11 @@ func TestStore_LoadIncremental_FullReloadOnZeroCursor(t *testing.T) {
 	nFull := len(sess.Turns)
 
 	// Act: incremental from zero cursor → should return all turns (full reload).
-	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
 
 	// Assert: at EOF, no new turns (cursor is already at EOF after Load).
 	require.NoError(t, err)
-	assert.LessOrEqual(t, len(turns), nFull)
+	assert.LessOrEqual(t, len(res.Turns), nFull)
 }
 
 // TestStore_LoadIncremental_PartialTrailingRecordAtLoad guards against a
@@ -70,14 +70,52 @@ func TestStore_LoadIncremental_PartialTrailingRecordAtLoad(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Act
-	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
 
 	// Assert: both the completed mid-write record and the following one are
 	// read, and the mid-write record is intact (prefix preserved).
 	require.NoError(t, err)
-	require.Len(t, turns, 2, "completed mid-write record must not be lost")
-	assert.True(t, strings.HasPrefix(turns[0].Content, "MID_WRITE_MARKER"),
+	require.Len(t, res.Turns, 2, "completed mid-write record must not be lost")
+	assert.True(t, strings.HasPrefix(res.Turns[0].Content, "MID_WRITE_MARKER"),
 		"the record being written at Load time must be re-read whole")
+}
+
+// TestStore_LoadIncremental_CompactBoundaryThreaded guards against dropping a
+// compact boundary that arrives on the incremental (live-tail) path. Without
+// threading it, a live /compact would be invisible to clustering and prune
+// safety until a full reload.
+func TestStore_LoadIncremental_CompactBoundaryThreaded(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	path := filepath.Join(proj, "sess.jsonl")
+	require.NoError(t, copyFile(filepath.Join(testdataDir, "simple.jsonl"), path))
+
+	store := claudeBackend.NewStore(root)
+	_, cur, err := store.Load(context.Background(), "sess")
+	require.NoError(t, err)
+
+	// The live agent runs /compact, then continues with a new user turn.
+	boundary := `{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"manual","preTokens":50000},"uuid":"cb1","timestamp":"2026-03-20T12:00:00.000Z","sessionId":"sess-simple"}` + "\n"
+	next := `{"type":"user","message":{"role":"user","content":"after compaction"},"uuid":"uafter","parentUuid":null,"timestamp":"2026-03-20T12:00:05.000Z","sessionId":"sess-simple"}` + "\n"
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(boundary + next)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Act
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+
+	// Assert: the boundary is returned, indexed relative to the delta (it sits
+	// before the first appended turn, so stream index 0), with its metadata.
+	require.NoError(t, err)
+	require.Len(t, res.Turns, 1)
+	require.Len(t, res.Boundaries, 1, "live compact boundary must not be dropped")
+	assert.Equal(t, 0, res.Boundaries[0].TurnIndex)
+	assert.Equal(t, "manual", res.Boundaries[0].Trigger)
+	assert.Equal(t, 50000, res.Boundaries[0].PreTokens)
 }
 
 // TestStore_LoadIncremental_RotationReturnsErrCursorInvalid guards the
@@ -100,11 +138,11 @@ func TestStore_LoadIncremental_RotationReturnsErrCursorInvalid(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"type":"user","message":{"role":"user","content":"only"},"uuid":"u1","timestamp":"2026-03-20T10:00:00.000Z","sessionId":"sess-simple"}`+"\n"), 0o644))
 
 	// Act
-	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
 
 	// Assert
 	assert.ErrorIs(t, err, backend.ErrCursorInvalid)
-	assert.Empty(t, turns)
+	assert.Empty(t, res.Turns)
 }
 
 func TestStore_LoadRange_ReturnsSlice(t *testing.T) {
@@ -196,10 +234,10 @@ func TestStore_LoadIncremental_OversizedRecordRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	turns, _, err := store.LoadIncremental(context.Background(), "sess", cur)
+	res, _, err := store.LoadIncremental(context.Background(), "sess", cur)
 	require.NoError(t, err)
-	require.Len(t, turns, 1, "the appended oversized record must be parsed")
-	assert.True(t, strings.HasPrefix(turns[0].Content, marker),
+	require.Len(t, res.Turns, 1, "the appended oversized record must be parsed")
+	assert.True(t, strings.HasPrefix(res.Turns[0].Content, marker),
 		"oversized record content must be reassembled intact, not corrupted")
-	assert.Len(t, turns[0].Content, len(big))
+	assert.Len(t, res.Turns[0].Content, len(big))
 }

@@ -116,14 +116,14 @@ func lastRecordBoundary(path string) (int64, error) {
 
 // LoadIncremental reads turns appended since the cursor was captured.
 // If the file has been rotated (identity mismatch), falls back to full Load.
-func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Cursor) ([]session.Turn, backend.Cursor, error) {
+func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Cursor) (backend.IncrementalResult, backend.Cursor, error) {
 	path, err := s.transcriptPath(id)
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 	current, err := fileIdentity(path)
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 	prev, err := decodeCursor(cur)
 	if err != nil || !identitiesMatch(prev, current) {
@@ -131,23 +131,23 @@ func (s *Store) LoadIncremental(ctx context.Context, id string, cur backend.Curs
 		// against the current file. Returning the full turn list here would
 		// make append-semantics callers duplicate every turn, so surface the
 		// sentinel and let the caller rebuild from a clean Load.
-		return nil, cur, backend.ErrCursorInvalid
+		return backend.IncrementalResult{}, cur, backend.ErrCursorInvalid
 	}
 	fh, err := os.Open(path)
 	if err != nil {
-		return nil, cur, fmt.Errorf("open %s: %w", path, err)
+		return backend.IncrementalResult{}, cur, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer func() { _ = fh.Close() }()
 	if _, err := fh.Seek(prev.ByteOffset, io.SeekStart); err != nil {
-		return nil, cur, fmt.Errorf("seek: %w", err)
+		return backend.IncrementalResult{}, cur, fmt.Errorf("seek: %w", err)
 	}
-	turns, bytesRead, err := parseJSONLStream(fh)
+	turns, boundaries, bytesRead, err := parseJSONLStream(fh)
 	if err != nil {
-		return nil, cur, err
+		return backend.IncrementalResult{}, cur, err
 	}
 	next := current
 	next.ByteOffset = prev.ByteOffset + bytesRead
-	return turns, encodeCursor(next), nil
+	return backend.IncrementalResult{Turns: turns, Boundaries: boundaries}, encodeCursor(next), nil
 }
 
 // LoadRange loads a slice of turns by index (from inclusive, to exclusive).
